@@ -1,0 +1,26 @@
+{
+  "name": "sahulatkaar-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "WhatsApp negotiating order-bot SaaS (internal codename Sahulatkaar; brand name is config-driven, not final).",
+  "workspaces": [
+    "shared",
+    "backend",
+    "admin"
+  ],
+  "scripts": {
+    "build": "npm run build -w @app/shared && npm run build -w @app/backend",
+    "build:shared": "npm run build -w @app/shared",
+    "dev:backend": "npm run dev -w @app/backend",
+    "dev:admin": "npm run dev -w @app/admin",
+    "typecheck": "npm run typecheck -w @app/shared && npm run typecheck -w @app/backend",
+    "db:migrate": "node --env-file=.env db/migrate.mjs",
+    "lint": "echo \"(lint not configured yet)\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "pg": "^8.22.0"
+  }
+}

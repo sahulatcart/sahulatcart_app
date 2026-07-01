@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.next/
+out/
+coverage/
+
+# env / secrets — never commit
+.env
+.env.*
+!.env.example
+
+# logs / os
+*.log
+.DS_Store
+
+# build info
+*.tsbuildinfo
