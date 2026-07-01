@@ -11,16 +11,21 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/readyz', async (_req, reply) => {
     const checks: Record<string, 'ok' | 'fail'> = {};
+    let dbError: string | undefined;
 
     // DB reachability — cheap probe.
     try {
       const { error } = await getServiceClient().from('merchants').select('id').limit(1);
       checks.db = error ? 'fail' : 'ok';
-    } catch {
+      if (error) dbError = error.message;
+    } catch (e) {
       checks.db = 'fail';
+      dbError = e instanceof Error ? e.message : String(e);
     }
 
     const ready = Object.values(checks).every((v) => v === 'ok');
-    return reply.code(ready ? 200 : 503).send({ status: ready ? 'ready' : 'not_ready', checks });
+    return reply
+      .code(ready ? 200 : 503)
+      .send({ status: ready ? 'ready' : 'not_ready', checks, ...(dbError ? { dbError } : {}) });
   });
 }
