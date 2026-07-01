@@ -25,10 +25,12 @@ const schema = z.object({
   META_GRAPH_API_VERSION: z.string().default('v21.0'),
   META_DEFAULT_PHONE_NUMBER_ID: z.string().optional(),
 
-  // Anthropic — optional until Phase 3
+  // LLM provider (Phase 3) — provider-agnostic; Gemini by default.
+  LLM_PROVIDER: z.enum(['gemini', 'anthropic']).default('gemini'),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default('claude-opus-4-8'),
-  ANTHROPIC_FALLBACK_MODEL: z.string().default('claude-haiku-4-5'),
 
   // Secrets
   TOKEN_ENCRYPTION_KEY: z.string().optional(),

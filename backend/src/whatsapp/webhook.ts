@@ -5,7 +5,7 @@ import { logger } from '../lib/logger';
 import { getServiceClient } from '../lib/supabase';
 import { verifySignature } from './signature';
 import { parseWebhook } from './parse';
-import { runEchoOrchestrator } from './orchestrator';
+import { runOrchestrator } from '../orchestrator/orchestrator';
 import type { NormalizedMessage, NormalizedStatus, WebhookPayload } from './types';
 
 declare module 'fastify' {
@@ -120,14 +120,14 @@ async function handleInboundMessage(
     .update({ last_message_at: new Date().toISOString(), window_expires_at: new Date(Date.now() + WINDOW_MS).toISOString() })
     .eq('id', convo.id);
 
-  // Phase 2: echo. Phase 3 swaps in the real orchestrator (FSM + Claude + engine).
-  await runEchoOrchestrator(
+  // Phase 3: real orchestrator (FSM + Gemini + negotiation engine).
+  await runOrchestrator(
     db,
     {
       merchantId: tenant.merchant_id,
       conversationId: convo.id,
       phoneNumberId: tenant.phone_number_id,
-      businessName: tenant.business_name,
+      customerId: customer.id,
       customerWaId: msg.from,
     },
     msg
