@@ -3,6 +3,7 @@ import helmet from '@fastify/helmet';
 import { loadConfig } from './config';
 import { loggerOptions } from './lib/logger';
 import { healthRoutes } from './routes/health';
+import { webhookRoutes } from './whatsapp/webhook';
 
 /**
  * Builds the Fastify app. Route groups are registered here as phases land:
@@ -18,6 +19,7 @@ export async function buildServer(): Promise<FastifyInstance> {
 
   app.get('/', async () => ({ product: cfg.PRODUCT_NAME, status: 'running', version: '0.0.0' }));
   await app.register(healthRoutes);
+  await app.register(webhookRoutes); // Phase 2: /api/v1/webhook/whatsapp
 
   return app;
 }
