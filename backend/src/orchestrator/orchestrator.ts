@@ -230,8 +230,8 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
   const neg = await getOrCreateNegotiation(db, ctx, product, quantity);
   const newContext = { ...context, activeProductId: product.id, activeNegotiationId: neg?.id };
 
-  // Pure price question, first touch → QUOTE the list price (don't start haggling).
-  if (cls.intent === 'ask_price' && cls.offerPaisa == null && (neg?.rounds ?? 0) === 0) {
+  // Interest without an offer, first touch → QUOTE the list price (don't start haggling).
+  if (['ask_price', 'ask_product', 'add_to_order'].includes(cls.intent) && cls.offerPaisa == null && (neg?.rounds ?? 0) === 0) {
     await reply(db, ctx, await safeCompose({ kind: 'quote', productName: product.name, priceRupees: rupees(product.price) }, cc), 'product_qa', newContext);
     return;
   }
