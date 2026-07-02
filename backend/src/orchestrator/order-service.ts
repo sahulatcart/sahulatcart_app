@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../lib/logger';
+import { generateSlipPdf, uploadSlip } from './slip';
 
 export interface DeliveryInfo {
   name: string | null;
@@ -127,32 +128,12 @@ export async function confirmCodOrder(
   ctx: { merchantId: string },
   orderId: string,
   businessName: string
-): Promise<{ orderNumber: string; total: number; slip: string } | null> {
+): Promise<{ orderNumber: string; total: number; slip: string; slipKey: string | null } | null> {
   const orderRes = await db.from('orders').select('*').eq('id', orderId).single();
   const order = orderRes.data;
   if (!order) return null;
-  const itemsRes = await db.from('order_items').select('name_snapshot, quantity, line_total').eq('order_id', orderId);
-  const items = (itemsRes.data ?? []).map((i) => ({ name: i.name_snapshot, qty: i.quantity, lineTotal: i.line_total }));
 
   const orderNumber = await nextOrderNumber(db, ctx.merchantId);
-  const slip = buildSlipText({
-    orderNumber,
-    businessName,
-    items,
-    subtotal: order.subtotal,
-    discount: order.discount_total,
-    deliveryCharge: order.delivery_charge,
-    total: order.total,
-    delivery: {
-      name: order.delivery_name,
-      address: order.delivery_address,
-      area: order.delivery_area,
-      city: order.delivery_city,
-      phone: order.delivery_phone,
-    },
-    paymentLabel: 'Cash on Delivery',
-  });
-
   await db
     .from('orders')
     .update({ status: 'confirmed', order_number: orderNumber, payment_method: 'cod', payment_status: 'cod_pending', placed_at: new Date().toISOString() })
@@ -168,7 +149,42 @@ export async function confirmCodOrder(
     channel: 'portal',
   });
 
-  return { orderNumber, total: order.total, slip };
+  const { text, key } = await finalizeSlip(db, ctx.merchantId, orderId, orderNumber, businessName, order, 'Cash on Delivery');
+  return { orderNumber, total: order.total, slip: text, slipKey: key };
+}
+
+/** Build the text + PDF slip for an order, store the PDF, save order.slip_url. */
+export async function finalizeSlip(
+  db: SupabaseClient,
+  merchantId: string,
+  orderId: string,
+  orderNumber: string,
+  businessName: string,
+  order: { subtotal: number; discount_total: number; delivery_charge: number; total: number; delivery_name: string | null; delivery_address: string | null; delivery_area: string | null; delivery_city: string | null; delivery_phone: string | null },
+  paymentLabel: string
+): Promise<{ text: string; key: string | null }> {
+  const itemsRes = await db.from('order_items').select('name_snapshot, quantity, line_total').eq('order_id', orderId);
+  const items = (itemsRes.data ?? []).map((i) => ({ name: i.name_snapshot, qty: i.quantity, lineTotal: i.line_total }));
+  const sd = {
+    orderNumber,
+    businessName,
+    items,
+    subtotal: order.subtotal,
+    discount: order.discount_total,
+    deliveryCharge: order.delivery_charge,
+    total: order.total,
+    delivery: { name: order.delivery_name, address: order.delivery_address, area: order.delivery_area, city: order.delivery_city, phone: order.delivery_phone },
+    paymentLabel,
+  };
+  const text = buildSlipText(sd);
+  let key: string | null = null;
+  try {
+    key = await uploadSlip(db, merchantId, orderId, await generateSlipPdf(sd));
+    if (key) await db.from('orders').update({ slip_url: key }).eq('id', orderId);
+  } catch (e) {
+    logger.error({ err: (e as Error).message }, 'slip pdf failed');
+  }
+  return { text, key };
 }
 
 /** Confirm a draft order for bank transfer: number, awaiting_payment, unpaid payments row. */
@@ -176,9 +192,10 @@ export async function confirmBankOrder(
   db: SupabaseClient,
   ctx: { merchantId: string },
   orderId: string,
-  bankAccountId: string
+  bankAccountId: string,
+  businessName = 'Shop'
 ): Promise<{ orderNumber: string; total: number; paymentId: string } | null> {
-  const orderRes = await db.from('orders').select('total').eq('id', orderId).single();
+  const orderRes = await db.from('orders').select('*').eq('id', orderId).single();
   if (!orderRes.data) return null;
   const orderNumber = await nextOrderNumber(db, ctx.merchantId);
   await db
@@ -200,5 +217,6 @@ export async function confirmBankOrder(
     data: { orderId, orderNumber, paymentMethod: 'bank_transfer' },
     channel: 'portal',
   });
+  await finalizeSlip(db, ctx.merchantId, orderId, orderNumber, businessName, orderRes.data, 'Bank Transfer'); // stores slip_url; sent to buyer on verify
   return { orderNumber, total: orderRes.data.total, paymentId: pay.data?.id ?? '' };
 }

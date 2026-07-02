@@ -14,13 +14,25 @@ interface Dash {
 
 export default function Dashboard() {
   const [d, setD] = useState<Dash | null>(null);
+  const [needsSetup, setNeedsSetup] = useState(false);
   useEffect(() => {
     apiJson<Dash>('/api/v1/admin/dashboard').then(setD).catch(() => {});
+    apiJson<{ merchant: { settings?: { onboardingCompletedAt?: string | null } } }>('/api/v1/admin/me')
+      .then((r) => setNeedsSetup(!r.merchant?.settings?.onboardingCompletedAt))
+      .catch(() => {});
   }, []);
 
   return (
     <AppShell>
       <h1>Dashboard</h1>
+      {needsSetup && (
+        <div className="section" style={{ background: '#f0fdfa', borderColor: '#0d9488' }}>
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <span>👋 Finish setting up your shop — business info, negotiation rules, bank account, and go live.</span>
+            <Link href="/onboarding" className="btn">Complete setup</Link>
+          </div>
+        </div>
+      )}
       <div className="cards">
         <div className="card"><div className="k">Today&apos;s Orders</div><div className="v">{d?.ordersToday ?? '—'}</div></div>
         <div className="card"><div className="k">Today&apos;s Revenue</div><div className="v">{d ? rs(d.revenueToday) : '—'}</div></div>

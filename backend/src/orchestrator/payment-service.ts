@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../lib/logger';
-import { sendText } from '../whatsapp/client';
+import { sendDocument, sendText } from '../whatsapp/client';
+import { signedSlipUrl } from './slip';
 
 const rs = (paisa: number): string => `Rs ${Math.round(paisa / 100)}`;
 
@@ -12,10 +13,11 @@ interface OrderRow {
   order_number: string | null;
   total: number;
   payment_status: string;
+  slip_url: string | null;
 }
 
 /** Load the buyer's WhatsApp channel (phone_number_id + wa_id) for an order and message them. */
-async function notifyBuyer(db: SupabaseClient, order: OrderRow, text: string): Promise<void> {
+async function notifyBuyer(db: SupabaseClient, order: OrderRow, text: string, slipKey?: string | null): Promise<void> {
   const cust = await db.from('customers').select('wa_id').eq('id', order.customer_id).single();
   const waId = cust.data?.wa_id;
   if (!waId) return;
@@ -34,6 +36,11 @@ async function notifyBuyer(db: SupabaseClient, order: OrderRow, text: string): P
   }
   if (!phoneNumberId) return;
   const sent = await sendText(phoneNumberId, waId, text);
+  // Attach the order slip PDF if available.
+  if (slipKey) {
+    const url = await signedSlipUrl(db, slipKey);
+    if (url) await sendDocument(phoneNumberId, waId, url, `Order-${order.order_number ?? 'slip'}.pdf`, undefined);
+  }
   if (conversationId) {
     await db.from('messages').insert({
       conversation_id: conversationId,
@@ -50,7 +57,7 @@ async function notifyBuyer(db: SupabaseClient, order: OrderRow, text: string): P
 }
 
 async function loadOrder(db: SupabaseClient, orderId: string): Promise<OrderRow | null> {
-  const r = await db.from('orders').select('id, merchant_id, customer_id, conversation_id, order_number, total, payment_status').eq('id', orderId).single();
+  const r = await db.from('orders').select('id, merchant_id, customer_id, conversation_id, order_number, total, payment_status, slip_url').eq('id', orderId).single();
   return (r.data as OrderRow) ?? null;
 }
 
@@ -66,7 +73,7 @@ export async function verifyPayment(db: SupabaseClient, orderId: string, byUserI
   await db.from('orders').update({ status: 'paid', payment_status: 'verified', payment_locked: true }).eq('id', orderId);
   await db.from('order_status_history').insert({ order_id: orderId, from_status: 'awaiting_payment', to_status: 'paid', changed_by: 'agent', user_id: byUserId ?? null });
 
-  await notifyBuyer(db, order, `Payment mil gaya! ✅ Aapka order ${order.order_number ?? ''} confirm ho gaya. Jald deliver karenge, shukriya!`);
+  await notifyBuyer(db, order, `Payment mil gaya! ✅ Aapka order ${order.order_number ?? ''} confirm ho gaya. Jald deliver karenge, shukriya!`, order.slip_url);
   logger.info({ orderId }, 'payment verified');
   return { ok: true };
 }

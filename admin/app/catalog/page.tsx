@@ -31,9 +31,34 @@ export default function Catalog() {
     load();
   }
 
+  async function importCsv(file: File) {
+    const text = await file.text();
+    const r = await apiJson<{ imported: number; errors: string[]; total: number }>('/api/v1/admin/products/import', { method: 'POST', body: JSON.stringify({ csv: text }) });
+    alert(`Imported ${r.imported}/${r.total}.` + (r.errors.length ? `\n\nErrors:\n${r.errors.slice(0, 8).join('\n')}` : ''));
+    load();
+  }
+  async function metaSync() {
+    const r = await apiJson<{ synced: number; message?: string }>('/api/v1/admin/products/catalog-sync', { method: 'POST' });
+    alert(r.message ? r.message : `Synced ${r.synced} products from Meta catalog.`);
+    load();
+  }
+  const template = 'data:text/csv;charset=utf-8,' + encodeURIComponent('name,price,stock,negotiable,max_discount_pct,min_price,sku,description\nT-Shirt,2500,50,yes,20,,TSHIRT,Cotton tee\nMug,800,100,no,,,MUG,');
+
   return (
     <AppShell>
       <h1>Catalog</h1>
+      <div className="section">
+        <h2>Import</h2>
+        <div className="row">
+          <label className="btn sec" style={{ cursor: 'pointer', margin: 0 }}>
+            Import CSV
+            <input type="file" accept=".csv,text/csv" style={{ display: 'none' }} onChange={(e) => e.target.files?.[0] && importCsv(e.target.files[0])} />
+          </label>
+          <a className="btn sec" href={template} download="catalog-template.csv">Download template</a>
+          <button className="btn sec" onClick={metaSync}>Sync from Meta catalog</button>
+        </div>
+        <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 0 }}>CSV columns: name, price (Rs), stock, negotiable (yes/no), max_discount_pct, min_price (Rs), sku, description.</p>
+      </div>
       <div className="section">
         <h2>Add product</h2>
         <div className="row">

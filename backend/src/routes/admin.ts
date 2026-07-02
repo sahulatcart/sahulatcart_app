@@ -5,6 +5,7 @@ import { getServiceClient } from '../lib/supabase';
 import { markCodCollected, rejectPayment, verifyPayment } from '../orchestrator/payment-service';
 import { signedScreenshotUrl } from '../whatsapp/media';
 import { sendText } from '../whatsapp/client';
+import { parseCsv } from '../lib/csv';
 
 /**
  * Merchant admin API for the Phase-5 portal. Pilot: single merchant, gated by a
@@ -258,6 +259,78 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ ok: true });
   });
 
+  // ── CSV import (synchronous; pilot). Columns: name,price,stock,negotiable,max_discount_pct,min_price,sku,description ──
+  app.post('/api/v1/admin/products/import', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const mid = await merchantId(db);
+    const csv = (req.body as { csv?: string })?.csv;
+    if (!csv) return reply.code(400).send({ error: { code: 'BAD', message: 'csv required' } });
+    const rows = parseCsv(csv);
+    const errors: string[] = [];
+    let imported = 0;
+    const truthy = (v: string) => ['1', 'true', 'yes', 'y', 'haan'].includes((v ?? '').toLowerCase());
+    const rupees = (v: string) => (v && !Number.isNaN(Number(v)) ? Math.round(Number(v)) * 100 : null);
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i]!;
+      const name = r.name || r.product || r.title;
+      const price = rupees(r.price || '');
+      if (!name || price == null) { errors.push(`Row ${i + 2}: name and numeric price required`); continue; }
+      const negotiable = 'negotiable' in r ? truthy(r.negotiable) : false;
+      const row = {
+        merchant_id: mid,
+        name,
+        description: r.description || null,
+        price,
+        stock: r.stock && !Number.isNaN(Number(r.stock)) ? Math.round(Number(r.stock)) : null,
+        track_stock: !!(r.stock && r.stock.trim()),
+        negotiable,
+        max_discount_pct: r.max_discount_pct && !Number.isNaN(Number(r.max_discount_pct)) ? Number(r.max_discount_pct) : null,
+        min_price: rupees(r.min_price || ''),
+        sku: r.sku || null,
+        is_active: true,
+      };
+      const q = row.sku
+        ? db.from('products').upsert(row, { onConflict: 'merchant_id,sku' })
+        : db.from('products').insert(row);
+      const { error } = await q;
+      if (error) errors.push(`Row ${i + 2}: ${error.message}`);
+      else imported++;
+    }
+    return reply.send({ imported, errors, total: rows.length });
+  });
+
+  // ── Meta catalog sync (pull products from the WABA's Commerce catalog) ──
+  app.post('/api/v1/admin/products/catalog-sync', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const cfg = loadConfig();
+    const mid = await merchantId(db);
+    const token = cfg.META_SYSTEM_USER_TOKEN;
+    const wabaRow = await db.from('whatsapp_numbers').select('waba_id').eq('merchant_id', mid).limit(1).maybeSingle();
+    const waba = wabaRow.data?.waba_id;
+    if (!token || !waba) return reply.code(400).send({ error: { code: 'NO_WABA', message: 'WhatsApp/WABA not connected' } });
+    const v = cfg.META_GRAPH_API_VERSION;
+    try {
+      const cats = (await fetch(`https://graph.facebook.com/${v}/${waba}/product_catalogs?access_token=${token}`).then((r) => r.json())) as { data?: { id: string }[]; error?: { message: string } };
+      const catalogId = cats.data?.[0]?.id;
+      if (!catalogId) return reply.send({ synced: 0, message: cats.error?.message || 'No Meta catalog connected to this WhatsApp account.' });
+      const prods = (await fetch(`https://graph.facebook.com/${v}/${catalogId}/products?fields=retailer_id,name,price,description&limit=200&access_token=${token}`).then((r) => r.json())) as { data?: { retailer_id: string; name: string; price?: string; description?: string }[] };
+      let synced = 0;
+      for (const p of prods.data ?? []) {
+        const num = p.price ? parseInt(String(p.price).replace(/[^0-9]/g, ''), 10) : NaN;
+        const price = Number.isFinite(num) ? num * 100 : 0; // Meta price string → paisa (best-effort)
+        const { error } = await db.from('products').upsert(
+          { merchant_id: mid, external_ref: p.retailer_id, name: p.name, description: p.description ?? null, price, is_active: true },
+          { onConflict: 'merchant_id,external_ref' }
+        );
+        if (!error) synced++;
+      }
+      await db.from('merchants').update({ settings: { ...(await db.from('merchants').select('settings').eq('id', mid).single()).data?.settings, metaCatalog: { catalogId, connected: true, lastSyncedAt: new Date().toISOString() } } }).eq('id', mid);
+      return reply.send({ synced, catalogId });
+    } catch (e) {
+      return reply.code(502).send({ error: { code: 'META', message: (e as Error).message } });
+    }
+  });
+
   // ── Settings (merchant negotiation_defaults + settings jsonb) ──
   app.get('/api/v1/admin/settings', async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
@@ -271,9 +344,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.patch('/api/v1/admin/settings', async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
     const mid = await merchantId(db);
-    const b = req.body as { negotiationDefaults?: Record<string, unknown>; settings?: Record<string, unknown>; botPersona?: Record<string, unknown> };
+    const b = req.body as { businessName?: string; negotiationDefaults?: Record<string, unknown>; settings?: Record<string, unknown>; botPersona?: Record<string, unknown> };
     const cur = await db.from('merchants').select('negotiation_defaults, settings, bot_persona').eq('id', mid).single();
     const patch: Record<string, unknown> = {};
+    if (b.businessName) patch.business_name = b.businessName;
     if (b.negotiationDefaults) patch.negotiation_defaults = { ...(cur.data?.negotiation_defaults ?? {}), ...b.negotiationDefaults };
     if (b.settings) patch.settings = { ...(cur.data?.settings ?? {}), ...b.settings };
     if (b.botPersona) patch.bot_persona = { ...(cur.data?.bot_persona ?? {}), ...b.botPersona };

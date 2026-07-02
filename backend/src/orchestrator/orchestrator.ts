@@ -4,8 +4,9 @@ import { logger } from '../lib/logger';
 import { decide } from '../negotiation';
 import type { NegotiationDefaults, ProductPricing } from '../negotiation/types';
 import { getLlmClient, LlmUnavailableError, type ComposeContext, type DeliveryDetails, type ReplySpec } from '../llm';
-import { sendText } from '../whatsapp/client';
+import { sendDocument, sendText } from '../whatsapp/client';
 import { downloadWhatsAppMedia, uploadScreenshot } from '../whatsapp/media';
+import { signedSlipUrl } from './slip';
 import type { NormalizedMessage } from '../whatsapp/types';
 import { resolveProduct, type CatalogItem } from './resolve';
 import { priceGuardOk } from './guard';
@@ -417,8 +418,16 @@ async function handlePayment(db: SupabaseClient, ctx: OrchestratorCtx, cc: Compo
     const res = await confirmCodOrder(db, { merchantId: ctx.merchantId }, orderId, cc.businessName);
     const done = { ...context, pendingOrderId: undefined };
     if (res) {
-      await reply(db, ctx, res.slip, 'completed', done, false);
-      await reply(db, ctx, `Order confirm ho gaya ✅ COD par total Rs ${rupees(res.total)}. Jald deliver karenge, shukriya!`, 'completed', done);
+      const url = res.slipKey ? await signedSlipUrl(db, res.slipKey) : null;
+      const caption = `Order ${res.orderNumber} confirm ✅ COD par total Rs ${rupees(res.total)}. Jald deliver karenge, shukriya!`;
+      if (url) {
+        const sent = await sendDocument(ctx.phoneNumberId, ctx.customerWaId, url, `Order-${res.orderNumber}.pdf`, caption);
+        await db.from('messages').insert({ conversation_id: ctx.conversationId, merchant_id: ctx.merchantId, direction: 'outbound', sender: 'bot', type: 'document', body: `[order slip] ${res.orderNumber}`, wa_message_id: sent.waMessageId, status: sent.waMessageId ? 'sent' : 'queued' });
+        await db.from('conversations').update({ current_state: 'completed', context: done }).eq('id', ctx.conversationId);
+      } else {
+        await reply(db, ctx, res.slip, 'completed', done, false);
+        await reply(db, ctx, caption, 'completed', done);
+      }
     } else {
       await reply(db, ctx, await safeCompose({ kind: 'clarify' }, cc), 'browsing', done);
     }
@@ -430,7 +439,7 @@ async function handlePayment(db: SupabaseClient, ctx: OrchestratorCtx, cc: Compo
       await reply(db, ctx, 'Maazrat, abhi sirf Cash on Delivery available hai. COD karein?', 'selecting_payment', context);
       return;
     }
-    const res = await confirmBankOrder(db, { merchantId: ctx.merchantId }, orderId, bank.data.id);
+    const res = await confirmBankOrder(db, { merchantId: ctx.merchantId }, orderId, bank.data.id, cc.businessName);
     if (!res) {
       await reply(db, ctx, await safeCompose({ kind: 'clarify' }, cc), 'browsing', context);
       return;
