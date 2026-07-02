@@ -24,7 +24,13 @@ export type ReplySpec =
   | { kind: 'hold'; productName: string; priceRupees: number }
   | { kind: 'not_found'; query: string }
   | { kind: 'out_of_stock'; productName: string }
-  | { kind: 'order_ack'; productName: string; priceRupees: number } // Phase 4 placeholder
+  | { kind: 'order_ack'; productName: string; priceRupees: number }
+  | { kind: 'ask_delivery' } // after accept — ask name/address/area
+  | { kind: 'ask_delivery_missing'; missing: string }
+  | { kind: 'ask_payment_method'; priceRupees: number } // summary total + COD/bank?
+  | { kind: 'bank_await' } // sent after bank details — ask for screenshot
+  | { kind: 'payment_received' } // screenshot received, verifying
+  | { kind: 'payment_verified'; orderNumber: string }
   | { kind: 'clarify' }
   | { kind: 'chitchat' }
   | { kind: 'handoff' };
@@ -35,9 +41,18 @@ export interface ComposeContext {
   language: Lang;
 }
 
+export interface DeliveryDetails {
+  name: string | null;
+  address: string | null;
+  area: string | null;
+  city: string | null;
+  phone: string | null;
+}
+
 export class LlmUnavailableError extends Error {}
 
 export interface LlmClient {
   classify(text: string, ctx: ClassifyContext): Promise<Classification>;
   compose(spec: ReplySpec, ctx: ComposeContext): Promise<string>;
+  extractDelivery(text: string): Promise<DeliveryDetails>;
 }

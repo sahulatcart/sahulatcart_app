@@ -3,11 +3,12 @@ import type { BotState } from '@app/shared';
 import { logger } from '../lib/logger';
 import { decide } from '../negotiation';
 import type { NegotiationDefaults, ProductPricing } from '../negotiation/types';
-import { getLlmClient, LlmUnavailableError, type ComposeContext, type ReplySpec } from '../llm';
+import { getLlmClient, LlmUnavailableError, type ComposeContext, type DeliveryDetails, type ReplySpec } from '../llm';
 import { sendText } from '../whatsapp/client';
 import type { NormalizedMessage } from '../whatsapp/types';
 import { resolveProduct, type CatalogItem } from './resolve';
 import { priceGuardOk } from './guard';
+import { confirmBankOrder, confirmCodOrder, createDraftOrder, type DeliveryInfo } from './order-service';
 
 export interface OrchestratorCtx {
   merchantId: string;
@@ -52,6 +53,12 @@ function fallbackText(spec: ReplySpec): string {
     case 'not_found': return `Maazrat, "${spec.query}" abhi available nahi. Kuch aur dikhaoon?`;
     case 'out_of_stock': return `Maazrat, ${spec.productName} abhi stock mein nahi.`;
     case 'order_ack': return `Bohat khoob! ${spec.productName} Rs ${spec.priceRupees}. Ab order details leta hoon.`;
+    case 'ask_delivery': return 'Bohat khoob! Order ke liye apna poora naam, address aur area/shehar bhej dein.';
+    case 'ask_delivery_missing': return `Aapka ${spec.missing} bhi bata dein taake delivery ho sake.`;
+    case 'ask_payment_method': return `Aapke order ka total Rs ${spec.priceRupees} hai. Payment Cash on Delivery karenge ya bank transfer?`;
+    case 'bank_await': return 'Amount transfer kar ke payment ka screenshot yahan bhej dein, shukriya.';
+    case 'payment_received': return 'Screenshot mil gaya, verify kar ke abhi confirm karte hain.';
+    case 'payment_verified': return `Order ${spec.orderNumber} confirm ho gaya. Shukriya!`;
     case 'clarify': return 'Zara batayein kaunsa product chahiye?';
     case 'chitchat': return 'Ji bilkul! Batayein kaise madad karoon?';
     case 'handoff': return 'Aapko humari team se connect kar raha hoon, thodi dair mein reply aayega.';
@@ -162,6 +169,14 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
   }));
 
   const text = message.text ?? '';
+
+  // ── Phase-4 order-flow states are handled WITHOUT a classify call (fewer LLM calls) ──
+  const state = (convoRes.data?.current_state ?? 'greeting') as BotState;
+  if (state === 'collecting_delivery') return handleDelivery(db, ctx, cc, context, merchant.settings, message);
+  if (state === 'selecting_payment') return handlePayment(db, ctx, cc, context, message);
+  if (state === 'awaiting_payment_proof') return handlePaymentProof(db, ctx, cc, context, message);
+
+  // ── Shopping states: classify intent ──
   let cls;
   try {
     cls = await getLlmClient().classify(text, { productNames: catalog.map((c) => c.name) });
@@ -244,19 +259,23 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
 
   // Persist the round + map to a reply.
   let spec: ReplySpec;
-  let nextState: BotState = 'negotiating';
+  const nextState: BotState = 'negotiating';
   const negPatch: Record<string, unknown> = {
     floor_price: decision.audit.floor,
     last_customer_offer: customerOffer ?? neg?.last_customer_offer ?? null,
     quantity,
   };
 
+  // ACCEPT → lock the deal and start the order flow (ask for delivery). CD-15/16.
+  if (decision.action === 'ACCEPT') {
+    await saveNeg(db, neg?.id, { ...negPatch, status: 'agreed', agreed_price: decision.price, last_bot_offer: decision.price });
+    const dctx = { ...newContext, delivery: {} };
+    await reply(db, ctx, await safeCompose({ kind: 'accept', productName: product.name, priceRupees: rupees(decision.price!) }, cc), 'collecting_delivery', dctx, false);
+    await reply(db, ctx, await safeCompose({ kind: 'ask_delivery' }, cc), 'collecting_delivery', dctx);
+    return;
+  }
+
   switch (decision.action) {
-    case 'ACCEPT':
-      spec = { kind: 'accept', productName: product.name, priceRupees: rupees(decision.price!) };
-      Object.assign(negPatch, { status: 'agreed', agreed_price: decision.price, last_bot_offer: decision.price });
-      nextState = 'confirming';
-      break;
     case 'COUNTER':
       spec = { kind: 'counter', productName: product.name, priceRupees: rupees(decision.price!), final: decision.final };
       Object.assign(negPatch, { rounds: decision.audit.round, last_bot_offer: decision.price, final_offered: (neg?.final_offered ?? false) || !!decision.final });
@@ -271,6 +290,8 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
     case 'ASK':
       spec = { kind: 'clarify' };
       break;
+    default:
+      spec = { kind: 'clarify' };
   }
 
   await saveNeg(db, neg?.id, negPatch);
@@ -320,4 +341,119 @@ async function reply(
   if (updateState) {
     await db.from('conversations').update({ current_state: nextState, context }).eq('id', ctx.conversationId);
   }
+}
+
+// ── Phase-4 state handlers ────────────────────────────────────────────────────
+
+async function getDeliveryCharge(db: SupabaseClient, merchantId: string, area: string | null, settings: unknown): Promise<number> {
+  if (area) {
+    const z = await db.from('delivery_zones').select('charge').eq('merchant_id', merchantId).ilike('area_name', `%${area}%`).eq('is_serviceable', true).limit(1).maybeSingle();
+    if (z.data) return z.data.charge as number;
+  }
+  const s = (settings ?? {}) as { defaultDeliveryCharge?: number };
+  return typeof s.defaultDeliveryCharge === 'number' ? s.defaultDeliveryCharge : 0;
+}
+
+function bankDetailsText(bank: { bank_name: string; account_title: string; account_number: string; iban?: string | null }, totalRupees: number): string {
+  return (
+    `Payment ke liye humara account:\n` +
+    `🏦 ${bank.bank_name}\n` +
+    `👤 ${bank.account_title}\n` +
+    `#️⃣ ${bank.account_number}` +
+    (bank.iban ? `\nIBAN: ${bank.iban}` : '') +
+    `\n💰 Amount: Rs ${totalRupees}`
+  );
+}
+
+async function handleDelivery(db: SupabaseClient, ctx: OrchestratorCtx, cc: ComposeContext, context: Record<string, unknown>, settings: unknown, message: NormalizedMessage): Promise<void> {
+  let ex: DeliveryDetails = { name: null, address: null, area: null, city: null, phone: null };
+  try {
+    ex = await getLlmClient().extractDelivery(message.text ?? '');
+  } catch {
+    /* keep empty → will ask again */
+  }
+  const prev = (context.delivery ?? {}) as Partial<DeliveryInfo>;
+  const delivery: DeliveryInfo = {
+    name: ex.name ?? prev.name ?? null,
+    address: ex.address ?? prev.address ?? null,
+    area: ex.area ?? prev.area ?? null,
+    city: ex.city ?? prev.city ?? null,
+    phone: ex.phone ?? prev.phone ?? null,
+  };
+  const newCtx = { ...context, delivery };
+  const missing = !delivery.name ? 'naam' : !delivery.address ? 'poora address' : !delivery.area ? 'area/shehar' : null;
+  if (missing) {
+    await reply(db, ctx, await safeCompose({ kind: 'ask_delivery_missing', missing }, cc), 'collecting_delivery', newCtx);
+    return;
+  }
+  const charge = await getDeliveryCharge(db, ctx.merchantId, delivery.area, settings);
+  const order = await createDraftOrder(db, ctx, delivery, charge);
+  if (!order) {
+    await reply(db, ctx, await safeCompose({ kind: 'clarify' }, cc), 'browsing', newCtx);
+    return;
+  }
+  await reply(db, ctx, await safeCompose({ kind: 'ask_payment_method', priceRupees: rupees(order.total) }, cc), 'selecting_payment', { ...newCtx, pendingOrderId: order.orderId });
+}
+
+async function handlePayment(db: SupabaseClient, ctx: OrchestratorCtx, cc: ComposeContext, context: Record<string, unknown>, message: NormalizedMessage): Promise<void> {
+  const orderId = context.pendingOrderId as string | undefined;
+  if (!orderId) {
+    await reply(db, ctx, await safeCompose({ kind: 'clarify' }, cc), 'browsing', context);
+    return;
+  }
+  const txt = (message.text ?? '').toLowerCase();
+  const wantsCod = /\bcod\b|cash|delivery pe|delivery par/.test(txt);
+  const wantsBank = /bank|transfer|account|online/.test(txt);
+
+  if (wantsCod) {
+    const res = await confirmCodOrder(db, { merchantId: ctx.merchantId }, orderId, cc.businessName);
+    const done = { ...context, pendingOrderId: undefined };
+    if (res) {
+      await reply(db, ctx, res.slip, 'completed', done, false);
+      await reply(db, ctx, `Order confirm ho gaya ✅ COD par total Rs ${rupees(res.total)}. Jald deliver karenge, shukriya!`, 'completed', done);
+    } else {
+      await reply(db, ctx, await safeCompose({ kind: 'clarify' }, cc), 'browsing', done);
+    }
+    return;
+  }
+  if (wantsBank) {
+    const bank = await db.from('bank_accounts').select('*').eq('merchant_id', ctx.merchantId).eq('is_active', true).order('is_default', { ascending: false }).limit(1).maybeSingle();
+    if (!bank.data) {
+      await reply(db, ctx, 'Maazrat, abhi sirf Cash on Delivery available hai. COD karein?', 'selecting_payment', context);
+      return;
+    }
+    const res = await confirmBankOrder(db, { merchantId: ctx.merchantId }, orderId, bank.data.id);
+    if (!res) {
+      await reply(db, ctx, await safeCompose({ kind: 'clarify' }, cc), 'browsing', context);
+      return;
+    }
+    const bctx = { ...context, pendingOrderId: orderId, pendingPaymentId: res.paymentId, paymentMethod: 'bank_transfer' };
+    await reply(db, ctx, bankDetailsText(bank.data, rupees(res.total)), 'awaiting_payment_proof', bctx, false);
+    await reply(db, ctx, await safeCompose({ kind: 'bank_await' }, cc), 'awaiting_payment_proof', bctx);
+    return;
+  }
+  const o = await db.from('orders').select('total').eq('id', orderId).single();
+  await reply(db, ctx, await safeCompose({ kind: 'ask_payment_method', priceRupees: rupees(o.data?.total ?? 0) }, cc), 'selecting_payment', context);
+}
+
+async function handlePaymentProof(db: SupabaseClient, ctx: OrchestratorCtx, cc: ComposeContext, context: Record<string, unknown>, message: NormalizedMessage): Promise<void> {
+  const orderId = context.pendingOrderId as string | undefined;
+  if (message.type === 'image' && orderId) {
+    // Phase 4a: record the claim + notify merchant. (4b downloads/stores the image + merchant verify.)
+    const mediaId = (message.raw as { image?: { id?: string } })?.image?.id ?? null;
+    const payRes = await db.from('payments').select('id, amount').eq('order_id', orderId).maybeSingle();
+    const pid = (context.pendingPaymentId as string | undefined) ?? payRes.data?.id;
+    const amount = payRes.data?.amount ?? 0;
+    const ref = mediaId ? `media:${mediaId}` : null;
+    if (pid) {
+      await db.from('payment_claims').insert({ payment_id: pid, order_id: orderId, merchant_id: ctx.merchantId, screenshot_url: ref, amount, status: 'claimed' });
+      await db.from('payments').update({ status: 'claimed', claimed_at: new Date().toISOString(), screenshot_url: ref }).eq('id', pid);
+      await db.from('orders').update({ payment_status: 'claimed' }).eq('id', orderId);
+      await db.from('notifications').insert({ merchant_id: ctx.merchantId, type: 'payment_claim', title: 'Payment claim', body: 'Customer sent a payment screenshot — verify it.', data: { orderId, paymentId: pid }, channel: 'portal' });
+    }
+    await reply(db, ctx, await safeCompose({ kind: 'payment_received' }, cc), 'awaiting_payment_proof', context);
+    return;
+  }
+  // no image yet → ask for the screenshot
+  await reply(db, ctx, await safeCompose({ kind: 'bank_await' }, cc), 'awaiting_payment_proof', context);
 }

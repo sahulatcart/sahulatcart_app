@@ -6,6 +6,7 @@ import {
   type ClassifyContext,
   type Classification,
   type ComposeContext,
+  type DeliveryDetails,
   type LlmClient,
   LlmUnavailableError,
   type ReplySpec,
@@ -63,6 +64,17 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // Disable "thinking" for these short, latency-sensitive calls (else it burns tokens/truncates).
 const NO_THINKING = { thinkingConfig: { thinkingBudget: 0 } };
 
+const DELIVERY_SCHEMA = {
+  type: 'object',
+  properties: {
+    name: { type: 'string', nullable: true },
+    address: { type: 'string', nullable: true },
+    area: { type: 'string', nullable: true },
+    city: { type: 'string', nullable: true },
+    phone: { type: 'string', nullable: true },
+  },
+};
+
 const CLASSIFY_SCHEMA = {
   type: 'object',
   properties: {
@@ -106,6 +118,24 @@ export class GeminiClient implements LlmClient {
       offerPaisa: offerRupees != null && offerRupees > 0 ? Math.round(offerRupees) * 100 : null,
       language: (['roman_urdu', 'english', 'urdu'].includes(parsed.language as string) ? parsed.language : 'roman_urdu') as Lang,
     };
+  }
+
+  async extractDelivery(text: string): Promise<DeliveryDetails> {
+    const empty: DeliveryDetails = { name: null, address: null, area: null, city: null, phone: null };
+    try {
+      const raw = await callGemini({
+        contents: [{ parts: [{ text:
+          `Extract delivery details from this Pakistani customer's WhatsApp message. ` +
+          `Return name (person's name), address (house/street), area (locality/mohalla), city, phone if present, else null. ` +
+          `Message: "${text.replace(/"/g, "'")}"` }] }],
+        generationConfig: { temperature: 0, maxOutputTokens: 200, responseMimeType: 'application/json', responseSchema: DELIVERY_SCHEMA, ...NO_THINKING },
+      });
+      const p = JSON.parse(raw) as Record<string, unknown>;
+      const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+      return { name: str(p.name), address: str(p.address), area: str(p.area), city: str(p.city), phone: str(p.phone) };
+    } catch {
+      return empty;
+    }
   }
 
   async compose(spec: ReplySpec, ctx: ComposeContext): Promise<string> {

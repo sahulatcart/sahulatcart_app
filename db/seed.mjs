@@ -82,6 +82,27 @@ async function main() {
     console.log('product:', p.name, '(Rs', p.price / 100 + ')');
   }
 
+  // Bank account (merchant's own, shown to buyers on bank transfer)
+  const existingBank = await db.from('bank_accounts').select('id').eq('merchant_id', merchantId).limit(1).maybeSingle();
+  if (!existingBank.data) {
+    const b = await db.from('bank_accounts').insert({
+      merchant_id: merchantId, bank_name: 'Meezan Bank', account_title: 'Test Shop',
+      account_number: '01234567890123', iban: 'PK00MEZN0001234567890123', is_default: true, is_active: true,
+    });
+    if (b.error) throw b.error;
+    console.log('bank_account: Meezan Bank (default)');
+  } else console.log('bank_account: already present');
+
+  // Delivery zone
+  const existingZone = await db.from('delivery_zones').select('id').eq('merchant_id', merchantId).limit(1).maybeSingle();
+  if (!existingZone.data) {
+    const z = await db.from('delivery_zones').insert({
+      merchant_id: merchantId, area_name: 'Lahore', city: 'Lahore', charge: 20000, is_serviceable: true, eta_text: '2-3 din',
+    });
+    if (z.error) throw z.error;
+    console.log('delivery_zone: Lahore (Rs 200)');
+  } else console.log('delivery_zone: already present');
+
   console.log('\nseed complete');
 }
 

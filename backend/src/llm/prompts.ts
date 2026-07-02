@@ -38,6 +38,24 @@ export function replySpecToPrompt(spec: ReplySpec, ctx: ComposeContext): string 
     case 'order_ack':
       s = `The customer wants to order "${spec.productName}" at Rs ${spec.priceRupees}. Warmly acknowledge and say you'll take their order details shortly. Name this exact figure.`;
       break;
+    case 'ask_delivery':
+      s = `The deal is done. Warmly ask the customer for their delivery details: full name, complete address, and area/city. Keep it to one friendly line.`;
+      break;
+    case 'ask_delivery_missing':
+      s = `You still need the customer's ${spec.missing} to deliver. Politely ask them for just that.`;
+      break;
+    case 'ask_payment_method':
+      s = `The order total is exactly Rs ${spec.priceRupees}. Tell them the total (this exact figure) and ask how they'd like to pay: Cash on Delivery ya bank transfer?`;
+      break;
+    case 'bank_await':
+      s = `You've just shared the bank account details. Ask the customer to transfer the amount and send a screenshot of the payment here. One friendly line.`;
+      break;
+    case 'payment_received':
+      s = `The customer sent a payment screenshot. Thank them and say you're verifying it and will confirm shortly. One line.`;
+      break;
+    case 'payment_verified':
+      s = `Payment for order ${spec.orderNumber} is verified. Warmly confirm the order is placed and thank them.`;
+      break;
     case 'clarify':
       s = `You didn't fully understand. Politely ask them to clarify which product or what they need.`;
       break;
