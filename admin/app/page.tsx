@@ -1,13 +1,48 @@
-const PRODUCT_NAME = process.env.PRODUCT_NAME ?? 'Sahulatkaar';
+'use client';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import AppShell from '../components/AppShell';
+import { apiJson, rs } from '../lib/api';
 
-export default function Home() {
+interface Dash {
+  ordersToday: number;
+  revenueToday: number;
+  pendingPayments: number;
+  activeChats: number;
+  recentOrders: { id: string; order_number: string; status: string; payment_status: string; total: number; delivery_name: string }[];
+}
+
+export default function Dashboard() {
+  const [d, setD] = useState<Dash | null>(null);
+  useEffect(() => {
+    apiJson<Dash>('/api/v1/admin/dashboard').then(setD).catch(() => {});
+  }, []);
+
   return (
-    <main style={{ padding: 48, maxWidth: 720, margin: '0 auto' }}>
-      <h1>{PRODUCT_NAME} — Admin Portal</h1>
-      <p style={{ color: '#666' }}>
-        Phase 0 skeleton. Merchant onboarding, catalog, orders, inbox, and settings land in Phase 5.
-      </p>
-      <p style={{ color: '#999', fontSize: 13 }}>Brand name is configuration (PRODUCT_NAME) — not final.</p>
-    </main>
+    <AppShell>
+      <h1>Dashboard</h1>
+      <div className="cards">
+        <div className="card"><div className="k">Today&apos;s Orders</div><div className="v">{d?.ordersToday ?? '—'}</div></div>
+        <div className="card"><div className="k">Today&apos;s Revenue</div><div className="v">{d ? rs(d.revenueToday) : '—'}</div></div>
+        <div className="card"><div className="k">Pending Payments</div><div className="v" style={{ color: d?.pendingPayments ? 'var(--danger)' : undefined }}>{d?.pendingPayments ?? '—'}</div></div>
+        <div className="card"><div className="k">Active Chats</div><div className="v">{d?.activeChats ?? '—'}</div></div>
+      </div>
+      <h2>Recent Orders</h2>
+      <table>
+        <thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Status</th><th>Payment</th></tr></thead>
+        <tbody>
+          {(d?.recentOrders ?? []).map((o) => (
+            <tr key={o.id}>
+              <td><Link href={`/orders/${o.id}`}>{o.order_number}</Link></td>
+              <td>{o.delivery_name || '—'}</td>
+              <td>{rs(o.total)}</td>
+              <td><span className="badge info">{o.status}</span></td>
+              <td><span className={`badge ${o.payment_status === 'claimed' ? 'pending' : 'ok'}`}>{o.payment_status}</span></td>
+            </tr>
+          ))}
+          {d && d.recentOrders.length === 0 && <tr><td colSpan={5} style={{ color: 'var(--muted)' }}>No orders yet.</td></tr>}
+        </tbody>
+      </table>
+    </AppShell>
   );
 }

@@ -1,6 +1,7 @@
+import './globals.css';
 import type { ReactNode } from 'react';
 
-const PRODUCT_NAME = process.env.PRODUCT_NAME ?? 'Sahulatkaar';
+const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Sahulatkaar';
 
 export const metadata = {
   title: `${PRODUCT_NAME} — Admin`,
@@ -10,7 +11,7 @@ export const metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body style={{ fontFamily: 'system-ui, sans-serif', margin: 0 }}>{children}</body>
+      <body>{children}</body>
     </html>
   );
 }

@@ -1,0 +1,32 @@
+:root { --bg:#f6f7f9; --card:#fff; --line:#e5e7eb; --ink:#111827; --muted:#6b7280; --brand:#0f766e; --brand2:#0d9488; --danger:#dc2626; --ok:#16a34a; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--ink); font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+a { color: var(--brand); text-decoration: none; }
+.nav { display:flex; align-items:center; gap:20px; background:var(--card); border-bottom:1px solid var(--line); padding:12px 24px; position:sticky; top:0; z-index:10; }
+.nav .brand { font-weight:700; color:var(--brand); font-size:18px; }
+.nav a { color:var(--ink); font-weight:500; }
+.nav a.active { color:var(--brand); }
+.nav .spacer { flex:1; }
+.wrap { max-width: 1000px; margin: 24px auto; padding: 0 24px; }
+.cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap:16px; margin-bottom:24px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
+.card .k { color:var(--muted); font-size:13px; }
+.card .v { font-size:26px; font-weight:700; margin-top:6px; }
+table { width:100%; border-collapse: collapse; background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+th, td { text-align:left; padding:10px 14px; border-bottom:1px solid var(--line); font-size:14px; }
+th { background:#fafafa; color:var(--muted); font-weight:600; }
+tr:last-child td { border-bottom:none; }
+.badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; }
+.badge.pending { background:#fef3c7; color:#92400e; }
+.badge.ok { background:#dcfce7; color:#166534; }
+.badge.info { background:#e0f2fe; color:#075985; }
+.btn { background:var(--brand); color:#fff; border:none; padding:8px 14px; border-radius:8px; font-weight:600; cursor:pointer; font-size:14px; }
+.btn.sec { background:#fff; color:var(--ink); border:1px solid var(--line); }
+.btn.danger { background:var(--danger); }
+.btn:disabled { opacity:.5; cursor:default; }
+input, select, textarea { padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:14px; font-family:inherit; }
+label { font-size:13px; color:var(--muted); display:block; margin-bottom:4px; }
+h1 { font-size:22px; } h2 { font-size:17px; }
+.row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+.section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; margin-bottom:20px; }
+.toggle { display:inline-flex; align-items:center; gap:8px; }

@@ -14,6 +14,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
     "@app/shared": "*",
+    "@fastify/cors": "^9.0.1",
     "@fastify/helmet": "^11.1.1",
     "@supabase/supabase-js": "^2.45.4",
     "fastify": "^4.28.1",

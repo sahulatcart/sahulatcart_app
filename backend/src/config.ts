@@ -37,6 +37,7 @@ const schema = z.object({
   SERVICE_HMAC_SECRET: z.string().optional(),
   // Temporary pilot merchant-action auth (until the Phase-5 portal + JWT). Gates verify/reject.
   ADMIN_API_TOKEN: z.string().optional(),
+  ADMIN_ORIGIN: z.string().optional(), // admin portal origin for CORS (all origins if unset)
 
   // Storage buckets
   STORAGE_BUCKET_PRODUCT_IMAGES: z.string().default('product-images'),
