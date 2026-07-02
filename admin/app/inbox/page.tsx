@@ -16,13 +16,14 @@ export default function Inbox() {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
+  const msgRef = useRef<HTMLDivElement>(null);
 
   const loadConvos = useCallback(() => { apiJson<{ conversations: Convo[] }>('/api/v1/admin/conversations').then((r) => setConvos(r.conversations)).catch(() => {}); }, []);
   const loadDetail = useCallback((id: string) => { apiJson<Detail>(`/api/v1/admin/conversations/${id}`).then(setDetail).catch(() => {}); }, []);
   useEffect(() => { loadConvos(); const t = setInterval(loadConvos, 5000); return () => clearInterval(t); }, [loadConvos]);
   useEffect(() => { if (!sel) return; loadDetail(sel); const t = setInterval(() => loadDetail(sel), 4000); return () => clearInterval(t); }, [sel, loadDetail]);
-  useEffect(() => { endRef.current?.scrollIntoView(); }, [detail?.messages.length]);
+  // Scroll the messages container itself (NOT scrollIntoView, which would scroll the whole page).
+  useEffect(() => { if (msgRef.current) msgRef.current.scrollTop = msgRef.current.scrollHeight; }, [detail?.messages.length, sel]);
 
   async function act(path: string, body?: object) {
     if (!sel) return;
@@ -36,9 +37,9 @@ export default function Inbox() {
   return (
     <AppShell>
       <PageHead title="Inbox" sub="Take over any chat — the bot pauses while you reply" />
-      <div className="card" style={{ display: 'grid', gridTemplateColumns: '290px 1fr', height: '68vh', overflow: 'hidden' }}>
+      <div className="card" style={{ display: 'grid', gridTemplateColumns: '290px 1fr', height: '70vh', overflow: 'hidden' }}>
         {/* conversation list */}
-        <div style={{ borderRight: '1px solid var(--border)', overflowY: 'auto' }}>
+        <div style={{ borderRight: '1px solid var(--border)', overflowY: 'auto', minHeight: 0 }}>
           {convos.map((c) => {
             const nm = c.customers?.name || c.customers?.wa_id || '?';
             return (
@@ -55,7 +56,7 @@ export default function Inbox() {
         </div>
 
         {/* chat pane */}
-        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
           {!detail ? (
             <div className="empty" style={{ margin: 'auto' }}><MessagesSquare /><div>Select a conversation</div></div>
           ) : (
@@ -66,7 +67,7 @@ export default function Inbox() {
                   ? <button className="btn ghost sm" onClick={() => act('release')} disabled={busy}><Undo2 /> Hand back to bot</button>
                   : <button className="btn sm" onClick={() => act('takeover')} disabled={busy}>Take over</button>}
               </div>
-              <div style={{ flex: 1, overflowY: 'auto', padding: 18, display: 'flex', flexDirection: 'column', gap: 8, background: '#fbfcfe' }}>
+              <div ref={msgRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 18, display: 'flex', flexDirection: 'column', gap: 8, background: '#fbfcfe' }}>
                 {detail.messages.map((m, i) => {
                   const inbound = m.direction === 'inbound';
                   const agent = m.sender === 'agent';
@@ -77,7 +78,6 @@ export default function Inbox() {
                     </div>
                   );
                 })}
-                <div ref={endRef} />
               </div>
               <div className="row" style={{ padding: 12, borderTop: '1px solid var(--border)', gap: 8 }}>
                 <input style={{ flex: 1 }} placeholder={takenOver ? 'Type a reply…' : 'Take over to reply as a human'} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} disabled={!takenOver} />
