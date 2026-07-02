@@ -22,7 +22,7 @@ interface GeminiResp {
 
 async function callGemini(
   body: unknown,
-  { retries = 2 }: { retries?: number } = {}
+  { retries = 4 }: { retries?: number } = {}
 ): Promise<string> {
   const cfg = loadConfig();
   if (!cfg.GEMINI_API_KEY) throw new LlmUnavailableError('GEMINI_API_KEY not set');
@@ -38,7 +38,14 @@ async function callGemini(
       });
       if (res.status === 429 || res.status >= 500) {
         lastErr = `HTTP ${res.status}`;
-        await sleep(300 * (attempt + 1));
+        // Honor Google's suggested RetryInfo delay on 429 (free-tier per-minute limits).
+        let waitMs = 500 * (attempt + 1);
+        if (res.status === 429) {
+          const j = (await res.json().catch(() => null)) as { error?: { details?: { '@type'?: string; retryDelay?: string }[] } } | null;
+          const rd = j?.error?.details?.find((d) => (d['@type'] ?? '').includes('RetryInfo'))?.retryDelay;
+          if (rd) waitMs = Math.min(parseFloat(rd) * 1000 + 500, 20000);
+        }
+        await sleep(waitMs);
         continue;
       }
       const json = (await res.json()) as GeminiResp;
