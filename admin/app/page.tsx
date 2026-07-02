@@ -1,14 +1,12 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import AppShell from '../components/AppShell';
+import { ArrowRight, MessageSquare, ShoppingBag, Wallet, Clock } from 'lucide-react';
+import AppShell, { PageHead, PaymentPill } from '../components/AppShell';
 import { apiJson, rs } from '../lib/api';
 
 interface Dash {
-  ordersToday: number;
-  revenueToday: number;
-  pendingPayments: number;
-  activeChats: number;
+  ordersToday: number; revenueToday: number; pendingPayments: number; activeChats: number;
   recentOrders: { id: string; order_number: string; status: string; payment_status: string; total: number; delivery_name: string }[];
 }
 
@@ -18,43 +16,49 @@ export default function Dashboard() {
   useEffect(() => {
     apiJson<Dash>('/api/v1/admin/dashboard').then(setD).catch(() => {});
     apiJson<{ merchant: { settings?: { onboardingCompletedAt?: string | null } } }>('/api/v1/admin/me')
-      .then((r) => setNeedsSetup(!r.merchant?.settings?.onboardingCompletedAt))
-      .catch(() => {});
+      .then((r) => setNeedsSetup(!r.merchant?.settings?.onboardingCompletedAt)).catch(() => {});
   }, []);
 
   return (
     <AppShell>
-      <h1>Dashboard</h1>
+      <PageHead title="Dashboard" sub="Your shop at a glance" />
+
       {needsSetup && (
-        <div className="section" style={{ background: '#f0fdfa', borderColor: '#0d9488' }}>
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <span>👋 Finish setting up your shop — business info, negotiation rules, bank account, and go live.</span>
-            <Link href="/onboarding" className="btn">Complete setup</Link>
+        <div className="card pad" style={{ marginBottom: 16, background: 'linear-gradient(100deg, var(--brand-tint), var(--surface))', borderColor: 'var(--brand-tint-2)' }}>
+          <div className="row between">
+            <div><strong>👋 Finish setting up your shop</strong><div className="hint">Business info, negotiation rules, bank account — then go live.</div></div>
+            <Link href="/onboarding" className="btn">Complete setup <ArrowRight /></Link>
           </div>
         </div>
       )}
-      <div className="cards">
-        <div className="card"><div className="k">Today&apos;s Orders</div><div className="v">{d?.ordersToday ?? '—'}</div></div>
-        <div className="card"><div className="k">Today&apos;s Revenue</div><div className="v">{d ? rs(d.revenueToday) : '—'}</div></div>
-        <div className="card"><div className="k">Pending Payments</div><div className="v" style={{ color: d?.pendingPayments ? 'var(--danger)' : undefined }}>{d?.pendingPayments ?? '—'}</div></div>
-        <div className="card"><div className="k">Active Chats</div><div className="v">{d?.activeChats ?? '—'}</div></div>
+
+      <div className="stats">
+        <div className="stat"><div className="ico"><ShoppingBag /></div><div className="k">Today&apos;s orders</div><div className="v">{d?.ordersToday ?? '—'}</div></div>
+        <div className="stat"><div className="ico"><Wallet /></div><div className="k">Today&apos;s revenue</div><div className="v">{d ? rs(d.revenueToday) : '—'}</div></div>
+        <div className={`stat ${d?.pendingPayments ? 'warn' : ''}`}><div className="ico"><Clock /></div><div className="k">Pending payments</div><div className="v">{d?.pendingPayments ?? '—'}</div></div>
+        <div className="stat"><div className="ico"><MessageSquare /></div><div className="k">Active chats</div><div className="v">{d?.activeChats ?? '—'}</div></div>
       </div>
-      <h2>Recent Orders</h2>
-      <table>
-        <thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Status</th><th>Payment</th></tr></thead>
-        <tbody>
-          {(d?.recentOrders ?? []).map((o) => (
-            <tr key={o.id}>
-              <td><Link href={`/orders/${o.id}`}>{o.order_number}</Link></td>
-              <td>{o.delivery_name || '—'}</td>
-              <td>{rs(o.total)}</td>
-              <td><span className="badge info">{o.status}</span></td>
-              <td><span className={`badge ${o.payment_status === 'claimed' ? 'pending' : 'ok'}`}>{o.payment_status}</span></td>
-            </tr>
-          ))}
-          {d && d.recentOrders.length === 0 && <tr><td colSpan={5} style={{ color: 'var(--muted)' }}>No orders yet.</td></tr>}
-        </tbody>
-      </table>
+
+      <div className="card" style={{ marginTop: 22 }}>
+        <div className="card-head"><h2 style={{ margin: 0 }}>Recent orders</h2><Link href="/orders" className="hint">View all →</Link></div>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Status</th><th>Payment</th></tr></thead>
+            <tbody>
+              {(d?.recentOrders ?? []).map((o) => (
+                <tr key={o.id}>
+                  <td><Link href={`/orders/${o.id}`} className="strong" style={{ color: 'var(--brand-ink)' }}>{o.order_number}</Link></td>
+                  <td>{o.delivery_name || '—'}</td>
+                  <td className="strong">{rs(o.total)}</td>
+                  <td><span className="pill neutral">{o.status}</span></td>
+                  <td><PaymentPill status={o.payment_status} /></td>
+                </tr>
+              ))}
+              {d && d.recentOrders.length === 0 && <tr><td colSpan={5} className="empty">No orders yet — share your WhatsApp number to get started.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </AppShell>
   );
 }

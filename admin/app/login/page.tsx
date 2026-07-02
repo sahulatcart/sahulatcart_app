@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { ArrowRight, Loader2 } from 'lucide-react';
 import { login } from '../../lib/api';
 
 const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Sahulatkaar';
@@ -13,8 +14,7 @@ export default function LoginPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setBusy(true);
-    setErr('');
+    setBusy(true); setErr('');
     const ok = await login(pw).catch(() => false);
     setBusy(false);
     if (ok) router.replace('/');
@@ -22,16 +22,23 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{ maxWidth: 360, margin: '10vh auto', padding: 24 }}>
-      <div className="section">
-        <h1 style={{ color: 'var(--brand)', marginTop: 0 }}>{PRODUCT_NAME}</h1>
-        <p style={{ color: 'var(--muted)', marginTop: -8 }}>Merchant Admin</p>
+    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 20, background: 'radial-gradient(1200px 500px at 50% -10%, var(--brand-tint), var(--bg))' }}>
+      <div className="card pad" style={{ width: 380, boxShadow: 'var(--shadow-lg)' }}>
+        <div className="row" style={{ marginBottom: 18 }}>
+          <span className="mark" style={{ width: 38, height: 38, borderRadius: 11, display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, var(--brand), var(--brand-strong))', color: '#fff', fontWeight: 800, fontSize: 18 }}>{PRODUCT_NAME.charAt(0)}</span>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 17, letterSpacing: '-.02em' }}>{PRODUCT_NAME}</div>
+            <div className="hint">Merchant Admin</div>
+          </div>
+        </div>
         <form onSubmit={submit}>
-          <label>Password</label>
-          <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} style={{ width: '100%' }} autoFocus />
-          {err && <p style={{ color: 'var(--danger)', fontSize: 13 }}>{err}</p>}
-          <button className="btn" style={{ width: '100%', marginTop: 14 }} disabled={busy}>
-            {busy ? '...' : 'Login'}
+          <div className="field">
+            <label>Password</label>
+            <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoFocus placeholder="••••••••••" />
+          </div>
+          {err && <div className="pill danger" style={{ marginBottom: 12 }}>{err}</div>}
+          <button className="btn block" disabled={busy}>
+            {busy ? <Loader2 className="spin" /> : <>Log in <ArrowRight /></>}
           </button>
         </form>
       </div>

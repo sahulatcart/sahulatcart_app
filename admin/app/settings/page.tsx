@@ -1,89 +1,84 @@
 'use client';
 import { useEffect, useState } from 'react';
-import AppShell from '../../components/AppShell';
+import { Plus, Trash2 } from 'lucide-react';
+import AppShell, { PageHead } from '../../components/AppShell';
 import { api, apiJson } from '../../lib/api';
+import { useToast } from '../../components/Toast';
 
 interface Settings {
   business_name: string;
-  negotiation_defaults: { maxDiscountPct?: number; roundsMax?: number; autoAcceptAtFloor?: boolean };
-  settings: { botEnabled?: boolean; codEnabled?: boolean; defaultDeliveryCharge?: number };
+  negotiation_defaults: { maxDiscountPct?: number; roundsMax?: number };
+  settings: { botEnabled?: boolean; defaultDeliveryCharge?: number };
   bankAccounts: { id: string; bank_name: string; account_title: string; account_number: string; is_default: boolean }[];
 }
 
 export default function SettingsPage() {
+  const toast = useToast();
   const [s, setS] = useState<Settings | null>(null);
-  const [msg, setMsg] = useState('');
   const [bank, setBank] = useState({ bank_name: '', account_title: '', account_number: '' });
-
   const load = () => apiJson<Settings>('/api/v1/admin/settings').then(setS).catch(() => {});
   useEffect(() => { load(); }, []);
 
   async function saveNeg() {
     if (!s) return;
     await api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify({ negotiationDefaults: s.negotiation_defaults, settings: { defaultDeliveryCharge: s.settings.defaultDeliveryCharge } }) });
-    flash('Saved');
+    toast('Saved', 'success');
   }
   async function toggleBot(on: boolean) {
     if (!s) return;
     setS({ ...s, settings: { ...s.settings, botEnabled: on } });
     await api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify({ settings: { botEnabled: on } }) });
-    flash(on ? 'Bot ON' : 'Bot paused');
+    toast(on ? 'Bot is now active' : 'Bot paused', on ? 'success' : 'info');
   }
   async function addBank() {
     if (!bank.bank_name || !bank.account_number) return;
     await api('/api/v1/admin/bank-accounts', { method: 'POST', body: JSON.stringify({ ...bank, is_default: (s?.bankAccounts.length ?? 0) === 0 }) });
-    setBank({ bank_name: '', account_title: '', account_number: '' });
-    load();
+    setBank({ bank_name: '', account_title: '', account_number: '' }); toast('Bank account added', 'success'); load();
   }
-  async function delBank(id: string) {
-    await api(`/api/v1/admin/bank-accounts/${id}`, { method: 'DELETE' });
-    load();
-  }
-  const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 1500); };
+  async function delBank(id: string) { await api(`/api/v1/admin/bank-accounts/${id}`, { method: 'DELETE' }); load(); }
 
-  if (!s) return <AppShell><p>Loading…</p></AppShell>;
+  if (!s) return <AppShell><PageHead title="Settings" /><div className="card pad"><div className="skeleton" style={{ height: 60 }} /></div></AppShell>;
   const nd = s.negotiation_defaults;
 
   return (
     <AppShell>
-      <div className="row" style={{ justifyContent: 'space-between' }}>
-        <h1>Settings</h1>
-        {msg && <span className="badge ok">{msg}</span>}
-      </div>
+      <PageHead title="Settings" sub="Configure your bot, negotiation, and payments" />
 
-      <div className="section">
-        <h2>Bot</h2>
-        <label className="toggle">
-          <input type="checkbox" checked={s.settings.botEnabled !== false} onChange={(e) => toggleBot(e.target.checked)} />
-          <span>Bot is {s.settings.botEnabled !== false ? 'active — replying to customers' : 'paused'}</span>
-        </label>
-      </div>
-
-      <div className="section">
-        <h2>Negotiation</h2>
-        <div className="row">
-          <div><label>Max discount %</label><input type="number" value={nd.maxDiscountPct ?? 0} onChange={(e) => setS({ ...s, negotiation_defaults: { ...nd, maxDiscountPct: Number(e.target.value) } })} style={{ width: 90 }} /></div>
-          <div><label>Haggle rounds</label><input type="number" value={nd.roundsMax ?? 3} onChange={(e) => setS({ ...s, negotiation_defaults: { ...nd, roundsMax: Number(e.target.value) } })} style={{ width: 90 }} /></div>
-          <div><label>Default delivery (Rs)</label><input type="number" value={Math.round((s.settings.defaultDeliveryCharge ?? 0) / 100)} onChange={(e) => setS({ ...s, settings: { ...s.settings, defaultDeliveryCharge: Math.round(Number(e.target.value)) * 100 } })} style={{ width: 110 }} /></div>
+      <div className="card pad">
+        <div className="row between">
+          <div><h2 style={{ margin: 0 }}>Bot</h2><div className="hint">{s.settings.botEnabled !== false ? 'Active — replying to customers on WhatsApp' : 'Paused — customers get no automated replies'}</div></div>
+          <label className="switch"><input type="checkbox" checked={s.settings.botEnabled !== false} onChange={(e) => toggleBot(e.target.checked)} /><span className="track" /></label>
         </div>
-        <button className="btn" style={{ marginTop: 14 }} onClick={saveNeg}>Save</button>
       </div>
 
-      <div className="section">
-        <h2>Bank accounts</h2>
-        <table>
-          <thead><tr><th>Bank</th><th>Title</th><th>Number</th><th></th></tr></thead>
-          <tbody>
-            {s.bankAccounts.map((b) => (
-              <tr key={b.id}><td>{b.bank_name}{b.is_default ? ' ⭐' : ''}</td><td>{b.account_title}</td><td>{b.account_number}</td><td><button className="btn danger" onClick={() => delBank(b.id)}>Delete</button></td></tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="row" style={{ marginTop: 14 }}>
-          <input placeholder="Bank name" value={bank.bank_name} onChange={(e) => setBank({ ...bank, bank_name: e.target.value })} />
-          <input placeholder="Account title" value={bank.account_title} onChange={(e) => setBank({ ...bank, account_title: e.target.value })} />
-          <input placeholder="Account number" value={bank.account_number} onChange={(e) => setBank({ ...bank, account_number: e.target.value })} />
-          <button className="btn" onClick={addBank}>Add</button>
+      <div className="card pad">
+        <h2>Negotiation</h2>
+        <div className="row" style={{ alignItems: 'flex-end' }}>
+          <div className="field" style={{ margin: 0 }}><label>Max discount %</label><input type="number" value={nd.maxDiscountPct ?? 0} onChange={(e) => setS({ ...s, negotiation_defaults: { ...nd, maxDiscountPct: Number(e.target.value) } })} className="mini" /></div>
+          <div className="field" style={{ margin: 0 }}><label>Haggle rounds</label><input type="number" value={nd.roundsMax ?? 3} onChange={(e) => setS({ ...s, negotiation_defaults: { ...nd, roundsMax: Number(e.target.value) } })} className="mini" /></div>
+          <div className="field" style={{ margin: 0 }}><label>Default delivery (Rs)</label><input type="number" value={Math.round((s.settings.defaultDeliveryCharge ?? 0) / 100)} onChange={(e) => setS({ ...s, settings: { ...s.settings, defaultDeliveryCharge: Math.round(Number(e.target.value)) * 100 } })} className="mini" style={{ width: 110 }} /></div>
+          <button className="btn" onClick={saveNeg}>Save</button>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-head"><h2 style={{ margin: 0 }}>Bank accounts</h2></div>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Bank</th><th>Title</th><th>Number</th><th></th></tr></thead>
+            <tbody>
+              {s.bankAccounts.map((b) => (
+                <tr key={b.id}><td className="strong">{b.bank_name} {b.is_default && <span className="pill brand">default</span>}</td><td>{b.account_title}</td><td>{b.account_number}</td><td><button className="btn ghost sm" onClick={() => delBank(b.id)}><Trash2 size={14} /></button></td></tr>
+              ))}
+              {s.bankAccounts.length === 0 && <tr><td colSpan={4} className="empty">No bank accounts — add one for bank-transfer orders.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <div className="row" style={{ padding: 16, borderTop: '1px solid var(--border)' }}>
+          <input placeholder="Bank name" value={bank.bank_name} onChange={(e) => setBank({ ...bank, bank_name: e.target.value })} style={{ maxWidth: 180 }} />
+          <input placeholder="Account title" value={bank.account_title} onChange={(e) => setBank({ ...bank, account_title: e.target.value })} style={{ maxWidth: 180 }} />
+          <input placeholder="Account number" value={bank.account_number} onChange={(e) => setBank({ ...bank, account_number: e.target.value })} style={{ maxWidth: 200 }} />
+          <button className="btn" onClick={addBank}><Plus /> Add</button>
         </div>
       </div>
     </AppShell>
