@@ -4,6 +4,7 @@ import { loadConfig } from '../config';
 import { getServiceClient } from '../lib/supabase';
 import { markCodCollected, rejectPayment, verifyPayment } from '../orchestrator/payment-service';
 import { signedScreenshotUrl } from '../whatsapp/media';
+import { sendText } from '../whatsapp/client';
 
 /**
  * Merchant admin API for the Phase-5 portal. Pilot: single merchant, gated by a
@@ -134,6 +135,97 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     if (!requireAdmin(req, reply)) return;
     const r = await markCodCollected(db, (req.params as { id: string }).id);
     return reply.code(r.ok ? 200 : 400).send(r);
+  });
+
+  // ── Inbox / Conversations ──
+  app.get('/api/v1/admin/conversations', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const mid = await merchantId(db);
+    const { data } = await db
+      .from('conversations')
+      .select('id, status, current_state, last_message_at, unread_count, customers(name, wa_id)')
+      .eq('merchant_id', mid)
+      .neq('status', 'closed')
+      .order('last_message_at', { ascending: false, nullsFirst: false })
+      .limit(50);
+    return reply.send({ conversations: data ?? [] });
+  });
+
+  app.get('/api/v1/admin/conversations/:id', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const { id } = req.params as { id: string };
+    const convo = await db.from('conversations').select('id, status, current_state, customers(name, wa_id)').eq('id', id).maybeSingle();
+    if (!convo.data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'conversation not found' } });
+    const messages = await db.from('messages').select('direction, sender, type, body, status, created_at').eq('conversation_id', id).order('created_at', { ascending: true }).limit(200);
+    await db.from('conversations').update({ unread_count: 0 }).eq('id', id); // opening = read
+    return reply.send({ conversation: convo.data, messages: messages.data ?? [] });
+  });
+
+  app.post('/api/v1/admin/conversations/:id/takeover', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const { id } = req.params as { id: string };
+    const c = await db.from('conversations').select('current_state, context').eq('id', id).single();
+    const context = (c.data?.context ?? {}) as Record<string, unknown>;
+    if (c.data?.current_state !== 'handoff') context.resume_state = c.data?.current_state;
+    await db.from('conversations').update({ status: 'human_takeover', current_state: 'handoff', context }).eq('id', id);
+    return reply.send({ ok: true });
+  });
+
+  app.post('/api/v1/admin/conversations/:id/release', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const { id } = req.params as { id: string };
+    const c = await db.from('conversations').select('context').eq('id', id).single();
+    const context = (c.data?.context ?? {}) as Record<string, unknown>;
+    const resume = (context.resume_state as string) ?? 'greeting';
+    delete context.resume_state;
+    await db.from('conversations').update({ status: 'bot_active', current_state: resume, context }).eq('id', id);
+    return reply.send({ ok: true });
+  });
+
+  app.post('/api/v1/admin/conversations/:id/send', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const { id } = req.params as { id: string };
+    const text = (req.body as { text?: string })?.text?.trim();
+    if (!text) return reply.code(400).send({ error: { code: 'BAD', message: 'text required' } });
+    const mid = await merchantId(db);
+    const convo = await db.from('conversations').select('whatsapp_number_id, customers(wa_id)').eq('id', id).single();
+    const waId = (convo.data?.customers as { wa_id?: string } | null)?.wa_id;
+    const num = convo.data?.whatsapp_number_id
+      ? await db.from('whatsapp_numbers').select('phone_number_id').eq('id', convo.data.whatsapp_number_id).single()
+      : { data: null };
+    const phoneNumberId = num.data?.phone_number_id ?? (await db.from('whatsapp_numbers').select('phone_number_id').eq('merchant_id', mid).limit(1).maybeSingle()).data?.phone_number_id;
+    if (!waId || !phoneNumberId) return reply.code(400).send({ error: { code: 'NO_CHANNEL', message: 'cannot reach customer' } });
+    const sent = await sendText(phoneNumberId, waId, text);
+    await db.from('messages').insert({ conversation_id: id, merchant_id: mid, direction: 'outbound', sender: 'agent', type: 'text', body: text, wa_message_id: sent.waMessageId, status: sent.waMessageId ? 'sent' : 'queued' });
+    await db.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', id);
+    return reply.send({ ok: true, delivered: !!sent.waMessageId });
+  });
+
+  // ── Analytics ──
+  app.get('/api/v1/admin/analytics', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const mid = await merchantId(db);
+    const [placed, negotiations] = await Promise.all([
+      db.from('orders').select('status, payment_method, payment_status, total, discount_total, subtotal, created_at').eq('merchant_id', mid).not('order_number', 'is', null),
+      db.from('negotiations').select('status, list_price, agreed_price').eq('merchant_id', mid),
+    ]);
+    const orders = placed.data ?? [];
+    const negs = negotiations.data ?? [];
+    const collected = orders.filter((o) => o.payment_status === 'verified' || o.payment_status === 'cod_collected').reduce((s, o) => s + o.total, 0);
+    const gross = orders.reduce((s, o) => s + o.total, 0);
+    const agreed = negs.filter((n) => n.status === 'agreed');
+    const avgDiscountPct = agreed.length ? Math.round((agreed.reduce((s, n) => s + (n.list_price ? (1 - (n.agreed_price ?? n.list_price) / n.list_price) : 0), 0) / agreed.length) * 1000) / 10 : 0;
+    const done = negs.filter((n) => n.status === 'agreed' || n.status === 'rejected');
+    return reply.send({
+      totalOrders: orders.length,
+      grossRevenue: gross,
+      collectedRevenue: collected,
+      returnCancelRate: orders.length ? Math.round((orders.filter((o) => ['cancelled', 'returned'].includes(o.status)).length / orders.length) * 1000) / 10 : 0,
+      codVsBank: { cod: orders.filter((o) => o.payment_method === 'cod').length, bank: orders.filter((o) => o.payment_method === 'bank_transfer').length },
+      negotiationWinRate: done.length ? Math.round((agreed.length / done.length) * 1000) / 10 : 0,
+      avgDiscountPct,
+      negotiationsAgreed: agreed.length,
+    });
   });
 
   // ── Catalog ──

@@ -148,7 +148,13 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
   };
   const defaults = coerceDefaults(merchant.negotiation_defaults);
 
-  const convoRes = await db.from('conversations').select('current_state, context').eq('id', ctx.conversationId).single();
+  const convoRes = await db.from('conversations').select('current_state, context, status, unread_count').eq('id', ctx.conversationId).single();
+  // Human takeover: bot stays silent; message is already stored. Merchant replies from the inbox.
+  if (convoRes.data?.status === 'human_takeover') {
+    await db.from('conversations').update({ unread_count: ((convoRes.data as { unread_count?: number }).unread_count ?? 0) + 1 }).eq('id', ctx.conversationId);
+    logger.info({ conversationId: ctx.conversationId }, 'human takeover — bot silent');
+    return;
+  }
   const context = ((convoRes.data?.context ?? {}) as Record<string, unknown>) || {};
 
   const catRes = await db

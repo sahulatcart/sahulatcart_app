@@ -7,8 +7,10 @@ import { clearToken, getToken } from '../lib/api';
 const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Sahulatkaar';
 const links = [
   ['/', 'Dashboard'],
+  ['/inbox', 'Inbox'],
   ['/orders', 'Orders'],
   ['/catalog', 'Catalog'],
+  ['/analytics', 'Analytics'],
   ['/settings', 'Settings'],
 ];
 
