@@ -8,10 +8,10 @@ export const clearToken = (): void => localStorage.removeItem('sk_token');
 
 export async function api(path: string, opts: RequestInit = {}): Promise<Response> {
   const token = getToken();
-  const res = await fetch(BASE + path, {
-    ...opts,
-    headers: { 'Content-Type': 'application/json', 'x-admin-token': token || '', ...(opts.headers || {}) },
-  });
+  const headers: Record<string, string> = { 'x-admin-token': token || '', ...((opts.headers as Record<string, string>) || {}) };
+  // Only declare JSON content-type when there's actually a body (empty body + JSON type = 400).
+  if (opts.body != null) headers['Content-Type'] = 'application/json';
+  const res = await fetch(BASE + path, { ...opts, headers });
   if (res.status === 401 && typeof window !== 'undefined') {
     clearToken();
     window.location.href = '/login';
