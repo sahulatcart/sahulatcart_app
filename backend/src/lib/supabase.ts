@@ -17,3 +17,14 @@ export function getServiceClient(): SupabaseClient {
   });
   return serviceClient;
 }
+
+/** Anon client — used only to verify a user's JWT via auth.getUser(token). */
+let anonClient: SupabaseClient | undefined;
+export function getAnonClient(): SupabaseClient {
+  if (anonClient) return anonClient;
+  const cfg = loadConfig();
+  anonClient = createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  return anonClient;
+}

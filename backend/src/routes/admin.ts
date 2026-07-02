@@ -1,56 +1,48 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { loadConfig } from '../config';
 import { getServiceClient } from '../lib/supabase';
+import { canManagePayments, forbid, resolveCtx } from '../lib/auth';
 import { markCodCollected, rejectPayment, verifyPayment } from '../orchestrator/payment-service';
 import { signedScreenshotUrl } from '../whatsapp/media';
 import { sendText } from '../whatsapp/client';
 import { parseCsv } from '../lib/csv';
 
-/**
- * Merchant admin API for the Phase-5 portal. Pilot: single merchant, gated by a
- * bearer/x-admin-token (== ADMIN_API_TOKEN). Multi-tenant Supabase-JWT auth is the scale path.
- */
-function tokenOf(req: FastifyRequest): string | undefined {
-  const h = req.headers['x-admin-token'];
-  if (typeof h === 'string') return h;
-  const auth = req.headers.authorization;
-  if (auth?.startsWith('Bearer ')) return auth.slice(7);
-  return undefined;
-}
-function requireAdmin(req: FastifyRequest, reply: FastifyReply): boolean {
-  const cfg = loadConfig();
-  if (!cfg.ADMIN_API_TOKEN || tokenOf(req) !== cfg.ADMIN_API_TOKEN) {
-    reply.code(401).send({ error: { code: 'UNAUTHORIZED', message: 'login required' } });
-    return false;
-  }
-  return true;
-}
-
-let merchantIdCache: string | undefined;
-async function merchantId(db: SupabaseClient): Promise<string | undefined> {
-  if (merchantIdCache) return merchantIdCache;
-  const cfg = loadConfig();
-  if (cfg.META_DEFAULT_PHONE_NUMBER_ID) {
-    const r = await db.from('whatsapp_numbers').select('merchant_id').eq('phone_number_id', cfg.META_DEFAULT_PHONE_NUMBER_ID).maybeSingle();
-    merchantIdCache = r.data?.merchant_id;
-  }
-  if (!merchantIdCache) {
-    const m = await db.from('merchants').select('id').limit(1).maybeSingle();
-    merchantIdCache = m.data?.id;
-  }
-  return merchantIdCache;
-}
+const PUBLIC = new Set(['/api/v1/admin/login', '/api/v1/config']);
 
 const startOfTodayUtc = (): string => {
   const d = new Date();
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())).toISOString();
 };
 
+// Ownership guards — a by-id resource must belong to the caller's merchant (tenant isolation).
+async function orderMerchant(db: SupabaseClient, id: string): Promise<string | undefined> {
+  const r = await db.from('orders').select('merchant_id').eq('id', id).maybeSingle();
+  return r.data?.merchant_id as string | undefined;
+}
+async function convoMerchant(db: SupabaseClient, id: string): Promise<string | undefined> {
+  const r = await db.from('conversations').select('merchant_id').eq('id', id).maybeSingle();
+  return r.data?.merchant_id as string | undefined;
+}
+
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
   const db = getServiceClient();
 
-  // ── Auth ──
+  // ── Auth gate for every admin route except the public ones ──
+  app.addHook('preHandler', async (req, reply) => {
+    if (PUBLIC.has(req.routeOptions?.url ?? '')) return;
+    const ctx = await resolveCtx(req);
+    if (!ctx) return reply.code(401).send({ error: { code: 'UNAUTHORIZED', message: 'login required' } });
+    req.merchantCtx = ctx;
+  });
+
+  // ── Public runtime config (Supabase URL + publishable anon key — not secret) ──
+  app.get('/api/v1/config', async (_req, reply) => {
+    const cfg = loadConfig();
+    return reply.send({ supabaseUrl: cfg.SUPABASE_URL, supabaseAnonKey: cfg.SUPABASE_ANON_KEY });
+  });
+
+  // ── Auth (token fallback path; email/password login happens client-side via Supabase) ──
   app.post('/api/v1/admin/login', async (req, reply) => {
     const cfg = loadConfig();
     const pw = (req.body as { password?: string })?.password;
@@ -61,16 +53,27 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/v1/admin/me', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const mid = await merchantId(db);
+    const { merchantId: mid, role, isPlatformAdmin } = req.merchantCtx!;
     const m = await db.from('merchants').select('id, business_name, settings, negotiation_defaults').eq('id', mid).maybeSingle();
-    return reply.send({ merchant: m.data });
+    return reply.send({ merchant: m.data, role, isPlatformAdmin });
+  });
+
+  // ── Platform-admin: create a merchant + owner user (invite-only) ──
+  app.post('/api/v1/admin/merchants', async (req, reply) => {
+    if (!req.merchantCtx!.isPlatformAdmin) return forbid(reply);
+    const b = req.body as { businessName?: string; ownerEmail?: string; ownerPassword?: string; ownerName?: string };
+    if (!b.businessName || !b.ownerEmail || !b.ownerPassword) return reply.code(400).send({ error: { code: 'BAD', message: 'businessName, ownerEmail, ownerPassword required' } });
+    const created = await db.auth.admin.createUser({ email: b.ownerEmail, password: b.ownerPassword, email_confirm: true });
+    if (created.error || !created.data.user) return reply.code(400).send({ error: { code: 'AUTH', message: created.error?.message ?? 'could not create user' } });
+    const m = await db.from('merchants').insert({ business_name: b.businessName, owner_name: b.ownerName ?? null, email: b.ownerEmail, status: 'active' }).select('id').single();
+    if (m.error || !m.data) { await db.auth.admin.deleteUser(created.data.user.id); return reply.code(400).send({ error: { code: 'DB', message: m.error?.message } }); }
+    await db.from('merchant_users').insert({ merchant_id: m.data.id, auth_user_id: created.data.user.id, email: b.ownerEmail, name: b.ownerName ?? null, role: 'owner', is_active: true });
+    return reply.send({ merchantId: m.data.id, userId: created.data.user.id });
   });
 
   // ── Dashboard ──
   app.get('/api/v1/admin/dashboard', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const mid = await merchantId(db);
+    const mid = req.merchantCtx!.merchantId;
     const since = startOfTodayUtc();
     const [ordersToday, pending, recent, activeChats] = await Promise.all([
       db.from('orders').select('total', { count: 'exact' }).eq('merchant_id', mid).gte('created_at', since).not('order_number', 'is', null),
@@ -78,10 +81,9 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       db.from('orders').select('id, order_number, status, payment_method, payment_status, total, delivery_name, created_at').eq('merchant_id', mid).not('order_number', 'is', null).order('created_at', { ascending: false }).limit(10),
       db.from('conversations').select('id', { count: 'exact', head: true }).eq('merchant_id', mid).eq('status', 'bot_active'),
     ]);
-    const revenueToday = (ordersToday.data ?? []).reduce((s, o) => s + (o.total ?? 0), 0);
     return reply.send({
       ordersToday: ordersToday.count ?? 0,
-      revenueToday,
+      revenueToday: (ordersToday.data ?? []).reduce((s, o) => s + (o.total ?? 0), 0),
       pendingPayments: pending.count ?? 0,
       activeChats: activeChats.count ?? 0,
       recentOrders: recent.data ?? [],
@@ -90,8 +92,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   // ── Orders ──
   app.get('/api/v1/admin/orders', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const mid = await merchantId(db);
+    const mid = req.merchantCtx!.merchantId;
     const { status, payment } = req.query as { status?: string; payment?: string };
     let q = db.from('orders').select('id, order_number, status, payment_method, payment_status, total, delivery_name, delivery_area, created_at').eq('merchant_id', mid).order('created_at', { ascending: false }).limit(100);
     if (status) q = q.eq('status', status);
@@ -102,9 +103,9 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/v1/admin/orders/:id', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const mid = req.merchantCtx!.merchantId;
     const { id } = req.params as { id: string };
-    const order = await db.from('orders').select('*').eq('id', id).maybeSingle();
+    const order = await db.from('orders').select('*').eq('id', id).eq('merchant_id', mid).maybeSingle();
     if (!order.data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'order not found' } });
     const items = await db.from('order_items').select('name_snapshot, quantity, unit_price, discount, line_total').eq('order_id', id);
     const payment = await db.from('payments').select('method, amount, status, screenshot_url, claimed_at, verified_at').eq('order_id', id).maybeSingle();
@@ -113,59 +114,56 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/v1/admin/orders/:id/screenshot', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const mid = req.merchantCtx!.merchantId;
     const { id } = req.params as { id: string };
-    const pay = await db.from('payments').select('screenshot_url').eq('order_id', id).maybeSingle();
+    const pay = await db.from('payments').select('screenshot_url').eq('order_id', id).eq('merchant_id', mid).maybeSingle();
     const key = pay.data?.screenshot_url;
     if (!key || key.startsWith('media:')) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'no stored screenshot' } });
     return reply.send({ url: await signedScreenshotUrl(db, key) });
   });
 
   app.post('/api/v1/admin/orders/:id/payment/verify', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const r = await verifyPayment(db, (req.params as { id: string }).id);
+    if (!canManagePayments(req.merchantCtx!)) return forbid(reply);
+    const { id } = req.params as { id: string };
+    if ((await orderMerchant(db, id)) !== req.merchantCtx!.merchantId) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'order not found' } });
+    const r = await verifyPayment(db, id);
     return reply.code(r.ok ? 200 : 400).send(r);
   });
   app.post('/api/v1/admin/orders/:id/payment/reject', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const reason = (req.body as { reason?: string })?.reason ?? 'not verified';
-    const r = await rejectPayment(db, (req.params as { id: string }).id, reason);
+    if (!canManagePayments(req.merchantCtx!)) return forbid(reply);
+    const { id } = req.params as { id: string };
+    if ((await orderMerchant(db, id)) !== req.merchantCtx!.merchantId) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'order not found' } });
+    const r = await rejectPayment(db, id, (req.body as { reason?: string })?.reason ?? 'not verified');
     return reply.code(r.ok ? 200 : 400).send(r);
   });
   app.post('/api/v1/admin/orders/:id/payment/cod-collected', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const r = await markCodCollected(db, (req.params as { id: string }).id);
+    const { id } = req.params as { id: string };
+    if ((await orderMerchant(db, id)) !== req.merchantCtx!.merchantId) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'order not found' } });
+    const r = await markCodCollected(db, id);
     return reply.code(r.ok ? 200 : 400).send(r);
   });
 
   // ── Inbox / Conversations ──
   app.get('/api/v1/admin/conversations', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const mid = await merchantId(db);
-    const { data } = await db
-      .from('conversations')
-      .select('id, status, current_state, last_message_at, unread_count, customers(name, wa_id)')
-      .eq('merchant_id', mid)
-      .neq('status', 'closed')
-      .order('last_message_at', { ascending: false, nullsFirst: false })
-      .limit(50);
+    const mid = req.merchantCtx!.merchantId;
+    const { data } = await db.from('conversations').select('id, status, current_state, last_message_at, unread_count, customers(name, wa_id)').eq('merchant_id', mid).neq('status', 'closed').order('last_message_at', { ascending: false, nullsFirst: false }).limit(50);
     return reply.send({ conversations: data ?? [] });
   });
 
   app.get('/api/v1/admin/conversations/:id', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const mid = req.merchantCtx!.merchantId;
     const { id } = req.params as { id: string };
-    const convo = await db.from('conversations').select('id, status, current_state, customers(name, wa_id)').eq('id', id).maybeSingle();
+    const convo = await db.from('conversations').select('id, status, current_state, customers(name, wa_id)').eq('id', id).eq('merchant_id', mid).maybeSingle();
     if (!convo.data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'conversation not found' } });
     const messages = await db.from('messages').select('direction, sender, type, body, status, created_at').eq('conversation_id', id).order('created_at', { ascending: true }).limit(200);
-    await db.from('conversations').update({ unread_count: 0 }).eq('id', id); // opening = read
+    await db.from('conversations').update({ unread_count: 0 }).eq('id', id);
     return reply.send({ conversation: convo.data, messages: messages.data ?? [] });
   });
 
   app.post('/api/v1/admin/conversations/:id/takeover', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
-    const c = await db.from('conversations').select('current_state, context').eq('id', id).single();
+    const c = await db.from('conversations').select('current_state, context, merchant_id').eq('id', id).single();
+    if (c.data?.merchant_id !== req.merchantCtx!.merchantId) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'not found' } });
     const context = (c.data?.context ?? {}) as Record<string, unknown>;
     if (c.data?.current_state !== 'handoff') context.resume_state = c.data?.current_state;
     await db.from('conversations').update({ status: 'human_takeover', current_state: 'handoff', context }).eq('id', id);
@@ -173,9 +171,9 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/api/v1/admin/conversations/:id/release', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
-    const c = await db.from('conversations').select('context').eq('id', id).single();
+    const c = await db.from('conversations').select('context, merchant_id').eq('id', id).single();
+    if (c.data?.merchant_id !== req.merchantCtx!.merchantId) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'not found' } });
     const context = (c.data?.context ?? {}) as Record<string, unknown>;
     const resume = (context.resume_state as string) ?? 'greeting';
     delete context.resume_state;
@@ -184,16 +182,14 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/api/v1/admin/conversations/:id/send', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const mid = req.merchantCtx!.merchantId;
     const { id } = req.params as { id: string };
     const text = (req.body as { text?: string })?.text?.trim();
     if (!text) return reply.code(400).send({ error: { code: 'BAD', message: 'text required' } });
-    const mid = await merchantId(db);
-    const convo = await db.from('conversations').select('whatsapp_number_id, customers(wa_id)').eq('id', id).single();
+    const convo = await db.from('conversations').select('whatsapp_number_id, merchant_id, customers(wa_id)').eq('id', id).single();
+    if (convo.data?.merchant_id !== mid) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'not found' } });
     const waId = (convo.data?.customers as { wa_id?: string } | null)?.wa_id;
-    const num = convo.data?.whatsapp_number_id
-      ? await db.from('whatsapp_numbers').select('phone_number_id').eq('id', convo.data.whatsapp_number_id).single()
-      : { data: null };
+    const num = convo.data?.whatsapp_number_id ? await db.from('whatsapp_numbers').select('phone_number_id').eq('id', convo.data.whatsapp_number_id).single() : { data: null };
     const phoneNumberId = num.data?.phone_number_id ?? (await db.from('whatsapp_numbers').select('phone_number_id').eq('merchant_id', mid).limit(1).maybeSingle()).data?.phone_number_id;
     if (!waId || !phoneNumberId) return reply.code(400).send({ error: { code: 'NO_CHANNEL', message: 'cannot reach customer' } });
     const sent = await sendText(phoneNumberId, waId, text);
@@ -204,8 +200,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   // ── Analytics ──
   app.get('/api/v1/admin/analytics', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const mid = await merchantId(db);
+    const mid = req.merchantCtx!.merchantId;
     const [placed, negotiations] = await Promise.all([
       db.from('orders').select('status, payment_method, payment_status, total, discount_total, subtotal, created_at').eq('merchant_id', mid).not('order_number', 'is', null),
       db.from('negotiations').select('status, list_price, agreed_price').eq('merchant_id', mid),
@@ -213,13 +208,12 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const orders = placed.data ?? [];
     const negs = negotiations.data ?? [];
     const collected = orders.filter((o) => o.payment_status === 'verified' || o.payment_status === 'cod_collected').reduce((s, o) => s + o.total, 0);
-    const gross = orders.reduce((s, o) => s + o.total, 0);
     const agreed = negs.filter((n) => n.status === 'agreed');
     const avgDiscountPct = agreed.length ? Math.round((agreed.reduce((s, n) => s + (n.list_price ? (1 - (n.agreed_price ?? n.list_price) / n.list_price) : 0), 0) / agreed.length) * 1000) / 10 : 0;
     const done = negs.filter((n) => n.status === 'agreed' || n.status === 'rejected');
     return reply.send({
       totalOrders: orders.length,
-      grossRevenue: gross,
+      grossRevenue: orders.reduce((s, o) => s + o.total, 0),
       collectedRevenue: collected,
       returnCancelRate: orders.length ? Math.round((orders.filter((o) => ['cancelled', 'returned'].includes(o.status)).length / orders.length) * 1000) / 10 : 0,
       codVsBank: { cod: orders.filter((o) => o.payment_method === 'cod').length, bank: orders.filter((o) => o.payment_method === 'bank_transfer').length },
@@ -231,15 +225,14 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   // ── Catalog ──
   app.get('/api/v1/admin/products', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const mid = await merchantId(db);
-    const { data } = await db.from('products').select('id, sku, name, description, price, cost, stock, track_stock, is_active, negotiable, max_discount_pct, min_price').eq('merchant_id', mid).order('created_at', { ascending: true });
+    const mid = req.merchantCtx!.merchantId;
+    const cols = canManagePayments(req.merchantCtx!) ? 'id, sku, name, description, price, cost, stock, track_stock, is_active, negotiable, max_discount_pct, min_price' : 'id, sku, name, description, price, stock, track_stock, is_active, negotiable, max_discount_pct, min_price';
+    const { data } = await db.from('products').select(cols).eq('merchant_id', mid).order('created_at', { ascending: true });
     return reply.send({ products: data ?? [] });
   });
 
   app.post('/api/v1/admin/products', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const mid = await merchantId(db);
+    const mid = req.merchantCtx!.merchantId;
     const b = req.body as Record<string, unknown>;
     const { data, error } = await db.from('products').insert({ merchant_id: mid, name: b.name, description: b.description ?? null, price: b.price ?? 0, cost: b.cost ?? null, stock: b.stock ?? null, track_stock: b.track_stock ?? false, is_active: b.is_active ?? true, negotiable: b.negotiable ?? false, max_discount_pct: b.max_discount_pct ?? null, min_price: b.min_price ?? null, sku: b.sku ?? null }).select('id').single();
     if (error) return reply.code(400).send({ error: { code: 'DB', message: error.message } });
@@ -247,8 +240,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.patch('/api/v1/admin/products/:id', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const mid = await merchantId(db);
+    const mid = req.merchantCtx!.merchantId;
     const { id } = req.params as { id: string };
     const b = req.body as Record<string, unknown>;
     const allowed = ['name', 'description', 'price', 'cost', 'stock', 'track_stock', 'is_active', 'negotiable', 'max_discount_pct', 'min_price', 'sku'];
@@ -259,10 +251,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ ok: true });
   });
 
-  // ── CSV import (synchronous; pilot). Columns: name,price,stock,negotiable,max_discount_pct,min_price,sku,description ──
   app.post('/api/v1/admin/products/import', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const mid = await merchantId(db);
+    const mid = req.merchantCtx!.merchantId;
     const csv = (req.body as { csv?: string })?.csv;
     if (!csv) return reply.code(400).send({ error: { code: 'BAD', message: 'csv required' } });
     const rows = parseCsv(csv);
@@ -275,35 +265,16 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       const name = r.name || r.product || r.title;
       const price = rupees(r.price || '');
       if (!name || price == null) { errors.push(`Row ${i + 2}: name and numeric price required`); continue; }
-      const negotiable = 'negotiable' in r ? truthy(r.negotiable) : false;
-      const row = {
-        merchant_id: mid,
-        name,
-        description: r.description || null,
-        price,
-        stock: r.stock && !Number.isNaN(Number(r.stock)) ? Math.round(Number(r.stock)) : null,
-        track_stock: !!(r.stock && r.stock.trim()),
-        negotiable,
-        max_discount_pct: r.max_discount_pct && !Number.isNaN(Number(r.max_discount_pct)) ? Number(r.max_discount_pct) : null,
-        min_price: rupees(r.min_price || ''),
-        sku: r.sku || null,
-        is_active: true,
-      };
-      const q = row.sku
-        ? db.from('products').upsert(row, { onConflict: 'merchant_id,sku' })
-        : db.from('products').insert(row);
-      const { error } = await q;
-      if (error) errors.push(`Row ${i + 2}: ${error.message}`);
-      else imported++;
+      const row = { merchant_id: mid, name, description: r.description || null, price, stock: r.stock && !Number.isNaN(Number(r.stock)) ? Math.round(Number(r.stock)) : null, track_stock: !!(r.stock && r.stock.trim()), negotiable: 'negotiable' in r ? truthy(r.negotiable) : false, max_discount_pct: r.max_discount_pct && !Number.isNaN(Number(r.max_discount_pct)) ? Number(r.max_discount_pct) : null, min_price: rupees(r.min_price || ''), sku: r.sku || null, is_active: true };
+      const { error } = row.sku ? await db.from('products').upsert(row, { onConflict: 'merchant_id,sku' }) : await db.from('products').insert(row);
+      if (error) errors.push(`Row ${i + 2}: ${error.message}`); else imported++;
     }
     return reply.send({ imported, errors, total: rows.length });
   });
 
-  // ── Meta catalog sync (pull products from the WABA's Commerce catalog) ──
   app.post('/api/v1/admin/products/catalog-sync', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
     const cfg = loadConfig();
-    const mid = await merchantId(db);
+    const mid = req.merchantCtx!.merchantId;
     const token = cfg.META_SYSTEM_USER_TOKEN;
     const wabaRow = await db.from('whatsapp_numbers').select('waba_id').eq('merchant_id', mid).limit(1).maybeSingle();
     const waba = wabaRow.data?.waba_id;
@@ -317,24 +288,20 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       let synced = 0;
       for (const p of prods.data ?? []) {
         const num = p.price ? parseInt(String(p.price).replace(/[^0-9]/g, ''), 10) : NaN;
-        const price = Number.isFinite(num) ? num * 100 : 0; // Meta price string → paisa (best-effort)
-        const { error } = await db.from('products').upsert(
-          { merchant_id: mid, external_ref: p.retailer_id, name: p.name, description: p.description ?? null, price, is_active: true },
-          { onConflict: 'merchant_id,external_ref' }
-        );
+        const { error } = await db.from('products').upsert({ merchant_id: mid, external_ref: p.retailer_id, name: p.name, description: p.description ?? null, price: Number.isFinite(num) ? num * 100 : 0, is_active: true }, { onConflict: 'merchant_id,external_ref' });
         if (!error) synced++;
       }
-      await db.from('merchants').update({ settings: { ...(await db.from('merchants').select('settings').eq('id', mid).single()).data?.settings, metaCatalog: { catalogId, connected: true, lastSyncedAt: new Date().toISOString() } } }).eq('id', mid);
+      const s = (await db.from('merchants').select('settings').eq('id', mid).single()).data?.settings;
+      await db.from('merchants').update({ settings: { ...s, metaCatalog: { catalogId, connected: true, lastSyncedAt: new Date().toISOString() } } }).eq('id', mid);
       return reply.send({ synced, catalogId });
     } catch (e) {
       return reply.code(502).send({ error: { code: 'META', message: (e as Error).message } });
     }
   });
 
-  // ── Settings (merchant negotiation_defaults + settings jsonb) ──
+  // ── Settings ──
   app.get('/api/v1/admin/settings', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const mid = await merchantId(db);
+    const mid = req.merchantCtx!.merchantId;
     const m = await db.from('merchants').select('business_name, negotiation_defaults, settings, bot_persona').eq('id', mid).single();
     const banks = await db.from('bank_accounts').select('id, bank_name, account_title, account_number, iban, is_default, is_active').eq('merchant_id', mid);
     const zones = await db.from('delivery_zones').select('id, area_name, city, charge, is_serviceable').eq('merchant_id', mid);
@@ -342,8 +309,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.patch('/api/v1/admin/settings', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const mid = await merchantId(db);
+    const mid = req.merchantCtx!.merchantId;
     const b = req.body as { businessName?: string; negotiationDefaults?: Record<string, unknown>; settings?: Record<string, unknown>; botPersona?: Record<string, unknown> };
     const cur = await db.from('merchants').select('negotiation_defaults, settings, bot_persona').eq('id', mid).single();
     const patch: Record<string, unknown> = {};
@@ -356,18 +322,18 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ ok: true });
   });
 
-  // ── Bank accounts ──
+  // ── Bank accounts (owner/manager only) ──
   app.post('/api/v1/admin/bank-accounts', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const mid = await merchantId(db);
+    if (!canManagePayments(req.merchantCtx!)) return forbid(reply);
+    const mid = req.merchantCtx!.merchantId;
     const b = req.body as Record<string, unknown>;
     const { data, error } = await db.from('bank_accounts').insert({ merchant_id: mid, bank_name: b.bank_name, account_title: b.account_title, account_number: b.account_number, iban: b.iban ?? null, is_default: b.is_default ?? false, is_active: true }).select('id').single();
     if (error) return reply.code(400).send({ error: { code: 'DB', message: error.message } });
     return reply.send({ id: data.id });
   });
   app.delete('/api/v1/admin/bank-accounts/:id', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const mid = await merchantId(db);
+    if (!canManagePayments(req.merchantCtx!)) return forbid(reply);
+    const mid = req.merchantCtx!.merchantId;
     await db.from('bank_accounts').delete().eq('id', (req.params as { id: string }).id).eq('merchant_id', mid);
     return reply.send({ ok: true });
   });

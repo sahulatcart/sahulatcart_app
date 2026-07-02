@@ -2,8 +2,8 @@
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
-import { BarChart3, LayoutDashboard, LogOut, Menu, MessagesSquare, Package, Settings, ShoppingBag, X } from 'lucide-react';
-import { clearToken, getToken } from '../lib/api';
+import { BarChart3, LayoutDashboard, LogOut, Menu, MessagesSquare, Package, Settings, ShoppingBag } from 'lucide-react';
+import { hasSession, signOut } from '../lib/api';
 
 const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Sahulatkaar';
 const NAV = [
@@ -22,13 +22,12 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (!getToken()) router.replace('/login');
-    else setReady(true);
+    hasSession().then((ok) => { if (!ok) router.replace('/login'); else setReady(true); });
   }, [router]);
   useEffect(() => { setOpen(false); }, [pathname]);
   if (!ready) return null;
 
-  const logout = () => { clearToken(); router.replace('/login'); };
+  const logout = async () => { await signOut(); router.replace('/login'); };
 
   return (
     <div className="shell">
