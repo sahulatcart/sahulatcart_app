@@ -385,7 +385,8 @@ async function handleDelivery(db: SupabaseClient, ctx: OrchestratorCtx, cc: Comp
     address: ex.address ?? prev.address ?? null,
     area: ex.area ?? prev.area ?? null,
     city: ex.city ?? prev.city ?? null,
-    phone: ex.phone ?? prev.phone ?? null,
+    // Default to the customer's WhatsApp number (their real phone) if they didn't type one.
+    phone: ex.phone ?? prev.phone ?? ctx.customerWaId ?? null,
   };
   const newCtx = { ...context, delivery };
   const missing = !delivery.name ? 'naam' : !delivery.address ? 'poora address' : !delivery.area ? 'area/shehar' : null;
