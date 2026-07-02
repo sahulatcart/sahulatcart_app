@@ -3,6 +3,7 @@ import helmet from '@fastify/helmet';
 import { loadConfig } from './config';
 import { loggerOptions } from './lib/logger';
 import { healthRoutes } from './routes/health';
+import { adminOrderRoutes } from './routes/admin-orders';
 import { webhookRoutes } from './whatsapp/webhook';
 
 /**
@@ -20,6 +21,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   app.get('/', async () => ({ product: cfg.PRODUCT_NAME, status: 'running', version: '0.0.0' }));
   await app.register(healthRoutes);
   await app.register(webhookRoutes); // Phase 2: /api/v1/webhook/whatsapp
+  await app.register(adminOrderRoutes); // Phase 4b: merchant verify/reject (pilot token-gated)
 
   return app;
 }

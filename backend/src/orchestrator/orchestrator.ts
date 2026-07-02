@@ -5,6 +5,7 @@ import { decide } from '../negotiation';
 import type { NegotiationDefaults, ProductPricing } from '../negotiation/types';
 import { getLlmClient, LlmUnavailableError, type ComposeContext, type DeliveryDetails, type ReplySpec } from '../llm';
 import { sendText } from '../whatsapp/client';
+import { downloadWhatsAppMedia, uploadScreenshot } from '../whatsapp/media';
 import type { NormalizedMessage } from '../whatsapp/types';
 import { resolveProduct, type CatalogItem } from './resolve';
 import { priceGuardOk } from './guard';
@@ -439,12 +440,16 @@ async function handlePayment(db: SupabaseClient, ctx: OrchestratorCtx, cc: Compo
 async function handlePaymentProof(db: SupabaseClient, ctx: OrchestratorCtx, cc: ComposeContext, context: Record<string, unknown>, message: NormalizedMessage): Promise<void> {
   const orderId = context.pendingOrderId as string | undefined;
   if (message.type === 'image' && orderId) {
-    // Phase 4a: record the claim + notify merchant. (4b downloads/stores the image + merchant verify.)
+    // Download the screenshot from Meta → store privately in Supabase Storage → record the claim.
     const mediaId = (message.raw as { image?: { id?: string } })?.image?.id ?? null;
     const payRes = await db.from('payments').select('id, amount').eq('order_id', orderId).maybeSingle();
     const pid = (context.pendingPaymentId as string | undefined) ?? payRes.data?.id;
     const amount = payRes.data?.amount ?? 0;
-    const ref = mediaId ? `media:${mediaId}` : null;
+    let ref: string | null = null;
+    if (mediaId) {
+      const media = await downloadWhatsAppMedia(mediaId);
+      if (media) ref = await uploadScreenshot(db, ctx.merchantId, orderId, media.buffer, media.mimeType);
+    }
     if (pid) {
       await db.from('payment_claims').insert({ payment_id: pid, order_id: orderId, merchant_id: ctx.merchantId, screenshot_url: ref, amount, status: 'claimed' });
       await db.from('payments').update({ status: 'claimed', claimed_at: new Date().toISOString(), screenshot_url: ref }).eq('id', pid);

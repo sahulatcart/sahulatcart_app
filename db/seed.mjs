@@ -82,6 +82,19 @@ async function main() {
     console.log('product:', p.name, '(Rs', p.price / 100 + ')');
   }
 
+  // Storage buckets (private) — idempotent
+  for (const b of ['payment-screenshots', 'inbound-media', 'order-slips']) {
+    const { error } = await db.storage.createBucket(b, { public: false });
+    if (error && !/already exists/i.test(error.message)) console.log(`bucket ${b}: ${error.message}`);
+    else console.log(`bucket: ${b}`);
+  }
+  // product-images public
+  {
+    const { error } = await db.storage.createBucket('product-images', { public: true });
+    if (error && !/already exists/i.test(error.message)) console.log(`bucket product-images: ${error.message}`);
+    else console.log('bucket: product-images (public)');
+  }
+
   // Bank account (merchant's own, shown to buyers on bank transfer)
   const existingBank = await db.from('bank_accounts').select('id').eq('merchant_id', merchantId).limit(1).maybeSingle();
   if (!existingBank.data) {
