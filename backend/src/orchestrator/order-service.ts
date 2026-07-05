@@ -40,9 +40,17 @@ export async function createDraftOrder(
   const rows = negs.data ?? [];
   if (!rows.length) return null;
 
+  // Skip negotiations already turned into a previous order in this chat, so a second
+  // order in the same conversation doesn't re-include items the customer already bought.
+  const negIds = rows.map((n) => n.id);
+  const used = await db.from('order_items').select('negotiation_id').in('negotiation_id', negIds);
+  const usedSet = new Set((used.data ?? []).map((i) => i.negotiation_id as string));
+  const freshRows = rows.filter((n) => !usedSet.has(n.id));
+  if (!freshRows.length) return null;
+
   let subtotal = 0;
   let discountTotal = 0;
-  const items = rows.map((n) => {
+  const items = freshRows.map((n) => {
     const qty = n.quantity ?? 1;
     const list = n.list_price as number;
     const agreed = (n.agreed_price ?? list) as number;

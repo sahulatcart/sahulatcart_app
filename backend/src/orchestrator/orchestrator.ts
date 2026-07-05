@@ -156,7 +156,10 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
     logger.info({ conversationId: ctx.conversationId }, 'human takeover — bot silent');
     return;
   }
-  const context = ((convoRes.data?.context ?? {}) as Record<string, unknown>) || {};
+  // After a finished order, the next inbound message starts a NEW shopping session:
+  // drop stale product/negotiation/delivery context so we don't re-quote the old item.
+  const context: Record<string, unknown> =
+    convoRes.data?.current_state === 'completed' ? {} : ((convoRes.data?.context ?? {}) as Record<string, unknown>) || {};
 
   const catRes = await db
     .from('products')
@@ -194,9 +197,12 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
     return;
   }
 
-  // Resolve product: explicit mention → else the active one in context.
+  // Resolve product. Only carry the active item forward when the customer did NOT name a
+  // new one — an explicit mention that doesn't match the catalog is "not found", never a
+  // silent fallback to the previous product.
   const activeId = context.activeProductId as string | undefined;
-  const product = resolveProduct(cls.productQuery, catalog) ?? catalog.find((c) => c.id === activeId) ?? null;
+  const mentioned = !!(cls.productQuery && cls.productQuery.trim());
+  const product = resolveProduct(cls.productQuery, catalog) ?? (mentioned ? null : catalog.find((c) => c.id === activeId) ?? null);
 
   // ── Intent routing ──
   if (cls.intent === 'stop') {
@@ -209,7 +215,8 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
     return;
   }
 
-  if (['greet', 'chitchat'].includes(cls.intent) && !product) {
+  // A greeting or small talk is always just that — never quote a leftover active product.
+  if (cls.intent === 'greet' || cls.intent === 'chitchat') {
     const spec: ReplySpec = cls.intent === 'greet' ? { kind: 'greeting' } : { kind: 'chitchat' };
     await reply(db, ctx, await safeCompose(spec, cc), 'browsing', context);
     return;
@@ -217,9 +224,10 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
 
   if (!product) {
     // wants a product/price but we couldn't resolve it
-    if (['ask_product', 'ask_price', 'make_offer'].includes(cls.intent)) {
-      const q = cls.productQuery ?? text;
-      const spec: ReplySpec = catalog.length ? { kind: 'clarify' } : { kind: 'not_found', query: q };
+    if (['ask_product', 'ask_price', 'make_offer', 'add_to_order'].includes(cls.intent)) {
+      const q = (cls.productQuery ?? text).trim();
+      // Named something specific we don't carry → say it's unavailable; otherwise ask which.
+      const spec: ReplySpec = mentioned || !catalog.length ? { kind: 'not_found', query: q } : { kind: 'clarify' };
       await reply(db, ctx, await safeCompose(spec, cc), 'browsing', context);
       return;
     }
