@@ -246,3 +246,48 @@ describe('no-offer guard (intent="other")', () => {
     expect(d.price).toBe(rs(2150));
   });
 });
+
+// ── personality presets (portal "bargaining style" dial) ────────────────────
+describe('bargaining style presets', () => {
+  // list 2,500, maxDiscount 20% → floor 2,000, gap 500
+  const NARM = baseDefaults({ concessionSteps: [0.6, 0.9, 1.0], roundsMax: 3 });
+  const SAKHT = baseDefaults({ concessionSteps: [0.25, 0.5, 0.75, 1.0], roundsMax: 4 });
+
+  it('Narm concedes fast: round 1 already gives 60% of the gap (2,200)', () => {
+    const d = decide(input({ defaults: NARM, customerOffer: rs(1900), history: history(0) }));
+    expect(d.action).toBe('COUNTER');
+    expect(d.price).toBe(rs(2200));
+  });
+
+  it('Sakht concedes slowly: round 1 gives only 25% of the gap (2,375)', () => {
+    const d = decide(input({ defaults: SAKHT, customerOffer: rs(1900), history: history(0) }));
+    expect(d.action).toBe('COUNTER');
+    expect(d.price).toBe(rs(2375));
+  });
+
+  it('Sakht round 2 stays above Narm round 1 (2,250 > 2,200)', () => {
+    const d = decide(input({ defaults: SAKHT, customerOffer: rs(1950), history: history(1) }));
+    expect(d.price).toBe(rs(2250));
+  });
+
+  it('Sakht walks 4 rounds: 2,375 → 2,250 → 2,125 → 2,000, then the final floor offer', () => {
+    const r3 = decide(input({ defaults: SAKHT, customerOffer: rs(1950), history: history(2) }));
+    expect(r3.price).toBe(rs(2125)); // round 3 → 75% of the gap
+    const r4 = decide(input({ defaults: SAKHT, customerOffer: rs(1950), history: history(3) }));
+    expect(r4.action).toBe('COUNTER');
+    expect(r4.price).toBe(rs(2000)); // round 4 → full gap (floor)
+    const cap = decide(input({ defaults: SAKHT, customerOffer: rs(1950), history: history(4) }));
+    expect(cap.action).toBe('COUNTER');
+    expect(cap.final).toBe(true); // past roundsMax → last-chance floor offer
+    expect(cap.price).toBe(rs(2000));
+  });
+
+  it('every preset still respects the floor exactly', () => {
+    for (const defs of [NARM, SAKHT]) {
+      for (let rounds = 0; rounds <= 6; rounds++) {
+        const d = decide(input({ defaults: defs, customerOffer: rs(1500), history: history(rounds) }));
+        if (d.price !== undefined) expect(d.price).toBeGreaterThanOrEqual(rs(2000));
+      }
+    }
+  });
+});

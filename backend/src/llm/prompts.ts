@@ -5,10 +5,17 @@ import type { ComposeContext, ReplySpec } from './types';
  * given decision in Roman Urdu — the price (if any) is fixed by the engine and must
  * be repeated exactly. The floor is NEVER included here (docs/spec/06 §7.1).
  */
+const STYLE_TONE: Record<string, string> = {
+  narm: `You are extra warm, sweet and generous — jaldi maan jaane wala dukaandar. Use friendly touches ("bhai jaan", light emoji). `,
+  sakht: `You are a confident, firm dukaandar who knows the maal is worth its price — polite but rarely budges, no begging, minimal emoji. `,
+  standard: ``,
+};
+
 export function replySpecToPrompt(spec: ReplySpec, ctx: ComposeContext): string {
   const persona =
     `You are ${ctx.botName ? ctx.botName + ', ' : ''}a friendly, polite Pakistani shopkeeper's WhatsApp bot for "${ctx.businessName}". ` +
     `Reply in short, natural Roman Urdu (Urdu in Latin letters), warm and conversational, like a real dukaandar. ` +
+    STYLE_TONE[ctx.style ?? 'standard'] +
     `Use "Rs" for prices (never the ₹ symbol). Keep it to 1-2 short sentences. Do NOT invent prices or products. ` +
     `Only output the message text, nothing else.\n\nSituation: `;
 
@@ -64,6 +71,9 @@ export function replySpecToPrompt(spec: ReplySpec, ctx: ComposeContext): string 
       break;
     case 'handoff':
       s = `Tell the customer you're connecting them to a person who will help shortly. Be reassuring.`;
+      break;
+    case 'upsell':
+      s = `Their order is confirmed. Casually suggest adding "${spec.productName}" for exactly Rs ${spec.priceRupees} — it would ship together with their order. One light, no-pressure line; name this exact figure.`;
       break;
   }
   return persona + s;

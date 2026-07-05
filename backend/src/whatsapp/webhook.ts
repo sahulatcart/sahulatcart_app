@@ -5,6 +5,8 @@ import { logger } from '../lib/logger';
 import { getServiceClient } from '../lib/supabase';
 import { verifySignature } from './signature';
 import { parseWebhook } from './parse';
+import { downloadWhatsAppMedia } from './media';
+import { getLlmClient } from '../llm';
 import { runOrchestrator } from '../orchestrator/orchestrator';
 import type { NormalizedMessage, NormalizedStatus, WebhookPayload } from './types';
 
@@ -96,6 +98,19 @@ async function handleInboundMessage(
   msg: NormalizedMessage
 ): Promise<void> {
   if (!(await claimEvent(db, msg.waMessageId, 'message', msg.raw))) return; // dedupe
+
+  // Voice notes: transcribe to Roman Urdu so the message flows through every state
+  // like typed text (and the merchant inbox shows what was said).
+  if (msg.type === 'audio' && !msg.text) {
+    const audioId = (msg.raw as { audio?: { id?: string } })?.audio?.id;
+    if (audioId) {
+      const media = await downloadWhatsAppMedia(audioId);
+      if (media) {
+        const transcript = await getLlmClient().transcribeAudio(media.buffer, media.mimeType);
+        if (transcript) msg.text = transcript;
+      }
+    }
+  }
 
   const customer = await upsertCustomer(db, tenant.merchant_id, msg.from, msg.profileName);
   if (!customer) return;

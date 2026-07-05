@@ -8,9 +8,18 @@ import { useToast } from '../../components/Toast';
 interface Settings {
   business_name: string;
   negotiation_defaults: { maxDiscountPct?: number; roundsMax?: number };
-  settings: { botEnabled?: boolean; defaultDeliveryCharge?: number };
+  settings: { botEnabled?: boolean; defaultDeliveryCharge?: number; upsellEnabled?: boolean };
+  bot_persona: { name?: string; style?: string } | null;
   bankAccounts: { id: string; bank_name: string; account_title: string; account_number: string; is_default: boolean }[];
 }
+
+// Bargaining personalities → concession-curve presets (fraction of the discount gap
+// conceded per round). Sakht crawls over 4 rounds; Narm gives most of it round one.
+const STYLES: Record<string, { label: string; hint: string; concessionSteps: number[]; roundsMax: number }> = {
+  narm: { label: 'Narm 😊', hint: 'Concedes quickly — friendly and generous. Good for fast sales.', concessionSteps: [0.6, 0.9, 1.0], roundsMax: 3 },
+  standard: { label: 'Standard', hint: 'Balanced haggling — concedes steadily over 3 rounds.', concessionSteps: [0.5, 0.8, 1.0], roundsMax: 3 },
+  sakht: { label: 'Sakht 😤', hint: 'Tough negotiator — small concessions over 4 rounds. Protects margin.', concessionSteps: [0.25, 0.5, 0.75, 1.0], roundsMax: 4 },
+};
 
 export default function SettingsPage() {
   const toast = useToast();
@@ -30,6 +39,19 @@ export default function SettingsPage() {
     await api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify({ settings: { botEnabled: on } }) });
     toast(on ? 'Bot is now active' : 'Bot paused', on ? 'success' : 'info');
   }
+  async function setStyle(style: string) {
+    if (!s) return;
+    const preset = STYLES[style];
+    setS({ ...s, bot_persona: { ...(s.bot_persona ?? {}), style }, negotiation_defaults: { ...s.negotiation_defaults, roundsMax: preset.roundsMax } });
+    const r = await api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify({ botPersona: { style }, negotiationDefaults: { concessionSteps: preset.concessionSteps, roundsMax: preset.roundsMax } }) });
+    if (r.ok) toast(`Bargaining style: ${preset.label}`, 'success'); else toast('Could not save style', 'error');
+  }
+  async function toggleUpsell(on: boolean) {
+    if (!s) return;
+    setS({ ...s, settings: { ...s.settings, upsellEnabled: on } });
+    const r = await api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify({ settings: { upsellEnabled: on } }) });
+    if (r.ok) toast(on ? 'Upsell suggestions on' : 'Upsell suggestions off', 'success'); else toast('Could not save', 'error');
+  }
   async function addBank() {
     if (!bank.bank_name || !bank.account_number) return;
     await api('/api/v1/admin/bank-accounts', { method: 'POST', body: JSON.stringify({ ...bank, is_default: (s?.bankAccounts.length ?? 0) === 0 }) });
@@ -48,6 +70,31 @@ export default function SettingsPage() {
         <div className="row between">
           <div><h2 style={{ margin: 0 }}>Bot</h2><div className="hint">{s.settings.botEnabled !== false ? 'Active — replying to customers on WhatsApp' : 'Paused — customers get no automated replies'}</div></div>
           <label className="switch"><input type="checkbox" checked={s.settings.botEnabled !== false} onChange={(e) => toggleBot(e.target.checked)} /><span className="track" /></label>
+        </div>
+      </div>
+
+      <div className="card pad">
+        <h2>Bargaining style</h2>
+        <div className="row" style={{ gap: 8, marginBottom: 8 }}>
+          {Object.entries(STYLES).map(([key, st]) => {
+            const active = (s.bot_persona?.style ?? 'standard') === key;
+            return (
+              <button key={key} className={active ? 'btn' : 'btn ghost'} onClick={() => setStyle(key)} aria-pressed={active}>
+                {st.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="hint">{STYLES[s.bot_persona?.style ?? 'standard']?.hint}</div>
+      </div>
+
+      <div className="card pad">
+        <div className="row between">
+          <div>
+            <h2 style={{ margin: 0 }}>Upsell suggestions</h2>
+            <div className="hint">After an order confirms, the bot suggests one cheap add-on (ships together).</div>
+          </div>
+          <label className="switch"><input type="checkbox" checked={s.settings.upsellEnabled !== false} onChange={(e) => toggleUpsell(e.target.checked)} /><span className="track" /></label>
         </div>
       </div>
 

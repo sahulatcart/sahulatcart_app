@@ -158,4 +158,28 @@ export class GeminiClient implements LlmClient {
     });
     return raw.trim();
   }
+
+  async transcribeAudio(data: Buffer, mimeType: string): Promise<string | null> {
+    // WhatsApp voice notes arrive as "audio/ogg; codecs=opus" — Gemini wants the bare mime.
+    const mime = (mimeType.split(';')[0] ?? '').trim() || 'audio/ogg';
+    try {
+      const raw = await callGemini({
+        contents: [{ parts: [
+          { text:
+            `Transcribe this WhatsApp voice note from a Pakistani customer. It is most likely Urdu, ` +
+            `Punjabi, or mixed Urdu-English. Write the transcription in Roman Urdu (Latin letters), ` +
+            `keeping numbers as digits (e.g. "do sau" stays "200" if they mean a price, else write words as spoken). ` +
+            `Output ONLY the transcription text, nothing else. If the audio is silent or unintelligible, output exactly: [unintelligible]` },
+          { inline_data: { mime_type: mime, data: data.toString('base64') } },
+        ] }],
+        generationConfig: { temperature: 0, maxOutputTokens: 300, ...NO_THINKING },
+      });
+      const text = raw.trim();
+      if (!text || /\[unintelligible\]/i.test(text)) return null;
+      return text;
+    } catch (e) {
+      logger.warn({ err: e instanceof Error ? e.message : String(e) }, 'voice transcription failed');
+      return null;
+    }
+  }
 }

@@ -34,11 +34,16 @@ export type ReplySpec =
   | { kind: 'payment_verified'; orderNumber: string }
   | { kind: 'clarify' }
   | { kind: 'chitchat' }
-  | { kind: 'handoff' };
+  | { kind: 'handoff' }
+  | { kind: 'upsell'; productName: string; priceRupees: number }; // post-order add-on suggestion
+
+/** Merchant-selected bargaining personality — maps to concession presets + reply tone. */
+export type BotStyle = 'narm' | 'standard' | 'sakht';
 
 export interface ComposeContext {
   businessName: string;
   botName?: string;
+  style?: BotStyle;
   language: Lang;
 }
 
@@ -56,4 +61,6 @@ export interface LlmClient {
   classify(text: string, ctx: ClassifyContext): Promise<Classification>;
   compose(spec: ReplySpec, ctx: ComposeContext): Promise<string>;
   extractDelivery(text: string): Promise<DeliveryDetails>;
+  /** Transcribe a WhatsApp voice note to Roman Urdu text. Null when unintelligible/unavailable. */
+  transcribeAudio(data: Buffer, mimeType: string): Promise<string | null>;
 }

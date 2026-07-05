@@ -9,6 +9,7 @@ import { downloadWhatsAppMedia, uploadScreenshot } from '../whatsapp/media';
 import { signedSlipUrl } from './slip';
 import type { NormalizedMessage } from '../whatsapp/types';
 import { resolveProduct, type CatalogItem } from './resolve';
+import { pickUpsell, type UpsellCandidate } from './upsell';
 import { priceGuardOk } from './guard';
 import { confirmBankOrder, confirmCodOrder, createDraftOrder, switchBankOrderToCod, type DeliveryInfo } from './order-service';
 
@@ -64,6 +65,7 @@ function fallbackText(spec: ReplySpec): string {
     case 'clarify': return 'Zara batayein kaunsa product chahiye?';
     case 'chitchat': return 'Ji bilkul! Batayein kaise madad karoon?';
     case 'handoff': return 'Aapko humari team se connect kar raha hoon, thodi dair mein reply aayega.';
+    case 'upsell': return `Sath mein ${spec.productName} bhi le lein? Sirf Rs ${spec.priceRupees} — order ke sath hi bhej denge.`;
   }
 }
 
@@ -142,9 +144,11 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
     return;
   }
 
+  const persona = (merchant.bot_persona ?? {}) as { name?: string; style?: string };
   const cc: ComposeContext = {
     businessName: merchant.business_name ?? 'Shop',
-    botName: (merchant.bot_persona as { name?: string })?.name,
+    botName: persona.name,
+    style: persona.style === 'narm' || persona.style === 'sakht' ? persona.style : 'standard',
     language: 'roman_urdu',
   };
   const defaults = coerceDefaults(merchant.negotiation_defaults);
@@ -180,9 +184,17 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
   }));
 
   const text = message.text ?? '';
+  const state = (convoRes.data?.current_state ?? 'greeting') as BotState;
+
+  // Reactions (👍 on a message) are not conversation — store-only, never reply.
+  if (message.type === 'reaction') return;
+  // A voice note we couldn't transcribe: ask to type instead of replying nonsense.
+  if (message.type === 'audio' && !text) {
+    await reply(db, ctx, 'Maazrat, voice note wazeh nahi thi. Baraye meharbani likh kar bhej dein 🙏', state, context, false);
+    return;
+  }
 
   // ── Phase-4 order-flow states are handled WITHOUT a classify call (fewer LLM calls) ──
-  const state = (convoRes.data?.current_state ?? 'greeting') as BotState;
   if (state === 'collecting_delivery') return handleDelivery(db, ctx, cc, context, merchant.settings, message);
   if (state === 'selecting_payment') return handlePayment(db, ctx, cc, context, message);
   if (state === 'awaiting_payment_proof') return handlePaymentProof(db, ctx, cc, context, message);
@@ -213,6 +225,17 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
   if (cls.intent === 'human_request' || cls.intent === 'complaint') {
     await handoff(db, ctx, cc, context, convoRes.data?.current_state as BotState);
     return;
+  }
+
+  // Immediately after an upsell suggestion, "nahi" declines gracefully — the bot must
+  // never start haggling over an add-on the customer didn't ask for.
+  if (context.upsell === true && cls.intent === 'reject' && cls.offerPaisa == null) {
+    await reply(db, ctx, 'Koi baat nahi! Aapka order jald pahunch jaye ga. Shukriya 😊', 'completed', {});
+    return;
+  }
+  // ...and "haan, le lo" accepts it at the quoted price (skip the re-quote round-trip).
+  if (context.upsell === true && cls.intent === 'add_to_order' && cls.offerPaisa == null) {
+    cls = { ...cls, intent: 'accept' };
   }
 
   // A greeting or small talk is always just that — never quote a leftover active product.
@@ -246,7 +269,8 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
   const qtyMentioned = cls.quantity != null && cls.quantity > 0 ? Math.round(cls.quantity) : null;
   const neg = await getOrCreateNegotiation(db, ctx, product, qtyMentioned ?? 1);
   const quantity = qtyMentioned ?? ((neg?.quantity as number | null) ?? 1);
-  const newContext = { ...context, activeProductId: product.id, activeNegotiationId: neg?.id };
+  // upsell flag lives exactly one turn (the reply to the suggestion), then clears.
+  const newContext = { ...context, upsell: undefined, activeProductId: product.id, activeNegotiationId: neg?.id };
 
   // Interest without an offer, first touch → QUOTE the list price (don't start haggling).
   if (['ask_price', 'ask_product', 'add_to_order'].includes(cls.intent) && cls.offerPaisa == null && (neg?.rounds ?? 0) === 0) {
@@ -290,9 +314,31 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
     quantity,
   };
 
-  // ACCEPT → lock the deal and start the order flow (ask for delivery). CD-15/16.
+  // ACCEPT → lock the deal and start the order flow. CD-15/16.
   if (decision.action === 'ACCEPT') {
     await saveNeg(db, neg?.id, { ...negPatch, status: 'agreed', agreed_price: decision.price, last_bot_offer: decision.price });
+
+    // Returning buyer in the same chat (e.g. accepted an upsell): we already have full
+    // delivery details — skip straight to the payment question instead of re-asking.
+    const prev = (context.delivery ?? {}) as Partial<DeliveryInfo>;
+    if (prev.name && prev.address && prev.area) {
+      const delivery: DeliveryInfo = {
+        name: prev.name,
+        address: prev.address,
+        area: prev.area,
+        city: prev.city ?? null,
+        phone: prev.phone ?? ctx.customerWaId ?? null,
+      };
+      const charge = await getDeliveryCharge(db, ctx.merchantId, delivery.area, merchant.settings);
+      const order = await createDraftOrder(db, ctx, delivery, charge);
+      if (order) {
+        const dctx = { ...newContext, delivery, pendingOrderId: order.orderId };
+        await reply(db, ctx, await safeCompose({ kind: 'accept', productName: product.name, priceRupees: rupees(decision.price!) }, cc), 'selecting_payment', dctx, false);
+        await reply(db, ctx, await safeCompose({ kind: 'ask_payment_method', priceRupees: rupees(order.total) }, cc), 'selecting_payment', dctx);
+        return;
+      }
+    }
+
     const dctx = { ...newContext, delivery: {} };
     await reply(db, ctx, await safeCompose({ kind: 'accept', productName: product.name, priceRupees: rupees(decision.price!) }, cc), 'collecting_delivery', dctx, false);
     await reply(db, ctx, await safeCompose({ kind: 'ask_delivery' }, cc), 'collecting_delivery', dctx);
@@ -379,10 +425,12 @@ const HUMAN_RE = /insaan se|insan se|operator|agent se|baat kara|baat karwa|baat
 const COD_RE = /\bcod\b|\bcash\b|delivery pe|delivery par|ghar pe d|hath me d/;
 const BANK_RE = /\bbank\b|transfer|account|online|\biban\b/;
 
-/** Send the COD confirmation (slip PDF + caption, or text fallback) and complete the conversation. */
+/** Send the COD confirmation (slip PDF + caption, or text fallback), then maybe suggest an add-on. */
 async function sendCodConfirmed(
   db: SupabaseClient,
   ctx: OrchestratorCtx,
+  cc: ComposeContext,
+  orderId: string,
   res: { orderNumber: string; total: number; slip: string; slipKey: string | null },
   done: Record<string, unknown>
 ): Promise<void> {
@@ -396,6 +444,52 @@ async function sendCodConfirmed(
     await reply(db, ctx, res.slip, 'completed', done, false);
     await reply(db, ctx, caption, 'completed', done);
   }
+  // Upsell must never break the confirmation that was already sent.
+  try {
+    await maybeUpsell(db, ctx, cc, orderId);
+  } catch (e) {
+    logger.warn({ err: (e as Error).message }, 'upsell skipped');
+  }
+}
+
+/**
+ * Suggest ONE cheap add-on after a confirmed order (settings.upsellEnabled, default on).
+ * Saves the order's delivery details into context so an accepted upsell skips straight
+ * to the payment question.
+ */
+async function maybeUpsell(db: SupabaseClient, ctx: OrchestratorCtx, cc: ComposeContext, orderId: string): Promise<void> {
+  const m = await db.from('merchants').select('settings').eq('id', ctx.merchantId).maybeSingle();
+  const s = (m.data?.settings ?? {}) as { upsellEnabled?: boolean };
+  if (s.upsellEnabled === false) return;
+
+  // Exclude everything bought in THIS conversation (any order), not just the last order —
+  // never suggest something the customer already has coming.
+  const convoOrders = await db.from('orders').select('id').eq('conversation_id', ctx.conversationId);
+  const orderIds = (convoOrders.data ?? []).map((o) => o.id as string);
+  const [order, items, prods] = await Promise.all([
+    db.from('orders').select('delivery_name, delivery_phone, delivery_address, delivery_area, delivery_city').eq('id', orderId).maybeSingle(),
+    db.from('order_items').select('product_id').in('order_id', orderIds.length ? orderIds : [orderId]),
+    db.from('products').select('id, name, price, stock, track_stock').eq('merchant_id', ctx.merchantId).eq('is_active', true),
+  ]);
+  if (!order.data) return;
+  const exclude = new Set((items.data ?? []).map((i) => i.product_id as string));
+  const pick = pickUpsell((prods.data ?? []) as UpsellCandidate[], exclude);
+  if (!pick) return;
+
+  const delivery: Partial<DeliveryInfo> = {
+    name: order.data.delivery_name,
+    address: order.data.delivery_address,
+    area: order.data.delivery_area,
+    city: order.data.delivery_city,
+    phone: order.data.delivery_phone,
+  };
+  await reply(
+    db,
+    ctx,
+    await safeCompose({ kind: 'upsell', productName: pick.name, priceRupees: rupees(pick.price) }, cc),
+    'browsing',
+    { activeProductId: pick.id, upsell: true, delivery }
+  );
 }
 
 /**
@@ -412,7 +506,9 @@ async function handleEscape(
   message: NormalizedMessage,
   resumeFrom: BotState
 ): Promise<boolean> {
-  if (message.type !== 'text') return false;
+  // Applies to typed text AND transcribed voice notes; never to images (captions
+  // on a payment screenshot must not cancel the order).
+  if (message.type === 'image') return false;
   const txt = (message.text ?? '').toLowerCase();
   if (!txt) return false;
 
@@ -520,7 +616,7 @@ async function handlePayment(db: SupabaseClient, ctx: OrchestratorCtx, cc: Compo
     const res = await confirmCodOrder(db, { merchantId: ctx.merchantId }, orderId, cc.businessName);
     const done = { ...context, pendingOrderId: undefined };
     if (res) {
-      await sendCodConfirmed(db, ctx, res, done);
+      await sendCodConfirmed(db, ctx, cc, orderId, res, done);
     } else {
       await reply(db, ctx, await safeCompose({ kind: 'clarify' }, cc), 'browsing', done);
     }
@@ -549,11 +645,11 @@ async function handlePayment(db: SupabaseClient, ctx: OrchestratorCtx, cc: Compo
 async function handlePaymentProof(db: SupabaseClient, ctx: OrchestratorCtx, cc: ComposeContext, context: Record<string, unknown>, message: NormalizedMessage): Promise<void> {
   if (await handleEscape(db, ctx, cc, context, message, 'awaiting_payment_proof')) return;
   const orderId = context.pendingOrderId as string | undefined;
-  // Customer changed their mind: "COD kar dein" while we wait for a screenshot → switch the order.
-  if (orderId && message.type === 'text' && COD_RE.test((message.text ?? '').toLowerCase()) && !BANK_RE.test((message.text ?? '').toLowerCase())) {
+  // Customer changed their mind: "COD kar dein" (typed or voice) while we wait for a screenshot → switch the order.
+  if (orderId && message.type !== 'image' && message.text && COD_RE.test(message.text.toLowerCase()) && !BANK_RE.test(message.text.toLowerCase())) {
     const res = await switchBankOrderToCod(db, { merchantId: ctx.merchantId }, orderId, cc.businessName);
     if (res) {
-      await sendCodConfirmed(db, ctx, res, { ...context, pendingOrderId: undefined, pendingPaymentId: undefined, paymentMethod: 'cod' });
+      await sendCodConfirmed(db, ctx, cc, orderId, res, { ...context, pendingOrderId: undefined, pendingPaymentId: undefined, paymentMethod: 'cod' });
       return;
     }
   }
