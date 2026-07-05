@@ -89,6 +89,7 @@ const CLASSIFY_SCHEMA = {
     productQuery: { type: 'string', nullable: true },
     quantity: { type: 'integer', nullable: true },
     offerRupees: { type: 'number', nullable: true },
+    offerScope: { type: 'string', enum: ['per_unit', 'total'], nullable: true },
     language: { type: 'string', enum: ['roman_urdu', 'english', 'urdu'] },
   },
   required: ['intent', 'language'],
@@ -100,8 +101,11 @@ export class GeminiClient implements LlmClient {
       `You classify a Pakistani shopper's WhatsApp message for a shop bot. ` +
       `Catalog products: ${ctx.productNames.join(', ') || '(none)'}. ` +
       `Return the intent, the product they refer to (productQuery, match to catalog if possible), ` +
-      `quantity, any price they OFFER in rupees (offerRupees, number only; null if none), and language. ` +
-      `Roman Urdu examples: "kitnay ka hai"=ask_price, "2000 me do"=make_offer offerRupees 2000, ` +
+      `quantity, any price they OFFER in rupees (offerRupees, number only; null if none), ` +
+      `offerScope ("total" if the price is for ALL units together, "per_unit" if it is per piece; null when no offer), and language. ` +
+      `Roman Urdu examples: "kitnay ka hai"=ask_price, "2000 me do"=make_offer offerRupees 2000 offerScope per_unit, ` +
+      `"2 shirts 3000 me de do"=make_offer quantity 2 offerRupees 3000 offerScope total, ` +
+      `"3 caps, 500 per piece"=make_offer quantity 3 offerRupees 500 offerScope per_unit, ` +
       `"ye wala do"=add_to_order, "theek hai"=accept, "nahi mehnga hai"=reject, "cash on delivery"=choose_cod, ` +
       `"bandh karo"=stop. Message: "${text.replace(/"/g, "'")}"`;
     const raw = await callGemini({
@@ -112,7 +116,7 @@ export class GeminiClient implements LlmClient {
     try {
       parsed = JSON.parse(raw);
     } catch {
-      return { intent: 'out_of_scope', productQuery: null, quantity: null, offerPaisa: null, language: 'roman_urdu' };
+      return { intent: 'out_of_scope', productQuery: null, quantity: null, offerPaisa: null, offerScope: null, language: 'roman_urdu' };
     }
     const intent = (BotIntent as readonly string[]).includes(parsed.intent as string)
       ? (parsed.intent as BotIntent)
@@ -123,6 +127,7 @@ export class GeminiClient implements LlmClient {
       productQuery: typeof parsed.productQuery === 'string' ? parsed.productQuery : null,
       quantity: typeof parsed.quantity === 'number' ? Math.round(parsed.quantity) : null,
       offerPaisa: offerRupees != null && offerRupees > 0 ? Math.round(offerRupees) * 100 : null,
+      offerScope: parsed.offerScope === 'total' || parsed.offerScope === 'per_unit' ? parsed.offerScope : null,
       language: (['roman_urdu', 'english', 'urdu'].includes(parsed.language as string) ? parsed.language : 'roman_urdu') as Lang,
     };
   }

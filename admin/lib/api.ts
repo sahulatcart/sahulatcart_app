@@ -31,3 +31,19 @@ export async function hasSession(): Promise<boolean> {
 }
 
 export const rs = (paisa: number): string => `Rs ${Math.round((paisa ?? 0) / 100).toLocaleString('en-PK')}`;
+
+/** Format an ISO timestamp in Pakistan time, e.g. "06 Jul, 5:45 pm". */
+export function dt(iso: string | null | undefined, withYear = false): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('en-GB', {
+    timeZone: 'Asia/Karachi',
+    day: '2-digit',
+    month: 'short',
+    ...(withYear ? { year: 'numeric' } : {}),
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}

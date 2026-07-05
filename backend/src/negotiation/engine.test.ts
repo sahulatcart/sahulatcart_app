@@ -212,3 +212,37 @@ describe('invariants', () => {
     expect(d.price ?? Infinity).toBeGreaterThanOrEqual(rs(2000));
   });
 });
+
+// ── no-offer guard: questions must never move the price ─────────────────────
+describe('no-offer guard (intent="other")', () => {
+  it('a question mid-haggle HOLDs at the standing price and does NOT advance the curve', () => {
+    // After one counter at 2,300, "delivery kitne din?" must not concede further.
+    const d = decide(input({ customerOffer: null, intent: 'other', history: history(1, { lastBotOffer: rs(2300) }) }));
+    expect(d.action).toBe('HOLD');
+    expect(d.price).toBe(rs(2300));
+    expect(d.audit.round).toBe(1); // unchanged
+    expect(d.reason).toBe('no_offer');
+  });
+
+  it('repeated neutral messages never walk the price to the floor', () => {
+    let last = rs(2300);
+    for (let i = 0; i < 5; i++) {
+      const d = decide(input({ customerOffer: null, intent: 'other', history: history(1, { lastBotOffer: last }) }));
+      expect(d.action).toBe('HOLD');
+      expect(d.price).toBe(last);
+      last = d.price!;
+    }
+  });
+
+  it('first-touch question (no prior offer) HOLDs at the round-1 curve price, not below', () => {
+    const d = decide(input({ customerOffer: null, intent: 'other', history: history(0) }));
+    expect(d.action).toBe('HOLD');
+    expect(d.price).toBe(rs(2300)); // curve round 1, never lower
+  });
+
+  it('an explicit "kam karo" (wants_discount) still concedes normally', () => {
+    const d = decide(input({ customerOffer: null, intent: 'wants_discount', history: history(1, { lastBotOffer: rs(2300) }) }));
+    expect(d.action).toBe('COUNTER');
+    expect(d.price).toBe(rs(2150));
+  });
+});

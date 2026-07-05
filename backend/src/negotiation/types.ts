@@ -40,7 +40,8 @@ export type NegotiationReason =
   | 'absurd_offer'
   | 'stalemate'
   | 'lowball'
-  | 'agreed_locked';
+  | 'agreed_locked'
+  | 'no_offer';
 
 export interface NegotiationDecision {
   action: NegotiationAction;

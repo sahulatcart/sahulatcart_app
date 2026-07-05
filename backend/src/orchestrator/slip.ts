@@ -6,8 +6,25 @@ import type { DeliveryInfo } from './order-service';
 
 const rs = (paisa: number): string => `Rs ${Math.round(paisa / 100).toLocaleString('en-PK')}`;
 
+/** Format an ISO timestamp in Pakistan time, e.g. "06 Jul 2026, 5:45 pm". */
+export function formatPkt(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString('en-GB', {
+    timeZone: 'Asia/Karachi',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
 export interface SlipData {
   orderNumber: string;
+  placedAt: string | null; // ISO timestamp; rendered in PKT
   businessName: string;
   items: { name: string; qty: number; lineTotal: number }[];
   subtotal: number;
@@ -28,7 +45,8 @@ export function generateSlipPdf(d: SlipData): Promise<Buffer> {
     doc.on('error', reject);
 
     doc.fontSize(20).fillColor('#0f766e').text(d.businessName);
-    doc.fontSize(10).fillColor('#666').text(`Order ${d.orderNumber}`);
+    const when = formatPkt(d.placedAt);
+    doc.fontSize(10).fillColor('#666').text(`Order ${d.orderNumber}${when ? `  ·  ${when}` : ''}`);
     doc.moveTo(36, doc.y + 6).lineTo(384, doc.y + 6).strokeColor('#e5e7eb').stroke();
     doc.moveDown();
 

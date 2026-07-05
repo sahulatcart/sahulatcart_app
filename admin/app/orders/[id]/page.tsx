@@ -4,11 +4,11 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Check, Image as ImageIcon, X } from 'lucide-react';
 import AppShell, { PageHead, PaymentPill } from '../../../components/AppShell';
-import { api, apiJson, rs } from '../../../lib/api';
+import { api, apiJson, dt, rs } from '../../../lib/api';
 import { useToast } from '../../../components/Toast';
 
 interface Detail {
-  order: { id: string; order_number: string; status: string; payment_method: string; payment_status: string; subtotal: number; discount_total: number; delivery_charge: number; total: number; delivery_name: string; delivery_address: string; delivery_area: string; delivery_city: string; delivery_phone: string };
+  order: { id: string; order_number: string; status: string; payment_method: string; payment_status: string; subtotal: number; discount_total: number; delivery_charge: number; total: number; delivery_name: string; delivery_address: string; delivery_area: string; delivery_city: string; delivery_phone: string; placed_at: string | null; created_at: string };
   items: { name_snapshot: string; quantity: number; unit_price: number; discount: number; line_total: number }[];
 }
 
@@ -41,7 +41,7 @@ export default function OrderDetail() {
   return (
     <AppShell>
       <Link href="/orders" className="hint" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginBottom: 10 }}><ArrowLeft size={15} /> Orders</Link>
-      <PageHead title={`Order ${o.order_number}`} action={<PaymentPill status={o.payment_status} />} />
+      <PageHead title={`Order ${o.order_number}`} sub={`Placed ${dt(o.placed_at ?? o.created_at, true)} (PKT)`} action={<PaymentPill status={o.payment_status} />} />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16, alignItems: 'start' }}>
         <div>

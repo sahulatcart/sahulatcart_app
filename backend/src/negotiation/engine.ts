@@ -130,6 +130,13 @@ export function decide(input: NegotiationInput): NegotiationDecision {
 
   const currentBotCounter = curveOffer(list, floor, defaults.concessionSteps, history.rounds || 1);
 
+  // No number AND no discount ask (a question, chitchat, etc.) — restate the standing
+  // price, do NOT advance the concession curve. Only an offer or an explicit "kam karo"
+  // may move the price (§4.3).
+  if (customerOffer == null && input.intent === 'other') {
+    return decision('HOLD', history.lastBotOffer ?? currentBotCounter, mkAudit(history.rounds), { reason: 'no_offer' });
+  }
+
   // Absurd offers (§7.4) — HOLD, do not advance the curve.
   if (customerOffer != null && (customerOffer <= 0 || customerOffer < ABSURDITY_RATIO * list)) {
     return decision('HOLD', currentBotCounter, mkAudit(history.rounds), { reason: 'absurd_offer' });

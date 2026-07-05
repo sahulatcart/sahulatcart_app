@@ -10,7 +10,7 @@ import { signedSlipUrl } from './slip';
 import type { NormalizedMessage } from '../whatsapp/types';
 import { resolveProduct, type CatalogItem } from './resolve';
 import { priceGuardOk } from './guard';
-import { confirmBankOrder, confirmCodOrder, createDraftOrder, type DeliveryInfo } from './order-service';
+import { confirmBankOrder, confirmCodOrder, createDraftOrder, switchBankOrderToCod, type DeliveryInfo } from './order-service';
 
 export interface OrchestratorCtx {
   merchantId: string;
@@ -241,8 +241,11 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
     return;
   }
 
-  const quantity = cls.quantity ?? 1;
-  const neg = await getOrCreateNegotiation(db, ctx, product, quantity);
+  // Quantity: an explicit mention wins; otherwise KEEP the negotiation's persisted quantity
+  // ("2 shirts" then "1900 final" must stay an order for 2, not silently reset to 1).
+  const qtyMentioned = cls.quantity != null && cls.quantity > 0 ? Math.round(cls.quantity) : null;
+  const neg = await getOrCreateNegotiation(db, ctx, product, qtyMentioned ?? 1);
+  const quantity = qtyMentioned ?? ((neg?.quantity as number | null) ?? 1);
   const newContext = { ...context, activeProductId: product.id, activeNegotiationId: neg?.id };
 
   // Interest without an offer, first touch → QUOTE the list price (don't start haggling).
@@ -253,6 +256,11 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
 
   // Determine the customer's offer for the engine.
   let customerOffer: number | null = cls.offerPaisa;
+  // "2 shirts 3000 me" is a TOTAL for the lot — convert to per-unit before comparing
+  // against the per-unit list/floor, or a below-floor bulk offer looks like a premium.
+  if (customerOffer != null && cls.offerScope === 'total' && quantity > 1) {
+    customerOffer = Math.round(customerOffer / quantity / 100) * 100;
+  }
   const mapIntent: 'offer' | 'wants_discount' | 'accepts' | 'other' =
     cls.intent === 'make_offer' ? 'offer' : cls.intent === 'accept' ? 'accepts' : cls.intent === 'reject' ? 'wants_discount' : 'other';
   if (cls.intent === 'accept' && customerOffer == null) customerOffer = neg?.last_bot_offer ?? product.price;
@@ -298,6 +306,9 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
       break;
     case 'HOLD':
       spec = { kind: 'hold', productName: product.name, priceRupees: rupees(decision.price!) };
+      // Persist the price we just told the customer — a following "theek hai" must
+      // close at THIS price, never fall back to full list price.
+      Object.assign(negPatch, { last_bot_offer: decision.price });
       break;
     case 'REJECT':
       await saveNeg(db, neg?.id, { ...negPatch, status: 'rejected' });
@@ -361,6 +372,79 @@ async function reply(
 
 // ── Phase-4 state handlers ────────────────────────────────────────────────────
 
+// NOTE: these run on address/free-text too — keep patterns multi-word or unambiguous
+// (e.g. "Malik" is a common name; "Band Road" is a real street) to avoid false triggers.
+const CANCEL_RE = /\bcancel\b|cancle|band kar do|band karo|rehne d|rehnay d|nahi chahiye|nai chahiye|nahin chahiye|chhor d|chor d|khatam kar|order wapis|mind badal/;
+const HUMAN_RE = /insaan se|insan se|operator|agent se|baat kara|baat karwa|baat karva|complaint|shikayat|shikayet|kisi se baat|talk to (a )?(human|person)/;
+const COD_RE = /\bcod\b|\bcash\b|delivery pe|delivery par|ghar pe d|hath me d/;
+const BANK_RE = /\bbank\b|transfer|account|online|\biban\b/;
+
+/** Send the COD confirmation (slip PDF + caption, or text fallback) and complete the conversation. */
+async function sendCodConfirmed(
+  db: SupabaseClient,
+  ctx: OrchestratorCtx,
+  res: { orderNumber: string; total: number; slip: string; slipKey: string | null },
+  done: Record<string, unknown>
+): Promise<void> {
+  const url = res.slipKey ? await signedSlipUrl(db, res.slipKey) : null;
+  const caption = `Order ${res.orderNumber} confirm ✅ COD par total Rs ${rupees(res.total)}. Jald deliver karenge, shukriya!`;
+  if (url) {
+    const sent = await sendDocument(ctx.phoneNumberId, ctx.customerWaId, url, `Order-${res.orderNumber}.pdf`, caption);
+    await db.from('messages').insert({ conversation_id: ctx.conversationId, merchant_id: ctx.merchantId, direction: 'outbound', sender: 'bot', type: 'document', body: `[order slip] ${res.orderNumber}`, wa_message_id: sent.waMessageId, status: sent.waMessageId ? 'sent' : 'queued' });
+    await db.from('conversations').update({ current_state: 'completed', context: done }).eq('id', ctx.conversationId);
+  } else {
+    await reply(db, ctx, res.slip, 'completed', done, false);
+    await reply(db, ctx, caption, 'completed', done);
+  }
+}
+
+/**
+ * Escape hatch for the order-flow states (which skip intent classification):
+ * the customer must ALWAYS be able to cancel or reach a human, or they are
+ * trapped in "send your address / send the screenshot" loops forever.
+ * Returns true when the message was consumed.
+ */
+async function handleEscape(
+  db: SupabaseClient,
+  ctx: OrchestratorCtx,
+  cc: ComposeContext,
+  context: Record<string, unknown>,
+  message: NormalizedMessage,
+  resumeFrom: BotState
+): Promise<boolean> {
+  if (message.type !== 'text') return false;
+  const txt = (message.text ?? '').toLowerCase();
+  if (!txt) return false;
+
+  if (HUMAN_RE.test(txt)) {
+    await handoff(db, ctx, cc, context, resumeFrom);
+    return true;
+  }
+  if (CANCEL_RE.test(txt)) {
+    const orderId = context.pendingOrderId as string | undefined;
+    if (orderId) {
+      const o = await db.from('orders').select('status').eq('id', orderId).eq('merchant_id', ctx.merchantId).maybeSingle();
+      if (o.data && ['draft', 'confirmed', 'awaiting_payment'].includes(o.data.status as string)) {
+        await db.from('orders').update({ status: 'cancelled' }).eq('id', orderId);
+        await db.from('order_status_history').insert({ order_id: orderId, from_status: o.data.status, to_status: 'cancelled', changed_by: 'customer' });
+        await db.from('notifications').insert({
+          merchant_id: ctx.merchantId,
+          type: 'system',
+          title: 'Order cancelled by customer',
+          body: 'The customer cancelled during checkout.',
+          data: { orderId },
+          channel: 'portal',
+        });
+      }
+    }
+    // Abandon this conversation's open negotiations so they are not reused by a future order.
+    await db.from('negotiations').update({ status: 'abandoned' }).eq('conversation_id', ctx.conversationId).in('status', ['agreed', 'ongoing']);
+    await reply(db, ctx, 'Theek hai, order cancel kar diya hai. Kabhi bhi dobara order kar sakte hain. Shukriya!', 'browsing', {});
+    return true;
+  }
+  return false;
+}
+
 async function getDeliveryCharge(db: SupabaseClient, merchantId: string, area: string | null, settings: unknown): Promise<number> {
   if (area) {
     const z = await db.from('delivery_zones').select('charge').eq('merchant_id', merchantId).ilike('area_name', `%${area}%`).eq('is_serviceable', true).limit(1).maybeSingle();
@@ -382,6 +466,7 @@ function bankDetailsText(bank: { bank_name: string; account_title: string; accou
 }
 
 async function handleDelivery(db: SupabaseClient, ctx: OrchestratorCtx, cc: ComposeContext, context: Record<string, unknown>, settings: unknown, message: NormalizedMessage): Promise<void> {
+  if (await handleEscape(db, ctx, cc, context, message, 'collecting_delivery')) return;
   let ex: DeliveryDetails = { name: null, address: null, area: null, city: null, phone: null };
   try {
     ex = await getLlmClient().extractDelivery(message.text ?? '');
@@ -413,29 +498,29 @@ async function handleDelivery(db: SupabaseClient, ctx: OrchestratorCtx, cc: Comp
 }
 
 async function handlePayment(db: SupabaseClient, ctx: OrchestratorCtx, cc: ComposeContext, context: Record<string, unknown>, message: NormalizedMessage): Promise<void> {
+  if (await handleEscape(db, ctx, cc, context, message, 'selecting_payment')) return;
   const orderId = context.pendingOrderId as string | undefined;
   if (!orderId) {
     await reply(db, ctx, await safeCompose({ kind: 'clarify' }, cc), 'browsing', context);
     return;
   }
   const txt = (message.text ?? '').toLowerCase();
-  const wantsCod = /\bcod\b|cash|delivery pe|delivery par/.test(txt);
-  const wantsBank = /bank|transfer|account|online/.test(txt);
+  const codMention = COD_RE.test(txt);
+  const bankMention = BANK_RE.test(txt);
+  // "cash nahi, bank se karonga" mentions BOTH — respect negation; if still ambiguous, ask again.
+  let wantsCod = codMention && !bankMention;
+  let wantsBank = bankMention && !codMention;
+  if (codMention && bankMention) {
+    if (/(cash|cod)\s+(nahi|nai|nahin)/.test(txt)) wantsBank = true;
+    else if (/(bank|transfer|online)\s+(nahi|nai|nahin)/.test(txt)) wantsCod = true;
+    // otherwise both stay false → falls through to the re-ask below
+  }
 
   if (wantsCod) {
     const res = await confirmCodOrder(db, { merchantId: ctx.merchantId }, orderId, cc.businessName);
     const done = { ...context, pendingOrderId: undefined };
     if (res) {
-      const url = res.slipKey ? await signedSlipUrl(db, res.slipKey) : null;
-      const caption = `Order ${res.orderNumber} confirm ✅ COD par total Rs ${rupees(res.total)}. Jald deliver karenge, shukriya!`;
-      if (url) {
-        const sent = await sendDocument(ctx.phoneNumberId, ctx.customerWaId, url, `Order-${res.orderNumber}.pdf`, caption);
-        await db.from('messages').insert({ conversation_id: ctx.conversationId, merchant_id: ctx.merchantId, direction: 'outbound', sender: 'bot', type: 'document', body: `[order slip] ${res.orderNumber}`, wa_message_id: sent.waMessageId, status: sent.waMessageId ? 'sent' : 'queued' });
-        await db.from('conversations').update({ current_state: 'completed', context: done }).eq('id', ctx.conversationId);
-      } else {
-        await reply(db, ctx, res.slip, 'completed', done, false);
-        await reply(db, ctx, caption, 'completed', done);
-      }
+      await sendCodConfirmed(db, ctx, res, done);
     } else {
       await reply(db, ctx, await safeCompose({ kind: 'clarify' }, cc), 'browsing', done);
     }
@@ -462,7 +547,16 @@ async function handlePayment(db: SupabaseClient, ctx: OrchestratorCtx, cc: Compo
 }
 
 async function handlePaymentProof(db: SupabaseClient, ctx: OrchestratorCtx, cc: ComposeContext, context: Record<string, unknown>, message: NormalizedMessage): Promise<void> {
+  if (await handleEscape(db, ctx, cc, context, message, 'awaiting_payment_proof')) return;
   const orderId = context.pendingOrderId as string | undefined;
+  // Customer changed their mind: "COD kar dein" while we wait for a screenshot → switch the order.
+  if (orderId && message.type === 'text' && COD_RE.test((message.text ?? '').toLowerCase()) && !BANK_RE.test((message.text ?? '').toLowerCase())) {
+    const res = await switchBankOrderToCod(db, { merchantId: ctx.merchantId }, orderId, cc.businessName);
+    if (res) {
+      await sendCodConfirmed(db, ctx, res, { ...context, pendingOrderId: undefined, pendingPaymentId: undefined, paymentMethod: 'cod' });
+      return;
+    }
+  }
   if (message.type === 'image' && orderId) {
     // Download the screenshot from Meta → store privately in Supabase Storage → record the claim.
     const mediaId = (message.raw as { image?: { id?: string } })?.image?.id ?? null;

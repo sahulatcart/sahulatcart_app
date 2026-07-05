@@ -8,6 +8,7 @@ export interface Classification {
   productQuery: string | null; // free-text product the customer referred to
   quantity: number | null;
   offerPaisa: number | null; // customer's offered price, converted to paisa
+  offerScope: 'per_unit' | 'total' | null; // "2 shirts 3000 me" → total; "3000 per piece" → per_unit
   language: Lang;
 }
 
