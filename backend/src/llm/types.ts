@@ -19,10 +19,10 @@ export interface ClassifyContext {
 /** A structured instruction for what to say — the LLM only phrases it (Roman Urdu). */
 export type ReplySpec =
   | { kind: 'greeting' }
-  | { kind: 'quote'; productName: string; priceRupees: number }
-  | { kind: 'counter'; productName: string; priceRupees: number; final?: boolean }
-  | { kind: 'accept'; productName: string; priceRupees: number }
-  | { kind: 'hold'; productName: string; priceRupees: number }
+  | { kind: 'quote'; productName: string; priceRupees: number; quantity?: number; totalRupees?: number }
+  | { kind: 'counter'; productName: string; priceRupees: number; final?: boolean; quantity?: number; totalRupees?: number }
+  | { kind: 'accept'; productName: string; priceRupees: number; quantity?: number; totalRupees?: number }
+  | { kind: 'hold'; productName: string; priceRupees: number; quantity?: number; totalRupees?: number }
   | { kind: 'not_found'; query: string }
   | { kind: 'out_of_stock'; productName: string }
   | { kind: 'order_ack'; productName: string; priceRupees: number }

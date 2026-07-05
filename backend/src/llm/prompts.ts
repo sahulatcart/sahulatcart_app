@@ -19,22 +19,28 @@ export function replySpecToPrompt(spec: ReplySpec, ctx: ComposeContext): string 
     `Use "Rs" for prices (never the ₹ symbol). Keep it to 1-2 short sentences. Do NOT invent prices or products. ` +
     `Only output the message text, nothing else.\n\nSituation: `;
 
+  // For multi-unit asks ("3 kitnay ki?"): state per-piece AND the exact total.
+  const qty = (sp: { quantity?: number; totalRupees?: number; priceRupees: number }): string =>
+    sp.quantity && sp.quantity > 1 && sp.totalRupees
+      ? ` The customer wants ${sp.quantity} pieces: Rs ${sp.priceRupees} per piece, total exactly Rs ${sp.totalRupees} for all ${sp.quantity}. State BOTH figures (per piece and total) — no other numbers.`
+      : '';
+
   let s: string;
   switch (spec.kind) {
     case 'greeting':
       s = `A customer just messaged. Greet them warmly (salaam) and ask how you can help / what they are looking for.`;
       break;
     case 'quote':
-      s = `Tell the customer that "${spec.productName}" costs exactly Rs ${spec.priceRupees}. State this price clearly.`;
+      s = `Tell the customer that "${spec.productName}" costs exactly Rs ${spec.priceRupees}. State this price clearly.` + qty(spec);
       break;
     case 'counter':
-      s = `The customer is haggling on "${spec.productName}". Counter-offer exactly Rs ${spec.priceRupees}${spec.final ? ' and gently say this is your final/best price ("last price")' : ''}. Name this exact figure, sound flexible but firm.`;
+      s = `The customer is haggling on "${spec.productName}". Counter-offer exactly Rs ${spec.priceRupees}${spec.final ? ' and gently say this is your final/best price ("last price")' : ''}. Name this exact figure, sound flexible but firm.` + qty(spec);
       break;
     case 'accept':
-      s = `Happily agree to sell "${spec.productName}" at exactly Rs ${spec.priceRupees}. Confirm the deal warmly and name this exact figure.`;
+      s = `Happily agree to sell "${spec.productName}" at exactly Rs ${spec.priceRupees}. Confirm the deal warmly and name this exact figure.` + qty(spec);
       break;
     case 'hold':
-      s = `Politely decline to lower the price further on "${spec.productName}"; restate Rs ${spec.priceRupees} as the price. Stay friendly, no pressure. Name this exact figure.`;
+      s = `Politely decline to lower the price further on "${spec.productName}"; restate Rs ${spec.priceRupees} as the price. Stay friendly, no pressure. Name this exact figure.` + qty(spec);
       break;
     case 'not_found':
       s = `The customer asked for "${spec.query}" which you don't have. Politely say it's not available and offer to help with something else.`;

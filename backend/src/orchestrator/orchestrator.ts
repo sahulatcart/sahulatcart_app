@@ -46,13 +46,18 @@ function coerceDefaults(raw: unknown): NegotiationDefaults {
 }
 
 // ── Deterministic Roman-Urdu fallbacks (used when the LLM is down or the price guard fails) ──
+/** " (3 ki total Rs 7500)" — appended when the customer asked for multiple units. */
+function qtySuffix(spec: { quantity?: number; totalRupees?: number }): string {
+  return spec.quantity && spec.quantity > 1 && spec.totalRupees ? ` (${spec.quantity} ki total Rs ${spec.totalRupees})` : '';
+}
+
 function fallbackText(spec: ReplySpec): string {
   switch (spec.kind) {
     case 'greeting': return 'Assalam-o-Alaikum! Kaise madad kar sakta hoon?';
-    case 'quote': return `${spec.productName} ki price Rs ${spec.priceRupees} hai.`;
-    case 'counter': return `${spec.productName} Rs ${spec.priceRupees} tak kar sakta hoon${spec.final ? ', ye last price hai' : ''}.`;
-    case 'accept': return `Theek hai, ${spec.productName} Rs ${spec.priceRupees} final. Shukriya!`;
-    case 'hold': return `Is se kam mushkil hai, ${spec.productName} Rs ${spec.priceRupees} hi best hai.`;
+    case 'quote': return `${spec.productName} ki price Rs ${spec.priceRupees} hai${qtySuffix(spec)}.`;
+    case 'counter': return `${spec.productName} Rs ${spec.priceRupees} tak kar sakta hoon${qtySuffix(spec)}${spec.final ? ', ye last price hai' : ''}.`;
+    case 'accept': return `Theek hai, ${spec.productName} Rs ${spec.priceRupees} final${qtySuffix(spec)}. Shukriya!`;
+    case 'hold': return `Is se kam mushkil hai, ${spec.productName} Rs ${spec.priceRupees} hi best hai${qtySuffix(spec)}.`;
     case 'not_found': return `Maazrat, "${spec.query}" abhi available nahi. Kuch aur dikhaoon?`;
     case 'out_of_stock': return `Maazrat, ${spec.productName} abhi stock mein nahi.`;
     case 'order_ack': return `Bohat khoob! ${spec.productName} Rs ${spec.priceRupees}. Ab order details leta hoon.`;
@@ -72,9 +77,11 @@ function fallbackText(spec: ReplySpec): string {
 /** Compose via LLM; enforce the price-match guard; fall back to a safe template. */
 async function safeCompose(spec: ReplySpec, cc: ComposeContext): Promise<string> {
   const expected = 'priceRupees' in spec ? spec.priceRupees : null;
+  // The engine-derived line total is the only other number the LLM may utter.
+  const alsoAllowed = 'totalRupees' in spec && spec.totalRupees != null ? [spec.totalRupees] : [];
   try {
     const text = await getLlmClient().compose(spec, cc);
-    if (expected != null && !priceGuardOk(text, expected)) {
+    if (expected != null && !priceGuardOk(text, expected, alsoAllowed)) {
       logger.warn({ spec: spec.kind, expected }, 'price-match guard tripped — using fallback');
       return fallbackText(spec);
     }
@@ -272,9 +279,15 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
   // upsell flag lives exactly one turn (the reply to the suggestion), then clears.
   const newContext = { ...context, upsell: undefined, activeProductId: product.id, activeNegotiationId: neg?.id };
 
+  // Engine prices are per-unit; for "3 kitnay ki?" the reply also states the line total.
+  const withQty = (unitPaisa: number) =>
+    quantity > 1 ? { quantity, totalRupees: rupees(unitPaisa * quantity) } : {};
+
   // Interest without an offer, first touch → QUOTE the list price (don't start haggling).
   if (['ask_price', 'ask_product', 'add_to_order'].includes(cls.intent) && cls.offerPaisa == null && (neg?.rounds ?? 0) === 0) {
-    await reply(db, ctx, await safeCompose({ kind: 'quote', productName: product.name, priceRupees: rupees(product.price) }, cc), 'product_qa', newContext);
+    // "3 kitnay ki hain?" — persist the newly-stated quantity so a later "theek hai" orders 3, not 1.
+    if (qtyMentioned && neg && neg.quantity !== qtyMentioned) await saveNeg(db, neg.id, { quantity: qtyMentioned });
+    await reply(db, ctx, await safeCompose({ kind: 'quote', productName: product.name, priceRupees: rupees(product.price), ...withQty(product.price) }, cc), 'product_qa', newContext);
     return;
   }
 
@@ -333,25 +346,25 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
       const order = await createDraftOrder(db, ctx, delivery, charge);
       if (order) {
         const dctx = { ...newContext, delivery, pendingOrderId: order.orderId };
-        await reply(db, ctx, await safeCompose({ kind: 'accept', productName: product.name, priceRupees: rupees(decision.price!) }, cc), 'selecting_payment', dctx, false);
+        await reply(db, ctx, await safeCompose({ kind: 'accept', productName: product.name, priceRupees: rupees(decision.price!), ...withQty(decision.price!) }, cc), 'selecting_payment', dctx, false);
         await reply(db, ctx, await safeCompose({ kind: 'ask_payment_method', priceRupees: rupees(order.total) }, cc), 'selecting_payment', dctx);
         return;
       }
     }
 
     const dctx = { ...newContext, delivery: {} };
-    await reply(db, ctx, await safeCompose({ kind: 'accept', productName: product.name, priceRupees: rupees(decision.price!) }, cc), 'collecting_delivery', dctx, false);
+    await reply(db, ctx, await safeCompose({ kind: 'accept', productName: product.name, priceRupees: rupees(decision.price!), ...withQty(decision.price!) }, cc), 'collecting_delivery', dctx, false);
     await reply(db, ctx, await safeCompose({ kind: 'ask_delivery' }, cc), 'collecting_delivery', dctx);
     return;
   }
 
   switch (decision.action) {
     case 'COUNTER':
-      spec = { kind: 'counter', productName: product.name, priceRupees: rupees(decision.price!), final: decision.final };
+      spec = { kind: 'counter', productName: product.name, priceRupees: rupees(decision.price!), final: decision.final, ...withQty(decision.price!) };
       Object.assign(negPatch, { rounds: decision.audit.round, last_bot_offer: decision.price, final_offered: (neg?.final_offered ?? false) || !!decision.final });
       break;
     case 'HOLD':
-      spec = { kind: 'hold', productName: product.name, priceRupees: rupees(decision.price!) };
+      spec = { kind: 'hold', productName: product.name, priceRupees: rupees(decision.price!), ...withQty(decision.price!) };
       // Persist the price we just told the customer — a following "theek hai" must
       // close at THIS price, never fall back to full list price.
       Object.assign(negPatch, { last_bot_offer: decision.price });

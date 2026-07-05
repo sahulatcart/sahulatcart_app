@@ -16,4 +16,18 @@ describe('priceGuardOk (outbound price-match, CD-38)', () => {
   it('ignores small non-price numbers', () => {
     expect(priceNumbers('2 T-shirt Rs 2500')).toEqual([2500]);
   });
+
+  // multi-unit quotes: the engine-derived line total is sanctioned, nothing else
+  it('allows the sanctioned line total alongside the unit price', () => {
+    expect(priceGuardOk('3 T-shirts: Rs 2500 per piece, total Rs 7500.', 2500, [7500])).toBe(true);
+  });
+  it('still requires the unit price even when the total is present', () => {
+    expect(priceGuardOk('3 T-shirts total Rs 7500.', 2500, [7500])).toBe(false);
+  });
+  it('rejects a third, unsanctioned number', () => {
+    expect(priceGuardOk('Rs 2500 each, total Rs 7500, ya phir 7000 de dena', 2500, [7500])).toBe(false);
+  });
+  it('without an allowed total, a second number still fails (unchanged behavior)', () => {
+    expect(priceGuardOk('Rs 2500 each, total Rs 7500', 2500)).toBe(false);
+  });
 });

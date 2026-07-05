@@ -9,10 +9,14 @@ export function priceNumbers(text: string): number[] {
     .filter((n) => Number.isFinite(n) && n >= 50);
 }
 
-/** True iff `text` quotes exactly `expectedRupees` and no other price. */
-export function priceGuardOk(text: string, expectedRupees: number): boolean {
+/**
+ * True iff `text` quotes exactly `expectedRupees` and no price outside the sanctioned
+ * set. `alsoAllowed` covers engine-derived companions of the unit price (e.g. the
+ * line total for "3 shirts" = unit × qty) — still never an LLM-invented number.
+ */
+export function priceGuardOk(text: string, expectedRupees: number, alsoAllowed: number[] = []): boolean {
+  const allowed = new Set([expectedRupees, ...alsoAllowed]);
   const nums = priceNumbers(text);
   if (!nums.includes(expectedRupees)) return false; // must state the right price
-  if (nums.some((n) => n !== expectedRupees)) return false; // must not state any other price
-  return true;
+  return nums.every((n) => allowed.has(n)); // must not state any unsanctioned price
 }
