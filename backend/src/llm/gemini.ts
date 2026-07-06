@@ -106,7 +106,7 @@ export class GeminiClient implements LlmClient {
       `Roman Urdu examples: "kitnay ka hai"=ask_price, "2000 me do"=make_offer offerRupees 2000 offerScope per_unit, ` +
       `"2 shirts 3000 me de do"=make_offer quantity 2 offerRupees 3000 offerScope total, ` +
       `"3 caps, 500 per piece"=make_offer quantity 3 offerRupees 500 offerScope per_unit, ` +
-      `"ye wala do"=add_to_order, "theek hai"=accept, "nahi mehnga hai"=reject, "cash on delivery"=choose_cod, ` +
+      `"ye wala do"=add_to_order, "theek hai"/"kr lo yr"/"chalo done"=accept, "nahi mehnga hai"=reject, "cash on delivery"=choose_cod, ` +
       `"ye cotton hai?"/"size kya hai"/"kaunse colors hain"=ask_product_info, ` +
       `"photo dikhao"/"tasveer bhejo"=ask_photo, ` +
       `"return policy kya hai"/"delivery kitne din"/"dukaan kahan hai"/"timing kya hai"=ask_shop_info, ` +
