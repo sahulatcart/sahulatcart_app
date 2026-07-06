@@ -4,7 +4,9 @@ import { logger } from '../lib/logger';
 import { decide } from '../negotiation';
 import type { NegotiationDefaults, ProductPricing } from '../negotiation/types';
 import { getLlmClient, LlmUnavailableError, type ComposeContext, type DeliveryDetails, type ReplySpec } from '../llm';
-import { sendDocument, sendText } from '../whatsapp/client';
+import { sendDocument, sendImage, sendText } from '../whatsapp/client';
+import { productImageUrl } from '../lib/images';
+import { loadConfig } from '../config';
 import { downloadWhatsAppMedia, uploadScreenshot } from '../whatsapp/media';
 import { signedSlipUrl } from './slip';
 import type { NormalizedMessage } from '../whatsapp/types';
@@ -71,7 +73,43 @@ function fallbackText(spec: ReplySpec): string {
     case 'chitchat': return 'Ji bilkul! Batayein kaise madad karoon?';
     case 'handoff': return 'Aapko humari team se connect kar raha hoon, thodi dair mein reply aayega.';
     case 'upsell': return `Sath mein ${spec.productName} bhi le lein? Sirf Rs ${spec.priceRupees} — order ke sath hi bhej denge.`;
+    case 'product_answer': return `Ye main malik se confirm kar ke batata hoon, thodi dair mein jawab deta hoon.`;
+    case 'kb_answer': return `Ye main malik se confirm kar ke batata hoon, thodi dair mein jawab deta hoon.`;
   }
+}
+
+/** Merchant-provided facts about a product, for grounded Q&A. Empty string = nothing known. */
+function productFacts(p: CatalogItem): string {
+  const parts: string[] = [];
+  if (p.description?.trim()) parts.push(p.description.trim());
+  const attrs = (p.attributes ?? {}) as Record<string, unknown>;
+  for (const [k, v] of Object.entries(attrs)) {
+    const val = Array.isArray(v) ? v.join(', ') : typeof v === 'string' || typeof v === 'number' ? String(v) : null;
+    if (val) parts.push(`${k}: ${val}`);
+  }
+  if (p.trackStock && p.stock != null) parts.push(`Stock available: ${p.stock > 0 ? 'yes' : 'no'}`);
+  return parts.join('\n');
+}
+
+/** Flatten the merchant's knowledgebase (settings.kb) into grounded-answer text. */
+function kbText(settings: unknown): string {
+  const kb = ((settings ?? {}) as { kb?: Record<string, unknown> }).kb ?? {};
+  const parts: string[] = [];
+  const s = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  const map: [string, string][] = [
+    ['delivery', 'Delivery'],
+    ['returns', 'Return/exchange policy'],
+    ['payment', 'Payment'],
+    ['address', 'Shop address'],
+    ['hours', 'Opening hours'],
+  ];
+  for (const [key, label] of map) {
+    const v = s(kb[key]);
+    if (v) parts.push(`${label}: ${v}`);
+  }
+  const faqs = Array.isArray(kb.faqs) ? (kb.faqs as { q?: string; a?: string }[]) : [];
+  for (const f of faqs) if (s(f.q) && s(f.a)) parts.push(`Q: ${f.q!.trim()}\nA: ${f.a!.trim()}`);
+  return parts.join('\n');
 }
 
 /** Compose via LLM; enforce the price-match guard; fall back to a safe template. */
@@ -174,7 +212,7 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
 
   const catRes = await db
     .from('products')
-    .select('id, name, price, cost, currency, negotiable, max_discount_pct, min_price, stock, track_stock')
+    .select('id, name, price, cost, currency, negotiable, max_discount_pct, min_price, stock, track_stock, description, attributes, images')
     .eq('merchant_id', ctx.merchantId)
     .eq('is_active', true);
   const catalog: CatalogItem[] = (catRes.data ?? []).map((r) => ({
@@ -188,6 +226,9 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
     minPrice: r.min_price,
     stock: r.stock,
     trackStock: r.track_stock,
+    description: r.description,
+    attributes: r.attributes,
+    images: Array.isArray(r.images) ? r.images : [],
   }));
 
   const text = message.text ?? '';
@@ -252,6 +293,18 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
     return;
   }
 
+  // Shop-level questions (delivery, returns, address, hours) — answered ONLY from the
+  // merchant's knowledgebase; never invented. State/context untouched, chat continues.
+  if (cls.intent === 'ask_shop_info') {
+    const kb = kbText(merchant.settings);
+    if (!kb) {
+      await reply(db, ctx, 'Ye main malik se confirm kar ke batata hoon 🙏 Tab tak aur kuch poochna ho to zaroor batayein.', state, context, false);
+      return;
+    }
+    await reply(db, ctx, await safeCompose({ kind: 'kb_answer', question: text, kb }, cc), state, context, false);
+    return;
+  }
+
   if (!product) {
     // wants a product/price but we couldn't resolve it
     if (['ask_product', 'ask_price', 'make_offer', 'add_to_order'].includes(cls.intent)) {
@@ -271,6 +324,28 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
     return;
   }
 
+  // "photo dikhao" → send the product photo; the caption is a price-guarded quote.
+  if (cls.intent === 'ask_photo') {
+    const img = productImageUrl(loadConfig().SUPABASE_URL, product.images?.[0]);
+    const caption = await safeCompose({ kind: 'quote', productName: product.name, priceRupees: rupees(product.price) }, cc);
+    const pctx = { ...context, upsell: undefined, activeProductId: product.id };
+    if (img) await replyImage(db, ctx, img, caption, 'product_qa', pctx);
+    else await reply(db, ctx, `Maazrat, ${product.name} ki photo abhi available nahi. ${caption}`, 'product_qa', pctx);
+    return;
+  }
+
+  // Product-detail questions ("cotton hai?", "size?") — answered ONLY from merchant facts.
+  if (cls.intent === 'ask_product_info') {
+    const facts = productFacts(product);
+    const pctx = { ...context, upsell: undefined, activeProductId: product.id };
+    if (!facts) {
+      await reply(db, ctx, 'Ye main malik se confirm kar ke batata hoon 🙏 Tab tak rate ya order ke liye batayein.', 'product_qa', pctx);
+      return;
+    }
+    await reply(db, ctx, await safeCompose({ kind: 'product_answer', productName: product.name, question: text, facts }, cc), 'product_qa', pctx);
+    return;
+  }
+
   // Quantity: an explicit mention wins; otherwise KEEP the negotiation's persisted quantity
   // ("2 shirts" then "1900 final" must stay an order for 2, not silently reset to 1).
   const qtyMentioned = cls.quantity != null && cls.quantity > 0 ? Math.round(cls.quantity) : null;
@@ -287,7 +362,12 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
   if (['ask_price', 'ask_product', 'add_to_order'].includes(cls.intent) && cls.offerPaisa == null && (neg?.rounds ?? 0) === 0) {
     // "3 kitnay ki hain?" — persist the newly-stated quantity so a later "theek hai" orders 3, not 1.
     if (qtyMentioned && neg && neg.quantity !== qtyMentioned) await saveNeg(db, neg.id, { quantity: qtyMentioned });
-    await reply(db, ctx, await safeCompose({ kind: 'quote', productName: product.name, priceRupees: rupees(product.price), ...withQty(product.price) }, cc), 'product_qa', newContext);
+    const quoteText = await safeCompose({ kind: 'quote', productName: product.name, priceRupees: rupees(product.price), ...withQty(product.price) }, cc);
+    // First mention of a product with a photo → send the photo with the quote as caption.
+    const firstTouch = context.activeProductId !== product.id;
+    const img = firstTouch ? productImageUrl(loadConfig().SUPABASE_URL, product.images?.[0]) : null;
+    if (img) await replyImage(db, ctx, img, quoteText, 'product_qa', newContext);
+    else await reply(db, ctx, quoteText, 'product_qa', newContext);
     return;
   }
 
@@ -421,6 +501,32 @@ async function reply(
     sender: 'bot',
     type: 'text',
     body: text,
+    wa_message_id: sent.waMessageId,
+    status: sent.waMessageId ? 'sent' : 'queued',
+  });
+  if (updateState) {
+    await db.from('conversations').update({ current_state: nextState, context }).eq('id', ctx.conversationId);
+  }
+}
+
+/** Like reply(), but sends a product image with the text as caption. */
+async function replyImage(
+  db: SupabaseClient,
+  ctx: OrchestratorCtx,
+  link: string,
+  caption: string,
+  nextState: BotState,
+  context: Record<string, unknown>,
+  updateState = true
+): Promise<void> {
+  const sent = await sendImage(ctx.phoneNumberId, ctx.customerWaId, link, caption);
+  await db.from('messages').insert({
+    conversation_id: ctx.conversationId,
+    merchant_id: ctx.merchantId,
+    direction: 'outbound',
+    sender: 'bot',
+    type: 'image',
+    body: caption,
     wa_message_id: sent.waMessageId,
     status: sent.waMessageId ? 'sent' : 'queued',
   });

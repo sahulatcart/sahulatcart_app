@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { loadConfig } from '../config';
@@ -7,6 +8,9 @@ import { markCodCollected, rejectPayment, verifyPayment } from '../orchestrator/
 import { signedScreenshotUrl } from '../whatsapp/media';
 import { sendText } from '../whatsapp/client';
 import { parseCsv } from '../lib/csv';
+import { productImageUrl } from '../lib/images';
+import { getLlmClient } from '../llm';
+import { isShopifyCsv, mapShopifyRows } from '../lib/shopify';
 
 const PUBLIC = new Set(['/api/v1/admin/login', '/api/v1/config']);
 
@@ -226,9 +230,87 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // ── Catalog ──
   app.get('/api/v1/admin/products', async (req, reply) => {
     const mid = req.merchantCtx!.merchantId;
-    const cols = canManagePayments(req.merchantCtx!) ? 'id, sku, name, description, price, cost, stock, track_stock, is_active, negotiable, max_discount_pct, min_price' : 'id, sku, name, description, price, stock, track_stock, is_active, negotiable, max_discount_pct, min_price';
-    const { data } = await db.from('products').select(cols).eq('merchant_id', mid).order('created_at', { ascending: true });
-    return reply.send({ products: data ?? [] });
+    const cols = canManagePayments(req.merchantCtx!) ? 'id, sku, name, description, price, cost, stock, track_stock, is_active, negotiable, max_discount_pct, min_price, images' : 'id, sku, name, description, price, stock, track_stock, is_active, negotiable, max_discount_pct, min_price, images';
+    const { data } = await db.from('products').select(cols as '*').eq('merchant_id', mid).order('created_at', { ascending: true });
+    const cfg2 = loadConfig();
+    const products = (data ?? []).map((p: Record<string, unknown>) => ({
+      ...p,
+      thumbnailUrl: productImageUrl(cfg2.SUPABASE_URL, (p.images as string[] | null)?.[0]),
+    }));
+    return reply.send({ products });
+  });
+
+  app.get('/api/v1/admin/products/:id', async (req, reply) => {
+    const mid = req.merchantCtx!.merchantId;
+    const { id } = req.params as { id: string };
+    const cols = canManagePayments(req.merchantCtx!) ? '*' : 'id, sku, name, description, price, stock, track_stock, is_active, negotiable, max_discount_pct, min_price, images, attributes, created_at';
+    const { data } = await db.from('products').select(cols as '*').eq('id', id).eq('merchant_id', mid).maybeSingle();
+    if (!data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'product not found' } });
+    const cfg2 = loadConfig();
+    const p = data as Record<string, unknown>;
+    const imageUrls = ((p.images as string[] | null) ?? []).map((ref) => ({ ref, url: productImageUrl(cfg2.SUPABASE_URL, ref) }));
+    return reply.send({ product: p, imageUrls });
+  });
+
+  // Upload a product image (base64 JSON — route-level body limit raised for photos).
+  app.post('/api/v1/admin/products/:id/images', { bodyLimit: 8 * 1024 * 1024 }, async (req, reply) => {
+    const mid = req.merchantCtx!.merchantId;
+    const { id } = req.params as { id: string };
+    const b = req.body as { dataBase64?: string; contentType?: string };
+    if (!b.dataBase64 || !b.contentType?.startsWith('image/')) {
+      return reply.code(400).send({ error: { code: 'BAD', message: 'dataBase64 and image contentType required' } });
+    }
+    const prod = await db.from('products').select('id, images').eq('id', id).eq('merchant_id', mid).maybeSingle();
+    if (!prod.data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'product not found' } });
+    const buf = Buffer.from(b.dataBase64, 'base64');
+    if (buf.length > 5 * 1024 * 1024) return reply.code(400).send({ error: { code: 'TOO_BIG', message: 'image over 5MB' } });
+    const ext = b.contentType.includes('png') ? 'png' : b.contentType.includes('webp') ? 'webp' : 'jpg';
+    const key = `${mid}/${id}/${crypto.randomUUID()}.${ext}`;
+    const cfg2 = loadConfig();
+    const up = await db.storage.from(cfg2.STORAGE_BUCKET_PRODUCT_IMAGES).upload(key, buf, { contentType: b.contentType, upsert: false });
+    if (up.error) return reply.code(500).send({ error: { code: 'STORAGE', message: up.error.message } });
+    const images = [...(((prod.data.images as string[] | null) ?? [])), key];
+    const { error } = await db.from('products').update({ images }).eq('id', id).eq('merchant_id', mid);
+    if (error) return reply.code(400).send({ error: { code: 'DB', message: error.message } });
+    return reply.send({ ref: key, url: productImageUrl(cfg2.SUPABASE_URL, key), images });
+  });
+
+  app.delete('/api/v1/admin/products/:id/images', async (req, reply) => {
+    const mid = req.merchantCtx!.merchantId;
+    const { id } = req.params as { id: string };
+    const { ref } = req.body as { ref?: string };
+    if (!ref) return reply.code(400).send({ error: { code: 'BAD', message: 'ref required' } });
+    const prod = await db.from('products').select('id, images').eq('id', id).eq('merchant_id', mid).maybeSingle();
+    if (!prod.data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'product not found' } });
+    const images = (((prod.data.images as string[] | null) ?? [])).filter((r) => r !== ref);
+    await db.from('products').update({ images }).eq('id', id).eq('merchant_id', mid);
+    if (!/^https?:\/\//i.test(ref)) {
+      const cfg2 = loadConfig();
+      await db.storage.from(cfg2.STORAGE_BUCKET_PRODUCT_IMAGES).remove([ref]); // best-effort
+    }
+    return reply.send({ ok: true, images });
+  });
+
+  // Draft a Roman-Urdu description from the product's first photo (Gemini vision).
+  app.post('/api/v1/admin/products/:id/describe', async (req, reply) => {
+    const mid = req.merchantCtx!.merchantId;
+    const { id } = req.params as { id: string };
+    const prod = await db.from('products').select('id, name, images').eq('id', id).eq('merchant_id', mid).maybeSingle();
+    if (!prod.data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'product not found' } });
+    const cfg2 = loadConfig();
+    const url = productImageUrl(cfg2.SUPABASE_URL, (prod.data.images as string[] | null)?.[0]);
+    if (!url) return reply.code(400).send({ error: { code: 'NO_IMAGE', message: 'upload a photo first' } });
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return reply.code(502).send({ error: { code: 'FETCH', message: 'could not read image' } });
+      const buf = Buffer.from(await res.arrayBuffer());
+      const mime = res.headers.get('content-type') ?? 'image/jpeg';
+      const description = await getLlmClient().describeImage(buf, mime, prod.data.name as string);
+      if (!description) return reply.code(503).send({ error: { code: 'LLM', message: 'AI unavailable — try again' } });
+      return reply.send({ description });
+    } catch (e) {
+      return reply.code(502).send({ error: { code: 'DESCRIBE', message: (e as Error).message } });
+    }
   });
 
   app.post('/api/v1/admin/products', async (req, reply) => {
@@ -243,7 +325,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const mid = req.merchantCtx!.merchantId;
     const { id } = req.params as { id: string };
     const b = req.body as Record<string, unknown>;
-    const allowed = ['name', 'description', 'price', 'cost', 'stock', 'track_stock', 'is_active', 'negotiable', 'max_discount_pct', 'min_price', 'sku'];
+    const allowed = ['name', 'description', 'price', 'cost', 'stock', 'track_stock', 'is_active', 'negotiable', 'max_discount_pct', 'min_price', 'sku', 'attributes'];
     const patch: Record<string, unknown> = {};
     for (const k of allowed) if (k in b) patch[k] = b[k];
     const { error } = await db.from('products').update(patch).eq('id', id).eq('merchant_id', mid);
@@ -251,15 +333,44 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ ok: true });
   });
 
-  app.post('/api/v1/admin/products/import', async (req, reply) => {
+  app.post('/api/v1/admin/products/import', { bodyLimit: 16 * 1024 * 1024 }, async (req, reply) => {
     const mid = req.merchantCtx!.merchantId;
     const csv = (req.body as { csv?: string })?.csv;
     if (!csv) return reply.code(400).send({ error: { code: 'BAD', message: 'csv required' } });
     const rows = parseCsv(csv);
+
+    // Shopify product export? Map variants/images/options and upsert.
+    if (isShopifyCsv(rows)) {
+      const mapped = mapShopifyRows(rows);
+      const errors: string[] = [];
+      let imported = 0;
+      for (const p of mapped) {
+        const row = {
+          merchant_id: mid,
+          name: p.name,
+          description: p.description,
+          price: p.price,
+          stock: p.stock,
+          track_stock: p.stock != null,
+          negotiable: false,
+          sku: p.sku,
+          images: p.images,
+          attributes: p.attributes,
+          is_active: true,
+        };
+        const { error } = p.sku
+          ? await db.from('products').upsert(row, { onConflict: 'merchant_id,sku' })
+          : await db.from('products').insert(row);
+        if (error) errors.push(`${p.name}: ${error.message}`);
+        else imported++;
+      }
+      return reply.send({ imported, errors, total: mapped.length, source: 'shopify' });
+    }
+
     const errors: string[] = [];
     let imported = 0;
     const truthy = (v: string) => ['1', 'true', 'yes', 'y', 'haan'].includes((v ?? '').toLowerCase());
-    const rupees = (v: string) => (v && !Number.isNaN(Number(v)) ? Math.round(Number(v)) * 100 : null);
+    const rupees = (v: string) => (v && !Number.isNaN(Number(v)) ? Math.round(Number(v) * 100) : null);
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i]!;
       const name = r.name || r.product || r.title;

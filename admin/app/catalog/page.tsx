@@ -1,11 +1,12 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Download, FileUp, Plus, RefreshCw } from 'lucide-react';
 import AppShell, { PageHead } from '../../components/AppShell';
 import { api, apiJson } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 
-interface P { id: string; name: string; price: number; stock: number | null; is_active: boolean; negotiable: boolean; max_discount_pct: number | null; min_price: number | null }
+interface P { id: string; name: string; price: number; stock: number | null; is_active: boolean; negotiable: boolean; max_discount_pct: number | null; min_price: number | null; thumbnailUrl?: string | null }
 
 export default function Catalog() {
   const toast = useToast();
@@ -65,7 +66,15 @@ export default function Catalog() {
             <tbody>
               {products.map((p) => (
                 <tr key={p.id}>
-                  <td className="strong">{p.name}</td>
+                  <td>
+                    <Link href={`/catalog/${p.id}`} className="strong" style={{ display: 'inline-flex', alignItems: 'center', gap: 10, color: 'var(--brand-ink)' }}>
+                      {p.thumbnailUrl
+                        // eslint-disable-next-line @next/next/no-img-element
+                        ? <img src={p.thumbnailUrl} alt="" style={{ width: 34, height: 34, borderRadius: 8, objectFit: 'cover', border: '1px solid var(--border)' }} />
+                        : <span style={{ width: 34, height: 34, borderRadius: 8, display: 'grid', placeItems: 'center', background: 'var(--bg)', border: '1px dashed var(--border)', fontSize: 15 }}>📦</span>}
+                      {p.name}
+                    </Link>
+                  </td>
                   <td><input type="number" value={Math.round(p.price / 100)} onChange={(e) => edit(p.id, { price: Math.round(Number(e.target.value)) * 100 })} className="mini" /></td>
                   <td><input type="number" value={p.stock ?? ''} onChange={(e) => edit(p.id, { stock: e.target.value === '' ? null : Number(e.target.value) })} className="mini" style={{ width: 64 }} /></td>
                   <td><label className="switch"><input type="checkbox" checked={p.negotiable} onChange={(e) => edit(p.id, { negotiable: e.target.checked })} /><span className="track" /></label></td>
@@ -79,7 +88,7 @@ export default function Catalog() {
           </table>
         </div>
       </div>
-      <p className="hint" style={{ marginTop: 12 }}>“Max % off” is the deepest discount the bot may give; “Min price” is an absolute floor (wins over %).</p>
+      <p className="hint" style={{ marginTop: 12 }}>“Max % off” is the deepest discount the bot may give; “Min price” is an absolute floor (wins over %). Product name pe click kar ke photos, description aur attributes add karein. CSV import Shopify ka product export bhi samajhta hai.</p>
     </AppShell>
   );
 }

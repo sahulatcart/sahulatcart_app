@@ -107,6 +107,9 @@ export class GeminiClient implements LlmClient {
       `"2 shirts 3000 me de do"=make_offer quantity 2 offerRupees 3000 offerScope total, ` +
       `"3 caps, 500 per piece"=make_offer quantity 3 offerRupees 500 offerScope per_unit, ` +
       `"ye wala do"=add_to_order, "theek hai"=accept, "nahi mehnga hai"=reject, "cash on delivery"=choose_cod, ` +
+      `"ye cotton hai?"/"size kya hai"/"kaunse colors hain"=ask_product_info, ` +
+      `"photo dikhao"/"tasveer bhejo"=ask_photo, ` +
+      `"return policy kya hai"/"delivery kitne din"/"dukaan kahan hai"/"timing kya hai"=ask_shop_info, ` +
       `"bandh karo"=stop. Message: "${text.replace(/"/g, "'")}"`;
     const raw = await callGemini({
       contents: [{ parts: [{ text: sys }] }],
@@ -179,6 +182,27 @@ export class GeminiClient implements LlmClient {
       return text;
     } catch (e) {
       logger.warn({ err: e instanceof Error ? e.message : String(e) }, 'voice transcription failed');
+      return null;
+    }
+  }
+
+  async describeImage(data: Buffer, mimeType: string, productName: string): Promise<string | null> {
+    const mime = (mimeType.split(';')[0] ?? '').trim() || 'image/jpeg';
+    try {
+      const raw = await callGemini({
+        contents: [{ parts: [
+          { text:
+            `This is a product photo of "${productName}" sold by a Pakistani shop on WhatsApp. ` +
+            `Write a short, appealing product description in Roman Urdu (Latin letters), 2-3 sentences: ` +
+            `what it is, material/colour/style you can SEE, and who it suits. ` +
+            `Do NOT invent a price, brand, or size. Output only the description text.` },
+          { inline_data: { mime_type: mime, data: data.toString('base64') } },
+        ] }],
+        generationConfig: { temperature: 0.4, maxOutputTokens: 200, ...NO_THINKING },
+      });
+      return raw.trim() || null;
+    } catch (e) {
+      logger.warn({ err: e instanceof Error ? e.message : String(e) }, 'image description failed');
       return null;
     }
   }

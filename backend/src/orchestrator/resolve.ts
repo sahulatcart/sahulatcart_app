@@ -12,6 +12,9 @@ export interface CatalogItem {
   minPrice: number | null;
   stock: number | null;
   trackStock: boolean;
+  description?: string | null;
+  attributes?: Record<string, unknown> | null;
+  images?: string[]; // storage keys or full URLs
 }
 
 const norm = (s: string): string =>

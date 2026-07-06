@@ -35,7 +35,9 @@ export type ReplySpec =
   | { kind: 'clarify' }
   | { kind: 'chitchat' }
   | { kind: 'handoff' }
-  | { kind: 'upsell'; productName: string; priceRupees: number }; // post-order add-on suggestion
+  | { kind: 'upsell'; productName: string; priceRupees: number } // post-order add-on suggestion
+  | { kind: 'product_answer'; productName: string; question: string; facts: string } // answer ONLY from facts
+  | { kind: 'kb_answer'; question: string; kb: string }; // answer ONLY from the shop knowledgebase
 
 /** Merchant-selected bargaining personality — maps to concession presets + reply tone. */
 export type BotStyle = 'narm' | 'standard' | 'sakht';
@@ -63,4 +65,6 @@ export interface LlmClient {
   extractDelivery(text: string): Promise<DeliveryDetails>;
   /** Transcribe a WhatsApp voice note to Roman Urdu text. Null when unintelligible/unavailable. */
   transcribeAudio(data: Buffer, mimeType: string): Promise<string | null>;
+  /** Draft a short Roman-Urdu product description from a product photo. */
+  describeImage(data: Buffer, mimeType: string, productName: string): Promise<string | null>;
 }

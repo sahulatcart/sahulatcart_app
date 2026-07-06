@@ -81,6 +81,16 @@ export function replySpecToPrompt(spec: ReplySpec, ctx: ComposeContext): string 
     case 'upsell':
       s = `Their order is confirmed. Casually suggest adding "${spec.productName}" for exactly Rs ${spec.priceRupees} — it would ship together with their order. One light, no-pressure line; name this exact figure.`;
       break;
+    case 'product_answer':
+      s =
+        `The customer asked about "${spec.productName}": "${spec.question}". Answer using ONLY these facts from the shop owner:\n---\n${spec.facts}\n---\n` +
+        `STRICT RULES: If the facts do not answer the question, say you will check with the owner ("ye main malik se confirm kar ke batata hoon") — NEVER guess or invent. Do NOT state any price or number that is not in the facts. 1-2 short sentences.`;
+      break;
+    case 'kb_answer':
+      s =
+        `The customer asked: "${spec.question}". Answer using ONLY this shop information provided by the owner:\n---\n${spec.kb}\n---\n` +
+        `STRICT RULES: If the information does not answer the question, say you will check with the owner ("ye main malik se confirm kar ke batata hoon") — NEVER guess or invent policies, times, or addresses. Do NOT state any price or number that is not in the information. 1-2 short sentences.`;
+      break;
   }
   return persona + s;
 }

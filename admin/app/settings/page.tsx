@@ -5,10 +5,14 @@ import AppShell, { PageHead } from '../../components/AppShell';
 import { api, apiJson } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 
+interface Kb {
+  delivery?: string; returns?: string; payment?: string; address?: string; hours?: string;
+  faqs?: { q: string; a: string }[];
+}
 interface Settings {
   business_name: string;
   negotiation_defaults: { maxDiscountPct?: number; roundsMax?: number };
-  settings: { botEnabled?: boolean; defaultDeliveryCharge?: number; upsellEnabled?: boolean };
+  settings: { botEnabled?: boolean; defaultDeliveryCharge?: number; upsellEnabled?: boolean; kb?: Kb };
   bot_persona: { name?: string; style?: string } | null;
   bankAccounts: { id: string; bank_name: string; account_title: string; account_number: string; is_default: boolean }[];
 }
@@ -51,6 +55,14 @@ export default function SettingsPage() {
     setS({ ...s, settings: { ...s.settings, upsellEnabled: on } });
     const r = await api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify({ settings: { upsellEnabled: on } }) });
     if (r.ok) toast(on ? 'Upsell suggestions on' : 'Upsell suggestions off', 'success'); else toast('Could not save', 'error');
+  }
+  const kb = s?.settings.kb ?? {};
+  const setKb = (patch: Partial<Kb>) => s && setS({ ...s, settings: { ...s.settings, kb: { ...kb, ...patch } } });
+  async function saveKb() {
+    if (!s) return;
+    const faqs = (kb.faqs ?? []).filter((f) => f.q.trim() && f.a.trim());
+    const r = await api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify({ settings: { kb: { ...kb, faqs } } }) });
+    if (r.ok) toast('Knowledgebase saved — bot ab in se jawab dega', 'success'); else toast('Could not save', 'error');
   }
   async function addBank() {
     if (!bank.bank_name || !bank.account_number) return;
@@ -106,6 +118,32 @@ export default function SettingsPage() {
           <div className="field" style={{ margin: 0 }}><label>Default delivery (Rs)</label><input type="number" value={Math.round((s.settings.defaultDeliveryCharge ?? 0) / 100)} onChange={(e) => setS({ ...s, settings: { ...s.settings, defaultDeliveryCharge: Math.round(Number(e.target.value)) * 100 } })} className="mini" style={{ width: 110 }} /></div>
           <button className="btn" onClick={saveNeg}>Save</button>
         </div>
+      </div>
+
+      <div className="card pad">
+        <h2>Dukaan ki maloomat <span className="pill brand">bot knowledgebase</span></h2>
+        <p className="hint" style={{ marginBottom: 16 }}>Customer "delivery kitne din?" ya "return policy?" pooche to bot YAHIN se jawab dega. Jo yahan nahi likha, bot kabhi khud se nahi banayega — keh dega "malik se pooch kar batata hoon".</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <div className="field" style={{ margin: 0 }}><label>Delivery (waqt, charges, areas)</label><textarea rows={2} value={kb.delivery ?? ''} onChange={(e) => setKb({ delivery: e.target.value })} placeholder="Lahore mein 1-2 din, baqi shehr 3-4 din. Rs 200 delivery." /></div>
+          <div className="field" style={{ margin: 0 }}><label>Return / exchange policy</label><textarea rows={2} value={kb.returns ?? ''} onChange={(e) => setKb({ returns: e.target.value })} placeholder="7 din mein exchange, receipt ke sath. Sale items pe return nahi." /></div>
+          <div className="field" style={{ margin: 0 }}><label>Payment info</label><textarea rows={2} value={kb.payment ?? ''} onChange={(e) => setKb({ payment: e.target.value })} placeholder="COD ya bank transfer. Advance zaroori nahi." /></div>
+          <div className="field" style={{ margin: 0 }}><label>Shop address</label><textarea rows={2} value={kb.address ?? ''} onChange={(e) => setKb({ address: e.target.value })} placeholder="Shop 12, Liberty Market, Lahore" /></div>
+          <div className="field" style={{ margin: 0 }}><label>Timings</label><textarea rows={2} value={kb.hours ?? ''} onChange={(e) => setKb({ hours: e.target.value })} placeholder="Roz 11am - 10pm, Jumma 3pm se" /></div>
+        </div>
+        <div style={{ marginTop: 18 }}>
+          <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>Custom FAQs</label>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {(kb.faqs ?? []).map((f, i) => (
+              <div className="row" key={i}>
+                <input placeholder="Sawal — e.g. bulk discount milta hai?" value={f.q} onChange={(e) => setKb({ faqs: (kb.faqs ?? []).map((x, j) => (j === i ? { ...x, q: e.target.value } : x)) })} />
+                <input placeholder="Jawab" value={f.a} onChange={(e) => setKb({ faqs: (kb.faqs ?? []).map((x, j) => (j === i ? { ...x, a: e.target.value } : x)) })} />
+                <button className="btn ghost sm" onClick={() => setKb({ faqs: (kb.faqs ?? []).filter((_, j) => j !== i) })}><Trash2 size={14} /></button>
+              </div>
+            ))}
+            <button className="btn ghost sm" style={{ justifySelf: 'start' }} onClick={() => setKb({ faqs: [...(kb.faqs ?? []), { q: '', a: '' }] })}>+ Add FAQ</button>
+          </div>
+        </div>
+        <div style={{ marginTop: 16 }}><button className="btn" onClick={saveKb}>Save knowledgebase</button></div>
       </div>
 
       <div className="card">
