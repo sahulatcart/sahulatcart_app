@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Features — Sahulatkaar | Bhao-taao engine, voice notes, COD & more</title>
+<meta name="description" content="Everything Sahulatkaar does: deterministic negotiation engine, voice-note understanding, COD & bank-transfer payments, PDF slips, merchant portal, analytics." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&family=Inter:wght@400;500;600;700&family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="assets/style.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛺</text></svg>" />
+<style>
+  .feat-hero { padding: 76px 0 60px; }
+  .feat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; padding: 64px 0; }
+  .feat-row:nth-child(even) .feat-visual { order: -1; }
+  .feat-visual {
+    border-radius: 24px; padding: 34px; min-height: 300px; display: grid; place-items: center;
+    background: linear-gradient(160deg, var(--ink), var(--ink-2)); color: #fff; position: relative; overflow: hidden;
+    border: 1px solid rgba(255,255,255,.08);
+  }
+  .feat-visual::before { content: ''; position: absolute; inset: 0; background: radial-gradient(400px 200px at 80% 0%, rgba(244,63,123,.25), transparent 60%); }
+  .curve-demo { width: 100%; position: relative; z-index: 1; }
+  .curve-demo svg { width: 100%; height: auto; }
+  .mini-chat { width: 100%; display: grid; gap: 8px; position: relative; z-index: 1; }
+  .mini-chat .bubble { animation: none; opacity: 1; transform: none; }
+  .pay-card { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); border-radius: 16px; padding: 20px; width: 100%; position: relative; z-index: 1; }
+  .pay-card .row { display: flex; justify-content: space-between; font-size: 13.5px; color: #cfe0d8; padding: 7px 0; border-bottom: 1px dashed rgba(255,255,255,.1); }
+  .pay-card .ok { color: var(--emerald); font-weight: 700; }
+  .pay-card .btnrow { display: flex; gap: 10px; margin-top: 16px; }
+  .pay-card .vbtn { flex: 1; text-align: center; padding: 10px; border-radius: 10px; font-weight: 700; font-size: 13.5px; }
+  .verify-pulse { background: var(--emerald); color: var(--ink); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(16,185,129,.5);} 50% { box-shadow: 0 0 0 12px rgba(16,185,129,0);} }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="index.html"><span class="mark">س</span><span>Sahulatkaar<span class="urdu-mini">سہولت کار</span></span></a>
+    <button class="burger" aria-label="menu"><span></span><span></span><span></span></button>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="features.html" class="active">Features</a>
+      <a href="pricing.html">Pricing</a>
+      <a href="demo.html">Contact</a>
+      <a href="https://alluring-happiness-production-9190.up.railway.app/login">Login</a>
+      <a href="demo.html" class="nav-cta">Book a demo</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero feat-hero">
+  <div class="orb o1"></div>
+  <div class="wrap">
+    <span class="tag-urdu">فیچرز</span>
+    <h1 style="font-family: var(--font-display); font-weight: 800; font-size: clamp(34px, 4.6vw, 54px); letter-spacing: -.02em; margin: 20px 0 12px;">
+      Andar se kya chalta hai
+    </h1>
+    <p class="lead" style="color: var(--muted-on-dark); font-size: 18px; max-width: 58ch;">
+      Sahulatkaar sirf ek chatbot nahi — ek poora sales system hai. Har piece dukaandaari ke liye banaya gaya hai.
+    </p>
+  </div>
+</header>
+<div class="chevrons"></div>
+
+<section class="block" style="padding-top: 30px;">
+  <div class="wrap">
+
+    <!-- Negotiation engine -->
+    <div class="feat-row">
+      <div class="rv">
+        <span class="kicker">Bhao-taao engine</span>
+        <h2 class="title">AI baat karta hai.<br />Rate hum decide karte hain.</h2>
+        <p class="sub">Sab se bara sawal: "AI ghalat rate laga de to?" Jawab: laga hi nahi sakta. Prices ek deterministic engine set karta hai — AI sirf jumla banata hai. Aur har outgoing message pe ek price-guard hai: agar AI koi aur number bole, message rukta hai.</p>
+        <ul style="list-style:none; display:grid; gap:10px; margin-top:20px; font-size:15px;">
+          <li>✦ <b>Aap ki floor price sacred hai</b> — min price, max discount %, ya margin guard</li>
+          <li>✦ <b>Concession curve</b> — pehle thora, phir zyada, phir "last price"</li>
+          <li>✦ <b>Quantity samajhta hai</b> — "3 kitnay ki?" pe per-piece aur total dono batata hai</li>
+          <li>✦ <b>Fuzool offers pe HOLD</b> — Rs 150 wali offer pe curve nahi girti</li>
+        </ul>
+      </div>
+      <div class="feat-visual rv d1">
+        <div class="curve-demo">
+          <div style="font-size:13px; color:var(--muted-on-dark); margin-bottom:10px;">Concession curve — Rs 2,500 shirt, floor Rs 2,000</div>
+          <svg viewBox="0 0 400 200">
+            <defs>
+              <linearGradient id="g1" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stop-color="#ffb01f"/><stop offset="1" stop-color="#f43f7b"/>
+              </linearGradient>
+            </defs>
+            <line x1="20" y1="170" x2="390" y2="170" stroke="rgba(255,255,255,.25)" stroke-dasharray="5 5"/>
+            <text x="20" y="188" fill="#9db8ac" font-size="11">Floor Rs 2,000 — kabhi cross nahi hota</text>
+            <line x1="20" y1="30" x2="390" y2="30" stroke="rgba(255,255,255,.12)"/>
+            <text x="20" y="22" fill="#9db8ac" font-size="11">List Rs 2,500</text>
+            <path d="M 30 30 L 120 65 L 210 100 L 300 170" fill="none" stroke="url(#g1)" stroke-width="4" stroke-linecap="round">
+              <animate attributeName="stroke-dasharray" from="0 500" to="500 0" dur="2.4s" repeatCount="indefinite"/>
+            </path>
+            <circle cx="120" cy="65" r="6" fill="#ffb01f"/><text x="130" y="60" fill="#fff" font-size="12" font-weight="700">2,250</text>
+            <circle cx="210" cy="100" r="6" fill="#f77"/><text x="220" y="95" fill="#fff" font-size="12" font-weight="700">2,150</text>
+            <circle cx="300" cy="170" r="6" fill="#f43f7b"/><text x="310" y="160" fill="#fff" font-size="12" font-weight="700">2,000 — last</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Voice notes -->
+    <div class="feat-row">
+      <div class="rv">
+        <span class="kicker">Voice notes</span>
+        <h2 class="title">Bolo, aur order ho gaya</h2>
+        <p class="sub">Pakistani customers type kam, bolte zyada hain. Sahulatkaar voice notes ko Roman Urdu mein transcribe kar ke usi tarah handle karta hai jaise likha hua message — bhao-taao, address, payment, sab voice se ho sakta hai. Transcript aap ke inbox mein bhi save hota hai.</p>
+        <span class="urdu-tag" style="margin-top: 18px;">آواز میں بھیجیں، جواب حاضر</span>
+      </div>
+      <div class="feat-visual rv d1">
+        <div class="mini-chat">
+          <div class="bubble in voice" style="max-width:100%;"><span class="mic">🎤</span><span class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span style="font-size:11px;color:#8696a0">0:05</span></div>
+          <div style="font-size:11.5px; color:#9db8ac; padding: 2px 6px;">↓ transcribed: "bhai teen t-shirt chahiye, kitne ki dein ge?"</div>
+          <div class="bubble out" style="max-width:100%;">Ji bhai! T-Shirt Rs 2,500 per piece, 3 ki total Rs 7,500. Rang kaunsa pasand karenge?</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Payments -->
+    <div class="feat-row">
+      <div class="rv">
+        <span class="kicker">Payments</span>
+        <h2 class="title">Paisa seedha aap ka.<br />Hum beech mein nahi.</h2>
+        <p class="sub">Koi wallet, koi gateway, koi commission nahi. COD orders slip ke sath confirm hote hain. Bank transfer pe customer aap ke account mein paisa bhej kar screenshot deta hai — aap portal mein dekh kar ek tap mein verify karte hain. Reject bhi kar sakte hain.</p>
+        <ul style="list-style:none; display:grid; gap:10px; margin-top:20px; font-size:15px;">
+          <li>✦ Customer beech mein COD pe switch kar sakta hai — order khud update ho jata hai</li>
+          <li>✦ Cancel bhi keh sakta hai — aap ko notification milti hai</li>
+          <li>✦ Har payment ka status: unpaid → claimed → verified</li>
+        </ul>
+      </div>
+      <div class="feat-visual rv d1">
+        <div class="pay-card">
+          <div style="font-weight:700; margin-bottom:8px;">💳 Payment claim — Order SK-1042</div>
+          <div class="row"><span>Amount</span><span class="ok">Rs 4,700 ✓ matches order</span></div>
+          <div class="row"><span>Method</span><span>Bank transfer</span></div>
+          <div class="row"><span>Screenshot</span><span style="color:var(--sky)">View →</span></div>
+          <div class="btnrow">
+            <span class="vbtn verify-pulse">✓ Verify</span>
+            <span class="vbtn" style="background:rgba(244,63,123,.2); color:#ff9ebd;">✕ Reject</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Portal -->
+    <div class="feat-row">
+      <div class="rv">
+        <span class="kicker">Merchant portal</span>
+        <h2 class="title">Aap ki dukaan ka<br />control room</h2>
+        <p class="sub">Live inbox jahan aap kabhi bhi bot se conversation le sakte hain (human takeover), orders ka poora record date/time ke sath, catalog editor, CSV import, delivery zones, team roles — owner, manager, staff. Mobile pe bhi utna hi acha chalta hai.</p>
+        <span class="urdu-tag" style="margin-top: 18px;">سب کچھ آپ کے قابو میں</span>
+      </div>
+      <div class="feat-visual rv d1">
+        <div class="pay-card">
+          <div style="font-weight:700; margin-bottom:10px;">📊 Aaj ka khulasa</div>
+          <div class="row"><span>Orders</span><span class="ok">12</span></div>
+          <div class="row"><span>Revenue</span><span class="ok">Rs 45,200</span></div>
+          <div class="row"><span>Bot ne deals close ki</span><span class="ok">9 / 11</span></div>
+          <div class="row"><span>Verify ke liye payments</span><span style="color:var(--amber)">3 pending</span></div>
+          <div class="row" style="border:0;"><span>Sab se zyada bika</span><span>T-Shirt</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="block" style="padding-top: 10px;">
+  <div class="wrap">
+    <div class="cta-banner rv">
+      <div class="urdu-line">اپنی دکان کا بوٹ چلتا دیکھیں</div>
+      <h2>Apni dukaan ka bot chalta dekhein</h2>
+      <p>15-minute demo — aap ke products, aap ke rates, live WhatsApp pe.</p>
+      <a href="demo.html" class="btn btn-primary">Book a free demo →</a>
+    </div>
+  </div>
+</section>
+
+<div class="scallop"></div>
+
+<footer>
+  <div class="wrap foot-in">
+    <div>
+      <a class="brand" href="index.html"><span class="mark">س</span><span>Sahulatkaar</span></a>
+      <p style="font-size: 13.5px; margin-top: 14px; max-width: 30ch;">WhatsApp AI salesman for Pakistani shops. Haggles, sells, collects — 24/7.</p>
+      <div class="foot-urdu">آپ کی دکان، ہماری سہولت</div>
+    </div>
+    <div><h5>Product</h5><a href="features.html">Features</a><a href="pricing.html">Pricing</a><a href="demo.html">Book a demo</a><a href="https://alluring-happiness-production-9190.up.railway.app/login">Merchant login</a></div>
+    <div><h5>Company</h5><a href="demo.html">Contact</a><a href="#">About</a></div>
+    <div><h5>Legal</h5><a href="#">Privacy</a><a href="#">Terms</a></div>
+  </div>
+  <div class="wrap foot-base">
+    <span>© 2026 Sahulatkaar. Made in Pakistan 🇵🇰</span>
+    <span>Not affiliated with WhatsApp / Meta.</span>
+  </div>
+</footer>
+
+<script src="assets/site.js"></script>
+</body>
+</html>
