@@ -44,6 +44,24 @@ Entries before 2026-09-16 were reconstructed from git history and commit message
 - Served `site/` on :4173 — all 3 assets return 200; all 4 pages carry 2 marks, the new favicon and
   `og:image`, with no emoji favicon left. Nav and footer `<img>` both report `naturalWidth > 0` and
   render at 37×30, confirming the ratio survived the rewrite.
+- Admin on :3000 — login page renders the mark (46×38); `/logo.svg` and `/favicon.svg` both 200, so the
+  new `admin/public/` dir resolves. The sidebar can't render without a Supabase session (`AppShell`
+  returns `null` until `hasSession()` succeeds), so its markup was injected into the live page to
+  exercise the real `globals.css`: computed 30px × 36.61px, ratio 1.22 preserved, no gradient tile.
+- Toolchain green after `npm install` finally succeeded: `build:shared` 0, backend typecheck clean,
+  **admin typecheck exit 0**, backend tests **71/71** on the pinned vitest.
+
+**Railway deploy did not pick this up** (investigated 2026-09-16, unresolved — no dashboard access)
+- Pushed `df33be8..a842bd0` to `main`; `git ls-remote` confirms GitHub has `a842bd0`.
+- The live admin still served the **old** build ~5 min later: `/logo.svg` 404, and the login HTML still
+  contained `linear-gradient(135deg, var(--brand), var(--brand-strong))` — the exact style deleted in
+  `4622f29`. Deleted CSS cannot come back from a browser cache, so this is a stale build, not caching.
+- Ruled out: Dockerfiles both `COPY . .`; `.dockerignore` does not exclude `admin/public/`; repo has no
+  GitHub Actions to gate a deploy.
+- Remaining suspects are all Railway-side: auto-deploy disconnected, service watching another branch, or
+  a failed build. Check Deployments → Settings → Source when access is available.
+- Known deployed admin URL (hardcoded in the site nav): `alluring-happiness-production-9190.up.railway.app`.
+  The marketing site's URL is not recorded anywhere in the repo.
 
 **Known issues / TODO**
 - **The name is still "Sahulatkaar" everywhere** while the mark reads "SC" / SahulatCart — left open per
