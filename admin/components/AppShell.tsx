@@ -33,7 +33,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
     <div className="shell">
       <aside className={`sidebar ${open ? 'open' : ''}`}>
         <div className="logo">
-          <span className="mark">{PRODUCT_NAME.charAt(0)}</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className="mark" src="/logo.svg" alt="" width={37} height={30} />
           <span className="name">{PRODUCT_NAME}</span>
         </div>
         <nav className="nav-group">

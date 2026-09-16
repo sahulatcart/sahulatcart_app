@@ -26,7 +26,8 @@ export default function LoginPage() {
     <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 20, background: 'radial-gradient(1200px 500px at 50% -10%, var(--brand-tint), var(--bg))' }}>
       <div className="card pad" style={{ width: 380, boxShadow: 'var(--shadow-lg)' }}>
         <div className="row" style={{ marginBottom: 18 }}>
-          <span style={{ width: 38, height: 38, borderRadius: 11, display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, var(--brand), var(--brand-strong))', color: '#fff', fontWeight: 800, fontSize: 18 }}>{PRODUCT_NAME.charAt(0)}</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.svg" alt="" width={46} height={38} style={{ display: 'block', flex: 'none' }} />
           <div><div style={{ fontWeight: 700, fontSize: 17, letterSpacing: '-.02em' }}>{PRODUCT_NAME}</div><div className="hint">Merchant Admin</div></div>
         </div>
         <form onSubmit={submit}>
