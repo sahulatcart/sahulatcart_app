@@ -77,7 +77,7 @@ h1 { font-size: 24px; font-weight: 700; letter-spacing: -.02em; margin: 0; }
 
 /* ── Wordmark ──────────────────────────────────────────────────
    "Sahulat" = trust, "cart" = energy. The product is a light surface, so both
-   sanctioned wordmark gradients read correctly here and are used as drawn. */
+   sanctioned wordmark gradients read correctly here and are used as drawn. 
    NOTE: use background-IMAGE, not the `background` shorthand — the shorthand
    resets background-clip, which paints the gradient as a solid block instead
    of filling the glyphs. */

@@ -46,7 +46,6 @@
   --font-display: 'Kaisei Decol', Georgia, serif;
   --font-body: 'Poppins', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
-  --font-urdu: 'Noto Nastaliq Urdu', serif;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -61,7 +60,6 @@ body {
 }
 img { max-width: 100%; }
 a { color: inherit; text-decoration: none; }
-.urdu { font-family: var(--font-urdu); direction: rtl; }
 
 .wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
 
@@ -78,16 +76,6 @@ a { color: inherit; text-decoration: none; }
     -45deg,
     var(--amber) 0 12px, var(--rose) 12px 24px, var(--emerald) 24px 36px, var(--cream) 36px 48px
   );
-}
-.tag-urdu {
-  display: inline-block;
-  font-family: var(--font-urdu);
-  font-size: 15px;
-  color: var(--amber);
-  background: rgba(194, 255, 180, 0.12);
-  border: 1px solid rgba(194, 255, 180, 0.35);
-  padding: 4px 16px 10px;
-  border-radius: 999px;
 }
 
 /* ── Nav ───────────────────────────────────────────────────── */
@@ -112,7 +100,7 @@ a { color: inherit; text-decoration: none; }
    use white + --grad-glow (#249E87 -> #C2FFB4), which the brand book designates
    for exactly this case: "accents ... and hover states on dark surfaces".
    No new gradient is invented — each is a sanctioned one used on the surface
-   it was drawn for. */
+   it was drawn for. 
    NOTE: use background-IMAGE, not the `background` shorthand — the shorthand
    resets background-clip, which paints the gradient as a solid block instead
    of filling the glyphs. */
@@ -164,11 +152,6 @@ a { color: inherit; text-decoration: none; }
     radial-gradient(600px 400px at 60% 110%, rgba(194, 255, 180, 0.12), transparent 60%),
     linear-gradient(170deg, var(--ink) 0%, var(--ink-2) 100%);
 }
-.hero-watermark {
-  position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none;
-  font-family: var(--font-urdu); font-size: clamp(120px, 24vw, 320px);
-  color: rgba(255, 255, 255, 0.028); white-space: nowrap; user-select: none;
-}
 .hero-in { position: relative; display: grid; grid-template-columns: 1.05fr .95fr; gap: 48px; align-items: center; padding: 84px 24px 96px; }
 .hero h1 {
   font-family: var(--font-display); font-weight: 800;
@@ -178,7 +161,6 @@ a { color: inherit; text-decoration: none; }
 .hero h1 .flip .word { display: inline-block; animation: flipin .5s ease; }
 @keyframes flipin { from { opacity: 0; transform: translateY(60%) rotateX(70deg); } to { opacity: 1; transform: none; } }
 .hero p.lead { color: var(--muted-on-dark); font-size: 18.5px; max-width: 50ch; }
-.hero .urdu-line { font-family: var(--font-urdu); color: var(--amber); font-size: 20px; margin-top: 14px; }
 .hero-ctas { display: flex; gap: 14px; margin-top: 34px; flex-wrap: wrap; }
 .hero-note { color: var(--muted-on-dark); font-size: 13px; margin-top: 16px; }
 .hero-note b { color: var(--emerald); }
@@ -274,7 +256,6 @@ p.sub { color: var(--muted); font-size: 17px; max-width: 60ch; }
 .card .emoji { font-size: 30px; }
 .card h3 { font-family: var(--font-display); font-size: 20px; margin: 12px 0 8px; }
 .card p { color: var(--muted); font-size: 14.8px; }
-.card .urdu-tag { font-family: var(--font-urdu); color: var(--rose); font-size: 14px; margin-top: 12px; display: block; }
 
 /* how it works */
 .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-top: 48px; counter-reset: step; }
@@ -334,7 +315,6 @@ p.sub { color: var(--muted); font-size: 17px; max-width: 60ch; }
   border: 1px solid rgba(255, 255, 255, .1);
 }
 .cta-banner h2 { font-family: var(--font-display); font-size: clamp(28px, 4vw, 44px); font-weight: 800; letter-spacing: -.02em; }
-.cta-banner .urdu-line { font-family: var(--font-urdu); color: var(--amber); font-size: 22px; margin: 10px 0 6px; }
 .cta-banner p { color: var(--muted-on-dark); margin-bottom: 30px; }
 
 /* ── Pricing ───────────────────────────────────────────────── */
@@ -348,7 +328,7 @@ p.sub { color: var(--muted); font-size: 17px; max-width: 60ch; }
   font-size: 12px; font-weight: 800; padding: 5px 16px; border-radius: 999px; letter-spacing: .04em;
 }
 .plan h3 { font-family: var(--font-display); font-size: 20px; }
-.plan .urdu-name { font-family: var(--font-urdu); color: var(--rose); font-size: 14px; }
+.plan .plan-tagline { font-family: var(--font-body); color: var(--color-green); font-size: 14px; }
 .plan .price { font-family: var(--font-display); font-size: 42px; font-weight: 800; margin: 16px 0 2px; }
 .plan .price small { font-size: 15px; color: var(--muted); font-weight: 500; font-family: var(--font-body); }
 .plan .per { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
@@ -395,7 +375,6 @@ footer { background: var(--ink); color: var(--muted-on-dark); }
 .foot-in h5 { color: #fff; font-family: var(--font-display); font-size: 14.5px; margin-bottom: 14px; }
 .foot-in a { display: block; font-size: 14px; margin-bottom: 9px; transition: color .2s; }
 .foot-in a:hover { color: var(--amber); }
-.foot-urdu { font-family: var(--font-urdu); color: var(--amber); font-size: 17px; margin-top: 14px; }
 .foot-base { border-top: 1px solid rgba(255,255,255,.08); padding: 20px 0; font-size: 13px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
 /* ── Reveal on scroll ──────────────────────────────────────── */
