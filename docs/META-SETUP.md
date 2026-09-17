@@ -19,12 +19,12 @@ verification needed for this (Path C). ~20–30 min. You'll end with 5 values I 
 ## Steps
 
 ### 1. Meta Business + Developer account
-1. Go to **business.facebook.com** → create a **Business Portfolio** if you don't have one (name it e.g. "Sahulatkaar").
+1. Go to **business.facebook.com** → create a **Business Portfolio** if you don't have one (name it e.g. "Sahulatcart").
 2. Go to **developers.facebook.com** → log in → **My Apps** → **Create App**.
 
 ### 2. Create the app
 1. Use case: choose **"Other"** → app type **"Business"** → Next.
-2. Name it (e.g. `sahulatkaar-dev`), pick your Business Portfolio → **Create App**.
+2. Name it (e.g. `sahulatcart-dev`), pick your Business Portfolio → **Create App**.
 3. On the app dashboard, find **WhatsApp** → click **Set up**. This adds the WhatsApp product and
    auto-creates a **test WhatsApp Business Account (WABA)** and a **free test number**.
 

@@ -1,4 +1,4 @@
-// Shopify product-export CSV → Sahulatkaar products. Pure mapping, no I/O.
+// Shopify product-export CSV → Sahulatcart products. Pure mapping, no I/O.
 // Shopify exports one row per variant; image-only rows have empty variant fields.
 // Rows are grouped by Handle. Headers arrive lowercased from parseCsv.
 

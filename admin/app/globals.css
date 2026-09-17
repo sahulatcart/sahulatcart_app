@@ -1,32 +1,57 @@
 /* ─────────────────────────────────────────────────────────────
-   Sahulatkaar Admin — design system
+   Sahulatcart Admin — design system
+   Colour, type and gradients per the brand guidelines (v1.0).
+   Product UI = off-white surfaces, charcoal text, teal accents,
+   Signal Green for primary actions. One accent action per screen.
    ───────────────────────────────────────────────────────────── */
 :root {
-  --bg: #f8fafc;
+  /* ── Brand tokens — verbatim from the brand book. Do not alter. ── */
+  --color-teal:    #249E87; /* primary */
+  --color-green:   #268D3C; /* action  */
+  --color-mint:    #C2FFB4;
+  --color-forest:  #113320;
+  --color-navy:    #0A0D13; /* text/dark */
+  --color-slate:   #6D7486;
+  --color-border:  #E7E9ED;
+  --color-surface: #F6F7F9;
+
+  /* The three sanctioned gradients. Never invent new directions or stops. */
+  --grad-trust: linear-gradient(90deg, #6D7486, #0A0D13);            /* "Sahulat" */
+  --grad-cart:  linear-gradient(180deg, #268D3C, #113320 55%, #C2FFB4); /* "cart"   */
+  --grad-glow:  linear-gradient(135deg, #249E87, #C2FFB4);           /* accents, dark UI */
+
+  /* ── Semantic aliases mapped onto the brand tokens ── */
+  --bg: var(--color-surface);
   --surface: #ffffff;
-  --surface-2: #f1f5f9;
-  --border: #e8edf3;
-  --border-strong: #d7dfe8;
-  --ink: #0f172a;
-  --ink-2: #334155;
-  --muted: #64748b;
-  --faint: #94a3b8;
+  --surface-2: #EDEFF3;
+  --border: var(--color-border);
+  --border-strong: #D4D8E0;
+  --ink: var(--color-navy);
+  --ink-2: #2B313D;
+  --muted: var(--color-slate);
+  --faint: #9AA0AE;
 
-  --brand: #0d9488;
-  --brand-ink: #0f766e;
-  --brand-strong: #115e59;
-  --brand-tint: #f0fdfa;
-  --brand-tint-2: #ccfbf1;
+  /* Teal is the brand accent; forest carries accent TEXT, since teal on
+     white is only 3.33:1 (brand book marks it "Avoid" for body copy).
+     Signal Green is reserved for primary buttons and success. */
+  --brand: var(--color-teal);
+  --brand-ink: var(--color-forest);
+  --brand-strong: var(--color-green);
+  --brand-tint: #EDF7F5;   /* teal @ 8% on white  */
+  --brand-tint-2: #DCEFEC; /* teal @ 16% on white */
 
-  --success: #16a34a; --success-tint: #f0fdf4;
+  /* Success is on-brand Signal Green. Warning/danger/info stay functional —
+     the brand book defines no semantic alert palette, and these carry meaning. */
+  --success: var(--color-green); --success-tint: #EFF7F0;
   --warning: #b45309; --warning-tint: #fffbeb;
   --danger: #dc2626;  --danger-tint: #fef2f2;
   --info: #2563eb;    --info-tint: #eff6ff;
 
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, .06);
-  --shadow: 0 1px 3px rgba(15, 23, 42, .08), 0 1px 2px rgba(15, 23, 42, .04);
-  --shadow-md: 0 4px 12px -2px rgba(15, 23, 42, .08), 0 2px 6px -2px rgba(15, 23, 42, .05);
-  --shadow-lg: 0 20px 40px -12px rgba(15, 23, 42, .18);
+  /* Shadows tinted with brand navy rather than generic slate. */
+  --shadow-sm: 0 1px 2px rgba(10, 13, 19, .06);
+  --shadow: 0 1px 3px rgba(10, 13, 19, .08), 0 1px 2px rgba(10, 13, 19, .04);
+  --shadow-md: 0 4px 12px -2px rgba(10, 13, 19, .08), 0 2px 6px -2px rgba(10, 13, 19, .05);
+  --shadow-lg: 0 20px 40px -12px rgba(10, 13, 19, .18);
 
   --r-sm: 8px; --r: 12px; --r-lg: 16px; --r-full: 999px;
   --sidebar-w: 244px;
@@ -37,13 +62,29 @@ html, body { padding: 0; margin: 0; }
 body {
   background: var(--bg);
   color: var(--ink);
-  font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+  /* Poppins throughout the product; Kaisei is reserved for empty-state headlines. */
+  font-family: var(--font-poppins), system-ui, -apple-system, sans-serif;
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 a { color: inherit; text-decoration: none; }
 h1 { font-size: 24px; font-weight: 700; letter-spacing: -.02em; margin: 0; }
+/* Editorial serif — empty states only, per the brand book. */
+.display { font-family: var(--font-kaisei), Georgia, serif; font-weight: 700; letter-spacing: 0; }
+
+/* ── Wordmark ──────────────────────────────────────────────────
+   "Sahulat" = trust, "cart" = energy. The product is a light surface, so both
+   sanctioned wordmark gradients read correctly here and are used as drawn. */
+   NOTE: use background-IMAGE, not the `background` shorthand — the shorthand
+   resets background-clip, which paints the gradient as a solid block instead
+   of filling the glyphs. */
+.wordmark { display: inline-flex; line-height: 1; white-space: nowrap; font-weight: 700; }
+.wm-sahulat, .wm-cart {
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.wm-sahulat { background-image: var(--grad-trust); }
+.wm-cart { background-image: var(--grad-cart); }
 h2 { font-size: 16px; font-weight: 650; letter-spacing: -.01em; margin: 0 0 12px; }
 h3 { font-size: 14px; font-weight: 600; margin: 0; }
 ::selection { background: var(--brand-tint-2); }
@@ -110,13 +151,15 @@ h3 { font-size: 14px; font-weight: 600; margin: 0; }
 .stat.warn .v { color: var(--warning); }
 
 /* ── Buttons ───────────────────────────────────────────────── */
+/* Primary actions use Signal Green, not teal — brand book §25:
+   "Signal Green for primary buttons & success". Teal stays an accent colour. */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   padding: 9px 15px; border-radius: 10px; font-weight: 600; font-size: 13.5px; cursor: pointer;
-  border: 1px solid transparent; background: var(--brand); color: #fff; transition: all .13s ease; white-space: nowrap;
+  border: 1px solid transparent; background: var(--color-green); color: #fff; transition: all .13s ease; white-space: nowrap;
 }
 .btn svg { width: 16px; height: 16px; }
-.btn:hover { background: var(--brand-ink); }
+.btn:hover { background: var(--color-forest); }
 .btn:active { transform: translateY(.5px); }
 .btn:disabled { opacity: .5; cursor: default; transform: none; }
 .btn.ghost { background: var(--surface); color: var(--ink-2); border-color: var(--border-strong); }

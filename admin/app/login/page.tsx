@@ -3,8 +3,9 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Loader2 } from 'lucide-react';
 import { signIn } from '../../lib/api';
+import Wordmark from '../../components/Wordmark';
 
-const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Sahulatkaar';
+const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Sahulatcart';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -28,7 +29,7 @@ export default function LoginPage() {
         <div className="row" style={{ marginBottom: 18 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.svg" alt="" width={46} height={38} style={{ display: 'block', flex: 'none' }} />
-          <div><div style={{ fontWeight: 700, fontSize: 17, letterSpacing: '-.02em' }}>{PRODUCT_NAME}</div><div className="hint">Merchant Admin</div></div>
+          <div><div style={{ fontWeight: 700, fontSize: 17, letterSpacing: '-.02em' }}><Wordmark name={PRODUCT_NAME} /></div><div className="hint">Merchant Admin</div></div>
         </div>
         <form onSubmit={submit}>
           <div className="field"><label>Email</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus placeholder="you@shop.com" /></div>

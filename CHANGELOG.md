@@ -7,6 +7,61 @@ Entries before 2026-09-16 were reconstructed from git history and commit message
 
 ---
 
+## 2026-09-17 — Rebrand to the v1.0 brand guidelines
+
+Source: `~/Desktop/SahulatCart/Documentation/brand guideline/sahulatcart-brand-guidelines.pdf` (31pp).
+
+**Changed**
+- Brand tokens added verbatim to both `site/assets/style.css` and `admin/app/globals.css`: the 8 colours,
+  3 gradients, 3 typefaces, `--radius: 12px`, 8-pt grid.
+- Site palette re-mapped. The truck-art accents have no brand equivalent, so: rose `#f43f7b` → Signal
+  Green, amber `#ffb01f` → Mint, sky `#38bdf8` → Teal. 20 hardcoded legacy literals swapped, including
+  the `rgba()` washes in the hero and pricing radials.
+- Typography: Bricolage Grotesque + Inter → **Kaisei Decol + Poppins**, JetBrains Mono added.
+  Noto Nastaliq kept for Urdu.
+- Renamed **Sahulatkaar → Sahulatcart** across site, admin, backend config, docs, `.env.example`,
+  `package.json`/lock and the pitch generators.
+- Gradient wordmark: new `admin/components/Wordmark.tsx` plus `.wm-sahulat`/`.wm-cart` in both stylesheets.
+
+**Decisions**
+- **The standalone icon is NOT gradiented.** Brand book §09 shows the icon flat teal on both light and
+  dark; the gradients belong to the wordmark. The flat `logo.svg` already shipped was therefore correct
+  and was left alone.
+- **On dark surfaces the wordmark uses `--grad-glow`, not `--grad-cart`.** Both wordmark gradients are
+  drawn for light surfaces — trust ends at charcoal `#0A0D13`, and cart passes through forest `#113320`
+  at its 55% midpoint, which swallowed the letterforms at 20px on the dark nav (verified visually).
+  `--grad-glow` is the book's designated gradient for "hover states on dark surfaces", so each sanctioned
+  gradient is used on the surface it was drawn for. No new gradient was invented.
+- **5 ad-hoc accent gradients replaced with `--grad-glow`**, and the rainbow conic avatar flattened to
+  teal — the book forbids inventing gradient directions/stops and says "don't rainbow the UI".
+- **Primary buttons are Signal Green, not teal** (§25). Teal fails body-text contrast on white
+  (3.33:1, marked "Avoid"), so `--brand-ink` maps to forest `#113320` for accent text.
+- **The Urdu mini-wordmark سہولت کار was removed** from the nav — it literally spells the old name.
+  Decorative Nastaliq elsewhere is kept.
+- Warning/danger/info stay functional colours; the brand book defines no semantic alert palette.
+
+**Bug found and fixed**
+- The CSS `background` shorthand **resets `background-clip`**, so the wordmark gradient painted as solid
+  blocks instead of filling the glyphs. Both stylesheets now use `background-image`.
+
+**Verified**
+- Computed contrast ratios match the book's published table exactly — slate/white 4.67:1, green/white
+  4.24:1. A sweep of every element found **zero** legacy colours still rendering.
+- admin typecheck 0; backend typecheck clean; shared build 0; backend tests 71/71.
+
+**Known issues / TODO**
+- `hello@sahulatkaar.pk` in `site/demo.html` is **left unchanged** — it is a live contact address and the
+  book gives the domain as `sahulatcart.com`. Pointing it at a mailbox that may not exist would be worse
+  than a stale one. **Needs your decision.**
+- `pilot@sahulatkaar.test` in `db/seed.mjs` left unchanged: it likely matches an existing Supabase auth
+  user in the pilot DB, so renaming it would orphan that record.
+- `og:image` now has a domain to use (`www.sahulatcart.com`) but is still a relative path.
+- The pitch deck/model PDFs and XLSX in `pitch/` are stale — the generators were renamed, the built
+  artifacts were not regenerated.
+- CLAUDE.md still describes the old truck-art identity in places.
+
+---
+
 ## 2026-09-17 — apple-touch-icon
 
 **Changed**

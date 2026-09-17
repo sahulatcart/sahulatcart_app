@@ -1,6 +1,6 @@
 # 00 — Overview & Glossary
 
-## What Sahulatkaar is
+## What Sahulatcart is
 A multi-tenant SaaS that gives a Pakistani merchant an autonomous **WhatsApp sales agent**. When a
 buyer messages the merchant's WhatsApp number, the bot (powered by Claude) chats in **Roman Urdu**,
 answers product questions, **negotiates the price within merchant-set limits**, builds and confirms
@@ -26,7 +26,7 @@ oversees everything from a **web admin portal**, and can take over any chat manu
 | **Merchant (Owner)** | Small/medium Pakistani shop owner selling physical goods | Admin portal: catalog, rules, orders, payments, takeover |
 | **Merchant Staff** | Owner's employee/helper | Admin portal with limited role (orders, inbox) |
 | **Buyer / Customer** | End consumer on WhatsApp | Chats with the bot on WhatsApp only |
-| **Platform Admin** | Us (Sahulatkaar operator) | Super-admin: onboard merchants, monitor, billing (later) |
+| **Platform Admin** | Us (Sahulatcart operator) | Super-admin: onboard merchants, monitor, billing (later) |
 
 ## In scope (launch / Path C)
 - One merchant, official WhatsApp Cloud API, number added manually.

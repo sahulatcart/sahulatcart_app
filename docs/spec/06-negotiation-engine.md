@@ -1,6 +1,6 @@
 # 06 — Negotiation Engine
 
-> This is the most important document in the spec. **Sahulatkaar's core differentiator is automated
+> This is the most important document in the spec. **Sahulatcart's core differentiator is automated
 > price negotiation.** Everything here is normative. Where behaviour is ambiguous, the deterministic
 > rule stated here wins over any other doc.
 >

@@ -1,26 +1,49 @@
 /* ─────────────────────────────────────────────────────────────
-   Sahulatkaar marketing site — truck-art × modern SaaS
-   Palette: ink green, chai cream, truck-art rose, amber
+   Sahulatcart marketing site
+   Colour, type and gradients per the brand guidelines (v1.0).
+   Layout and structure are unchanged; only the palette is re-mapped.
    ───────────────────────────────────────────────────────────── */
 :root {
-  --ink: #071410;
-  --ink-2: #0b1f18;
-  --cream: #faf5ea;
-  --cream-2: #f3ecdc;
-  --paper: #fffdf7;
-  --emerald: #10b981;
-  --emerald-deep: #0a7a56;
-  --rose: #f43f7b;
-  --amber: #ffb01f;
-  --sky: #38bdf8;
-  --text: #10231c;
-  --muted: #5b6f66;
-  --muted-on-dark: #9db8ac;
-  --line: rgba(16, 35, 28, 0.12);
-  --radius: 18px;
-  --shadow: 0 20px 60px -20px rgba(7, 20, 16, 0.35);
-  --font-display: 'Bricolage Grotesque', system-ui, sans-serif;
-  --font-body: 'Inter', system-ui, sans-serif;
+  /* ── Brand tokens — verbatim from the brand book. Do not alter. ── */
+  --color-teal:    #249E87; /* primary */
+  --color-green:   #268D3C; /* action  */
+  --color-mint:    #C2FFB4;
+  --color-forest:  #113320;
+  --color-navy:    #0A0D13; /* text/dark */
+  --color-slate:   #6D7486;
+  --color-border:  #E7E9ED;
+  --color-surface: #F6F7F9;
+
+  /* The three sanctioned gradients. Never invent new directions or stops. */
+  --grad-trust: linear-gradient(90deg, #6D7486, #0A0D13);               /* "Sahulat" */
+  --grad-cart:  linear-gradient(180deg, #268D3C, #113320 55%, #C2FFB4); /* "cart"    */
+  --grad-glow:  linear-gradient(135deg, #249E87, #C2FFB4);              /* accents, dark UI */
+
+  /* ── Site aliases re-mapped onto the brand palette ──
+     The old truck-art accents have no brand equivalent, so:
+       rose  #f43f7b -> Signal Green (the vivid call-to-action)
+       amber #ffb01f -> Mint (the bright highlight)
+       sky   #38bdf8 -> Teal
+     Names are kept so the existing rules keep working. */
+  --ink: var(--color-navy);
+  --ink-2: var(--color-forest);
+  --cream: var(--color-surface);
+  --cream-2: #ECEEF2;
+  --paper: #ffffff;
+  --emerald: var(--color-teal);
+  --emerald-deep: var(--color-forest);
+  --rose: var(--color-green);
+  --amber: var(--color-mint);
+  --sky: var(--color-teal);
+  --text: var(--color-navy);
+  --muted: var(--color-slate);
+  --muted-on-dark: #A7B0BD;
+  --line: rgba(10, 13, 19, 0.12);
+  --radius: 12px;
+  --shadow: 0 20px 60px -20px rgba(10, 13, 19, 0.35);
+  --font-display: 'Kaisei Decol', Georgia, serif;
+  --font-body: 'Poppins', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   --font-urdu: 'Noto Nastaliq Urdu', serif;
 }
 
@@ -59,8 +82,8 @@ a { color: inherit; text-decoration: none; }
   font-family: var(--font-urdu);
   font-size: 15px;
   color: var(--amber);
-  background: rgba(255, 176, 31, 0.12);
-  border: 1px solid rgba(255, 176, 31, 0.35);
+  background: rgba(194, 255, 180, 0.12);
+  border: 1px solid rgba(194, 255, 180, 0.35);
   padding: 4px 16px 10px;
   border-radius: 999px;
 }
@@ -69,21 +92,47 @@ a { color: inherit; text-decoration: none; }
 .nav {
   position: sticky; top: 0; z-index: 50;
   backdrop-filter: blur(14px);
-  background: rgba(7, 20, 16, 0.82);
+  background: rgba(10, 13, 19, 0.82);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 .nav-in { display: flex; align-items: center; gap: 28px; height: 68px; }
-.brand { display: flex; align-items: center; gap: 11px; color: #fff; font-family: var(--font-display); font-weight: 700; font-size: 20px; }
-/* Logo mark. The cart is a fine-lined teal glyph, so it sits on the dark nav
-   directly — the old conic-gradient tile muddied it. Width auto keeps the
-   1736×1423 art ratio; height is the control. */
+/* ── Logo lockup ───────────────────────────────────────────────
+   Icon + wordmark. The icon is FLAT teal (brand book §09 — the standalone
+   mark is never gradiented); the gradients live in the wordmark. Width auto
+   keeps the 1736×1423 art ratio; height is the control. */
+.brand { display: flex; align-items: center; gap: 11px; font-family: var(--font-body); font-weight: 700; font-size: 20px; letter-spacing: -.01em; }
 .brand .mark { height: 30px; width: auto; display: block; flex: none; }
-.brand .urdu-mini { font-family: var(--font-urdu); font-size: 12px; color: var(--muted-on-dark); display: block; line-height: 1; margin-top: 2px; }
+
+/* "Sahulat" = trust, "cart" = energy.
+   Both wordmark gradients are built for LIGHT surfaces: trust ends at charcoal
+   #0A0D13 and cart passes through forest #113320 at its 55% midpoint. On the
+   dark nav that midpoint swallows the letterforms at small sizes, so on dark we
+   use white + --grad-glow (#249E87 -> #C2FFB4), which the brand book designates
+   for exactly this case: "accents ... and hover states on dark surfaces".
+   No new gradient is invented — each is a sanctioned one used on the surface
+   it was drawn for. */
+   NOTE: use background-IMAGE, not the `background` shorthand — the shorthand
+   resets background-clip, which paints the gradient as a solid block instead
+   of filling the glyphs. */
+.wordmark { display: inline-flex; line-height: 1; white-space: nowrap; }
+.wm-sahulat { color: #fff; }
+.wm-cart {
+  background-image: var(--grad-glow);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+}
+/* On light surfaces both wordmark gradients read correctly, so use them. */
+.on-light .wm-sahulat {
+  background-image: var(--grad-trust);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+}
+.on-light .wm-cart { background-image: var(--grad-cart); }
 .nav-links { display: flex; gap: 26px; margin-left: auto; align-items: center; }
-.nav-links a { color: #cfe0d8; font-size: 14.5px; font-weight: 500; transition: color .2s; }
+.nav-links a { color: var(--muted-on-dark); font-size: 14.5px; font-weight: 500; transition: color .2s; }
 .nav-links a:hover, .nav-links a.active { color: var(--amber); }
 .nav-cta {
-  background: var(--emerald); color: #04120c !important; font-weight: 700;
+  background: var(--emerald); color: var(--color-navy) !important; font-weight: 700;
   padding: 10px 20px; border-radius: 999px; transition: transform .2s, background .2s;
 }
 .nav-cta:hover { background: var(--amber); transform: translateY(-1px); }
@@ -97,8 +146,8 @@ a { color: inherit; text-decoration: none; }
   padding: 15px 30px; border-radius: 999px; border: 0; cursor: pointer;
   transition: transform .18s ease, box-shadow .18s ease, background .18s;
 }
-.btn-primary { background: var(--emerald); color: #04120c; box-shadow: 0 10px 30px -8px rgba(16, 185, 129, .5); }
-.btn-primary:hover { transform: translateY(-2px) scale(1.02); background: var(--amber); box-shadow: 0 14px 34px -8px rgba(255, 176, 31, .55); }
+.btn-primary { background: var(--emerald); color: var(--color-navy); box-shadow: 0 10px 30px -8px rgba(36, 158, 135, .5); }
+.btn-primary:hover { transform: translateY(-2px) scale(1.02); background: var(--amber); box-shadow: 0 14px 34px -8px rgba(194, 255, 180, .55); }
 .btn-ghost { background: transparent; color: #fff; border: 1.5px solid rgba(255, 255, 255, .25); }
 .btn-ghost:hover { border-color: var(--amber); color: var(--amber); transform: translateY(-2px); }
 .btn-dark { background: var(--ink); color: var(--cream); }
@@ -108,9 +157,9 @@ a { color: inherit; text-decoration: none; }
 .hero {
   position: relative; color: #fff; overflow: hidden;
   background:
-    radial-gradient(900px 500px at 85% -10%, rgba(244, 63, 123, 0.22), transparent 60%),
-    radial-gradient(700px 500px at -10% 30%, rgba(16, 185, 129, 0.18), transparent 55%),
-    radial-gradient(600px 400px at 60% 110%, rgba(255, 176, 31, 0.12), transparent 60%),
+    radial-gradient(900px 500px at 85% -10%, rgba(38, 141, 60, 0.22), transparent 60%),
+    radial-gradient(700px 500px at -10% 30%, rgba(36, 158, 135, 0.18), transparent 55%),
+    radial-gradient(600px 400px at 60% 110%, rgba(194, 255, 180, 0.12), transparent 60%),
     linear-gradient(170deg, var(--ink) 0%, var(--ink-2) 100%);
 }
 .hero-watermark {
@@ -150,7 +199,7 @@ a { color: inherit; text-decoration: none; }
 @keyframes phonefloat { 0%,100% { transform: translateY(0) rotate(.6deg);} 50% { transform: translateY(-12px) rotate(-.6deg);} }
 .phone-screen { border-radius: 30px; overflow: hidden; background: #0b141a; height: 560px; display: flex; flex-direction: column; }
 .chat-top { display: flex; align-items: center; gap: 10px; background: #1f2c33; padding: 12px 14px; color: #e9edef; font-size: 14px; }
-.chat-top .avatar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(from 200deg, var(--rose), var(--amber), var(--emerald)); color: var(--ink); font-weight: 800; font-size: 14px; }
+.chat-top .avatar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--color-teal); color: #fff; font-weight: 800; font-size: 14px; }
 .chat-top .status { display: block; font-size: 11.5px; color: #8696a0; }
 .chat-body {
   flex: 1; padding: 14px 12px; overflow: hidden; display: flex; flex-direction: column; gap: 8px;
@@ -173,9 +222,9 @@ a { color: inherit; text-decoration: none; }
 .bubble .wave i:nth-child(3n) { animation-delay: .3s; height: 100%; }
 .bubble .wave i:nth-child(5n) { animation-delay: .45s; height: 55%; }
 @keyframes wave { 0%,100% { transform: scaleY(.5);} 50% { transform: scaleY(1);} }
-.bubble.slip { background: #1d3229; border: 1px solid rgba(16, 185, 129, .4); }
+.bubble.slip { background: var(--color-forest); border: 1px solid rgba(36, 158, 135, .4); }
 .bubble.slip .slip-head { color: var(--emerald); font-weight: 700; font-size: 12.5px; display: flex; gap: 6px; align-items: center; }
-.bubble.slip .row { display: flex; justify-content: space-between; gap: 18px; font-size: 12.5px; color: #cfe0d8; }
+.bubble.slip .row { display: flex; justify-content: space-between; gap: 18px; font-size: 12.5px; color: var(--muted-on-dark); }
 .bubble.slip .row.total { border-top: 1px dashed rgba(255,255,255,.2); margin-top: 5px; padding-top: 5px; font-weight: 700; color: #fff; }
 .typing { align-self: flex-start; background: #202c33; border-radius: 10px; padding: 12px 16px; display: none; gap: 5px; }
 .typing.show { display: flex; animation: pop .3s ease forwards; }
@@ -195,7 +244,7 @@ section.block { padding: 96px 0; }
   display: inline-flex; align-items: center; gap: 8px;
   font-size: 13px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--emerald-deep);
 }
-.kicker::before { content: ''; width: 26px; height: 3px; border-radius: 2px; background: linear-gradient(90deg, var(--rose), var(--amber)); }
+.kicker::before { content: ''; width: 26px; height: 3px; border-radius: 2px; background: var(--grad-glow); }
 h2.title { font-family: var(--font-display); font-weight: 800; font-size: clamp(30px, 3.8vw, 44px); letter-spacing: -0.02em; line-height: 1.12; margin: 14px 0 12px; }
 p.sub { color: var(--muted); font-size: 17px; max-width: 60ch; }
 
@@ -216,7 +265,7 @@ p.sub { color: var(--muted); font-size: 17px; max-width: 60ch; }
 .card:hover { transform: translateY(-6px); box-shadow: var(--shadow); }
 .card::after {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
-  background: linear-gradient(90deg, var(--emerald), var(--amber), var(--rose));
+  background: var(--grad-glow);
   transform: scaleX(0); transform-origin: left; transition: transform .3s ease;
 }
 .card:hover::after { transform: scaleX(1); }
@@ -231,7 +280,7 @@ p.sub { color: var(--muted); font-size: 17px; max-width: 60ch; }
 .step .n {
   width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center;
   font-family: var(--font-display); font-weight: 800; font-size: 19px; color: var(--ink);
-  background: linear-gradient(135deg, var(--amber), var(--rose)); margin-bottom: 14px;
+  background: var(--grad-glow); margin-bottom: 14px;
 }
 .step h4 { font-family: var(--font-display); font-size: 17.5px; margin-bottom: 6px; }
 .step p { color: var(--muted); font-size: 14px; }
@@ -249,7 +298,7 @@ p.sub { color: var(--muted); font-size: 17px; max-width: 60ch; }
 .dial-buttons { display: flex; gap: 12px; flex-wrap: wrap; }
 .dial-btn {
   padding: 13px 26px; border-radius: 999px; border: 1.5px solid rgba(255, 255, 255, .2);
-  background: transparent; color: #cfe0d8; font-weight: 700; font-size: 15px; cursor: pointer; font-family: var(--font-body);
+  background: transparent; color: var(--muted-on-dark); font-weight: 700; font-size: 15px; cursor: pointer; font-family: var(--font-body);
   transition: all .2s;
 }
 .dial-btn.active { background: var(--amber); color: var(--ink); border-color: var(--amber); transform: scale(1.06); }
@@ -277,9 +326,9 @@ p.sub { color: var(--muted); font-size: 17px; max-width: 60ch; }
 .cta-banner {
   border-radius: 28px; padding: 64px 48px; text-align: center; color: #fff; position: relative; overflow: hidden;
   background:
-    radial-gradient(600px 300px at 20% 0%, rgba(244, 63, 123, .35), transparent 60%),
-    radial-gradient(500px 300px at 80% 100%, rgba(255, 176, 31, .25), transparent 60%),
-    linear-gradient(150deg, #0a3d2c, var(--ink));
+    radial-gradient(600px 300px at 20% 0%, rgba(38, 141, 60, .35), transparent 60%),
+    radial-gradient(500px 300px at 80% 100%, rgba(194, 255, 180, .25), transparent 60%),
+    linear-gradient(150deg, var(--color-forest), var(--ink));
   border: 1px solid rgba(255, 255, 255, .1);
 }
 .cta-banner h2 { font-family: var(--font-display); font-size: clamp(28px, 4vw, 44px); font-weight: 800; letter-spacing: -.02em; }
@@ -290,10 +339,10 @@ p.sub { color: var(--muted); font-size: 17px; max-width: 60ch; }
 .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin-top: 48px; align-items: stretch; }
 .plan { background: var(--paper); border: 1px solid var(--line); border-radius: 22px; padding: 34px 28px; display: flex; flex-direction: column; position: relative; transition: transform .25s, box-shadow .25s; }
 .plan:hover { transform: translateY(-6px); box-shadow: var(--shadow); }
-.plan.hot { border: 2px solid var(--emerald); box-shadow: 0 24px 70px -24px rgba(16, 185, 129, .45); }
+.plan.hot { border: 2px solid var(--emerald); box-shadow: 0 24px 70px -24px rgba(36, 158, 135, .45); }
 .plan .flag {
   position: absolute; top: -14px; left: 50%; transform: translateX(-50%);
-  background: linear-gradient(90deg, var(--rose), var(--amber)); color: var(--ink);
+  background: var(--grad-glow); color: var(--ink);
   font-size: 12px; font-weight: 800; padding: 5px 16px; border-radius: 999px; letter-spacing: .04em;
 }
 .plan h3 { font-family: var(--font-display); font-size: 20px; }
@@ -331,7 +380,7 @@ p.sub { color: var(--muted); font-size: 17px; max-width: 60ch; }
 }
 .demo-card input:focus, .demo-card textarea:focus { border-color: var(--emerald); }
 .wa-cta {
-  display: flex; gap: 16px; align-items: center; background: linear-gradient(150deg, #0a3d2c, var(--ink));
+  display: flex; gap: 16px; align-items: center; background: linear-gradient(150deg, var(--color-forest), var(--ink));
   color: #fff; border-radius: 22px; padding: 30px; margin-top: 20px;
 }
 .wa-cta .big { font-size: 40px; }

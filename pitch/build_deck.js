@@ -1,8 +1,8 @@
 const pptxgen = require("pptxgenjs");
 const p = new pptxgen();
 p.layout = "LAYOUT_16x9";
-p.author = "Sahulatkaar";
-p.title = "Sahulatkaar — Investor Pitch";
+p.author = "Sahulatcart";
+p.title = "Sahulatcart — Investor Pitch";
 
 // Palette: ink green dominates, amber + rose accents (truck-art SaaS identity)
 const INK = "0B1F18", EMER = "0A5C46", MINT = "10B981", AMBER = "FFB01F", ROSE = "F43F7B";
@@ -46,7 +46,7 @@ s.background = { color: INK };
 s.addShape(p.shapes.OVAL, { x: 7.6, y: -1.4, w: 4, h: 4, fill: { color: EMER, transparency: 68 } });
 s.addShape(p.shapes.OVAL, { x: -1.4, y: 4.2, w: 3.2, h: 3.2, fill: { color: ROSE, transparency: 86 } });
 chip(s, 0.6, 0.65, 3.0, "● LIVE PRODUCT — orders daily", "10281F", MINT);
-s.addText("Sahulatkaar", { x: 0.55, y: 1.35, w: 9, h: 1.0, fontSize: 54, bold: true, color: WHT, fontFace: F, margin: 0 });
+s.addText("Sahulatcart", { x: 0.55, y: 1.35, w: 9, h: 1.0, fontSize: 54, bold: true, color: WHT, fontFace: F, margin: 0 });
 s.addText([{ text: "Aap so jao. ", options: { color: WHT } }, { text: "AI bechta rahega.", options: { color: AMBER } }],
   { x: 0.55, y: 2.4, w: 9, h: 0.6, fontSize: 26, bold: true, fontFace: F, margin: 0 });
 s.addText("The WhatsApp AI salesman for Pakistan's shops — it haggles like a real dukaandaar,\ntakes orders in Urdu voice notes, and closes with COD or bank transfer.",
@@ -245,6 +245,6 @@ darkStat(s, 0.55, 3.95, 2.1, "LIVE", "in production today", MINT);
 darkStat(s, 2.85, 3.95, 2.1, "83%", "gross margin", AMBER);
 darkStat(s, 5.15, 3.95, 2.1, "17x", "LTV / CAC", "FF7AA8");
 darkStat(s, 7.45, 3.95, 2.1, "Rs 450M", "Year-5 revenue", MINT);
-s.addText("Sahulatkaar  ·  Farhan Kazim  ·  farhan.kazim1@gmail.com", { x: 0.55, y: 5.15, w: 8.9, h: 0.35, fontSize: 12, color: "9DB8AC", fontFace: F, margin: 0 });
+s.addText("Sahulatcart  ·  Farhan Kazim  ·  farhan.kazim1@gmail.com", { x: 0.55, y: 5.15, w: 8.9, h: 0.35, fontSize: 12, color: "9DB8AC", fontFace: F, margin: 0 });
 
-p.writeFile({ fileName: "Sahulatkaar-Pitch-5min.pptx" }).then(() => console.log("done"));
+p.writeFile({ fileName: "Sahulatcart-Pitch-5min.pptx" }).then(() => console.log("done"));

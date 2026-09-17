@@ -1,4 +1,4 @@
-# Sahulatkaar (internal codename — brand name not final)
+# Sahulatcart (internal codename — brand name not final)
 
 A multi-tenant SaaS that gives a Pakistani merchant an autonomous **WhatsApp sales agent**: it chats
 with buyers in Roman Urdu, **negotiates within merchant-set price floors**, builds and confirms orders,

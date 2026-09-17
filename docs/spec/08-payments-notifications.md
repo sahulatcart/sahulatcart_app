@@ -1,6 +1,6 @@
 # 08 — Payments & Notifications
 
-> **Money principle (non-negotiable).** Sahulatkaar NEVER takes payments and NEVER holds funds. There
+> **Money principle (non-negotiable).** Sahulatcart NEVER takes payments and NEVER holds funds. There
 > is **no payment gateway, no card data ever, no wallet, no escrow**. The bot either arranges **Cash on
 > Delivery (COD)** or shows the **merchant's OWN bank account** (from `bank_accounts`) so the customer
 > pays merchant↔customer directly via their own banking app. Verification of a bank transfer is a
@@ -758,7 +758,7 @@ this doc only defines how they surface as notifications.
 
 - Portal toast (payment_claim): **"💰 Payment claimed on SK-1042 (Rs. 5,000) — tap to verify."**
 - WhatsApp-to-merchant (utility template `merchant_payment_claim`, outside window):
-  *"Sahulatkaar: New payment claim on order {{1}} for Rs. {{2}}. Open the portal to verify: {{3}}"*
+  *"Sahulatcart: New payment claim on order {{1}} for Rs. {{2}}. Open the portal to verify: {{3}}"*
 - Email subject (template_status): **"Action needed: WhatsApp template 'payment_reminder' was rejected"**
 
 ---

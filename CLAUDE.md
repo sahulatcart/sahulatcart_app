@@ -10,7 +10,7 @@ the end of a session.
 
 ## What this is
 
-Sahulatkaar (internal codename — brand name not final) is a multi-tenant SaaS that gives a Pakistani
+Sahulatcart (internal codename — brand name not final) is a multi-tenant SaaS that gives a Pakistani
 merchant an autonomous **WhatsApp sales agent**. The bot chats with buyers in **Roman Urdu**, negotiates
 price within merchant-set floors, builds and confirms orders, handles COD or bank-transfer-by-screenshot
 payments, generates an order slip, and notifies the merchant. Merchants configure and oversee everything

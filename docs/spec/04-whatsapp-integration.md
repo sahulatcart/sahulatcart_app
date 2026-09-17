@@ -1,6 +1,6 @@
 # 04 — WhatsApp Integration (Meta Cloud API, Path C)
 
-This document specifies how Sahulatkaar connects to WhatsApp via the **Meta WhatsApp Cloud
+This document specifies how Sahulatcart connects to WhatsApp via the **Meta WhatsApp Cloud
 API** (Graph API) for the **Path C launch**: single merchant, one phone number added manually
 under the platform's own WABA, **no** Meta Business Verification / App Review / Embedded
 Signup yet. The schema is already multi-tenant (routing by `phone_number_id`), so scaling to
@@ -658,7 +658,7 @@ Templates are required for any **business-initiated** message **outside the 24h 
 
 Meta template categories (⚠️ VERIFY LIVE — category policy shifts):
 
-| Category | Use | Sahulatkaar usage |
+| Category | Use | Sahulatcart usage |
 |---|---|---|
 | **utility** | Transactional follow-ups tied to a specific order/action | order confirmation, payment received, shipping/dispatch, delivery, COD reminder |
 | **marketing** | Promotions, offers, re-engagement | promos, sale announcements (**deferred** — see §7 broadcasts) |

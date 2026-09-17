@@ -1,4 +1,4 @@
-/* Sahulatkaar site interactions — no dependencies. */
+/* Sahulatcart site interactions — no dependencies. */
 (function () {
   'use strict';
 

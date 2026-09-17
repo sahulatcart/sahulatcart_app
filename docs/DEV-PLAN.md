@@ -8,7 +8,7 @@ Source of truth for *what* to build = [docs/spec/](spec/). This doc is the *sequ
 2. **Engine-first where it's pure.** The negotiation engine is deterministic and fully unit-testable with zero external deps — build and prove it early.
 3. **Deploy to Railway from day one.** The webhook needs a public HTTPS URL; standard Railway URL is that URL. Everything runs on Railway continuously, not just at the end.
 4. **Backend and admin portal progress in parallel** once the schema + shared types exist.
-5. **Name is a config value** (`PRODUCT_NAME`, default "Sahulatkaar"). Nothing hardcodes the brand. Renaming later = one env var.
+5. **Name is a config value** (`PRODUCT_NAME`, default "Sahulatcart"). Nothing hardcodes the brand. Renaming later = one env var.
 6. **Every phase has a demoable exit criterion.** No phase is "done" until its slice visibly works.
 
 ## MVP scope line

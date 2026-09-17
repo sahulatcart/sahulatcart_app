@@ -1,4 +1,4 @@
-# Sahulatkaar — Step-by-Step Execution Roadmap
+# Sahulatcart — Step-by-Step Execution Roadmap
 
 From zero to a live product. Every step says WHO does it and WHY.
 - **[YOU]** = only you can (your identity/money/decisions)
@@ -22,7 +22,7 @@ Phases run partly in parallel. Meta verification is slow, so we START it early a
 
 | # | Owner | Do this | Why |
 |---|---|---|---|
-| 0.1 | **YOU** | Tell me the domain name to use (e.g. `sahulatkaar.pk`) | Everything (email, website, Meta) hangs off the domain |
+| 0.1 | **YOU** | Tell me the domain name to use (e.g. `sahulatcart.pk`) | Everything (email, website, Meta) hangs off the domain |
 | 0.2 | **YOU** | Buy that domain | Needed for website + privacy policy Meta requires |
 | 0.3 | **YOU** | Create a **Supabase** project → send me the URL + service key | This is our database |
 | 0.4 | **YOU** | Create a **Railway** account | This hosts the backend + admin portal |
@@ -45,7 +45,7 @@ Phases run partly in parallel. Meta verification is slow, so we START it early a
 | 1.3 | **BOTH** | Create a **Meta Business Manager** (I guide, you own it) | The container for the WhatsApp app |
 | 1.4 | **ME** | Write the **Privacy Policy + Terms** and a **simple landing page**; deploy to your domain | Meta App Review rejects apps without a live, proper privacy policy |
 | 1.5 | **BOTH** | Submit **Meta Business Verification** (upload NTN + proof of address) | The gate to everything WhatsApp. Takes days — start early |
-| 1.6 | **YOU** | Get a **spare phone number/SIM** NOT used on WhatsApp or WhatsApp Business | This becomes Sahulatkaar's own test/display number |
+| 1.6 | **YOU** | Get a **spare phone number/SIM** NOT used on WhatsApp or WhatsApp Business | This becomes Sahulatcart's own test/display number |
 
 ➡️ **Output of Phase 1:** business is legal; Meta is verifying; legal pages are live; test number ready.
 
@@ -111,7 +111,7 @@ Phases run partly in parallel. Meta verification is slow, so we START it early a
 | 5.3 | **ME** | Watch real customer chats, tune the bot, fix issues | The bot gets smart on real conversations |
 | 5.4 | **YOU** | Collect the merchant's feedback | Tells us what to fix before scaling |
 
-➡️ **Output of Phase 5:** one real shop running on Sahulatkaar, taking real orders.
+➡️ **Output of Phase 5:** one real shop running on Sahulatcart, taking real orders.
 
 ---
 
