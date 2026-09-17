@@ -7,6 +7,36 @@ Entries before 2026-09-16 were reconstructed from git history and commit message
 
 ---
 
+## 2026-09-17 — apple-touch-icon
+
+**Changed**
+- Added `apple-touch-icon.png` (180×180) to `site/assets/` and `admin/public/`, linked from all 4 site
+  pages and from the admin's Next.js `metadata.icons.apple`.
+
+**Decisions**
+- **Baked a white background in rather than keeping transparency.** iOS renders a transparent
+  apple-touch-icon as solid black on the home screen, so an opaque background is required, not optional.
+  White matches how the mark reads on light surfaces; a teal-filled background with a knockout cart would
+  be bolder but means altering the supplied artwork.
+- Art fills 76% of the canvas, leaving ~12% margin per side so iOS's rounded-rect mask doesn't clip it.
+- Composited from the 2048px PNG and downsampled with LANCZOS, rather than rasterizing the SVG — no SVG
+  rasterizer (rsvg/cairosvg/ImageMagick) is installed on this machine, and downsampling from 2048 gives
+  cleaner edges than upscaling the 512.
+
+**Verified**
+- Site on :4173 — asset 200, decodes to a real 180×180 square, `rel="apple-touch-icon"` on all 4 pages.
+- Admin on :3000 — Next emits both `icon` and `apple-touch-icon` links; asset 200 and decodes 180×180.
+  Login page re-screenshotted: no regression to the existing mark.
+- admin typecheck exit 0; backend tests 71/71.
+
+**Still open** (unchanged from the logo entry)
+- `og:image` is still a relative path — needs the production domain.
+- 16px favicon legibility.
+- The Sahulatkaar / SahulatCart naming split.
+- **Railway still has not deployed anything** — see the investigation in the logo entry below.
+
+---
+
 ## 2026-09-16 — Real logo replaces the placeholder marks
 
 **Changed**
