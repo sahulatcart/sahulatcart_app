@@ -142,4 +142,27 @@
       });
     });
   }
+
+  /* ─────────────────────────────────────────────────────────────
+     TEMPORARY — Railway deploy canary. Remove once the pipeline is
+     confirmed. Stamped with the commit it was built from, so seeing it
+     tells us WHICH build is live, not merely that something deployed.
+     ───────────────────────────────────────────────────────────── */
+  var DEPLOY_STAMP = 'c476cca · 2026-09-18';
+  var box = document.createElement('div');
+  box.setAttribute('role', 'status');
+  box.style.cssText = [
+    'position:fixed', 'right:18px', 'bottom:18px', 'z-index:9999',
+    'background:#0b1f18', 'color:#fff', 'border:1px solid rgba(255,255,255,.18)',
+    'border-radius:12px', 'padding:14px 16px', 'max-width:270px',
+    'font:14px/1.45 Inter,system-ui,sans-serif',
+    'box-shadow:0 18px 40px -14px rgba(0,0,0,.55)'
+  ].join(';');
+  box.innerHTML =
+    '<div style="font-weight:700;margin-bottom:3px">Hello 👋</div>' +
+    '<div style="font-size:12px;opacity:.75">Deploy test · build ' + DEPLOY_STAMP + '</div>' +
+    '<button type="button" aria-label="Dismiss" style="position:absolute;top:6px;right:9px;' +
+    'background:none;border:0;color:#fff;opacity:.55;font-size:17px;line-height:1;cursor:pointer">&times;</button>';
+  box.querySelector('button').addEventListener('click', function () { box.remove(); });
+  document.body.appendChild(box);
 })();
