@@ -57,8 +57,10 @@ h3 { font-size: 14px; font-weight: 600; margin: 0; }
   transition: transform .22s ease;
 }
 .sidebar .logo { display: flex; align-items: center; gap: 10px; padding: 8px 10px 18px; }
-/* Logo mark — the teal cart stands on its own; width auto preserves its ratio. */
-.sidebar .logo .mark { height: 30px; width: auto; display: block; flex: none; }
+.sidebar .logo .mark {
+  width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--brand), var(--brand-strong)); color: #fff; font-weight: 800; font-size: 15px;
+}
 .sidebar .logo .name { font-weight: 700; font-size: 16px; letter-spacing: -.02em; }
 .nav-group { display: flex; flex-direction: column; gap: 2px; }
 .nav-link {

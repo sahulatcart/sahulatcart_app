@@ -9,7 +9,6 @@ const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Sahulatkaar';
 export const metadata = {
   title: `${PRODUCT_NAME} — Admin`,
   description: 'Merchant admin portal',
-  icons: { icon: '/favicon.svg', apple: '/apple-touch-icon.png' },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
