@@ -1,7 +1,10 @@
-# Static marketing site — nginx, Railway-compatible (honors $PORT).
-# Build context is the REPO ROOT (so one Railway service config style works for
-# every service here); copy only the site folder into the image.
+# Static marketing site — nginx. Build context is the REPO ROOT.
+# Railway injects $PORT, so the listen directive is templated: nginx:alpine
+# runs envsubst over /etc/nginx/templates/*.template at startup and writes the
+# result into /etc/nginx/conf.d/ (no brittle sed against a file that may not exist).
 FROM nginx:alpine
 COPY site/ /usr/share/nginx/html/
 RUN rm -f /usr/share/nginx/html/Dockerfile /usr/share/nginx/html/railway.json
-CMD ["sh", "-c", "sed -i \"s/listen  *80;/listen ${PORT:-80};/\" /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
+RUN printf 'server {\n  listen ${PORT};\n  server_name _;\n  root /usr/share/nginx/html;\n  index index.html;\n  location / { try_files $uri $uri.html $uri/ =404; }\n}\n' > /etc/nginx/templates/default.conf.template
+ENV PORT=80
+EXPOSE 80
