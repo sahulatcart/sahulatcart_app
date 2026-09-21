@@ -7,6 +7,46 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-21 (evening) — Admin rebrand deployed; admin outage caused and fixed
+
+**Outcome** — site, admin and backend all live and rebranded; admin login verified
+end to end.
+
+**Root cause of ~8 failed admin deploys**
+Railway held `buildCommand: "npm run start -w @app/admin"` — a *start* command in
+the *build* slot, left over from setting a Custom Start Command in the dashboard.
+Railway ran the web server as a build step, so the build never completed and every
+deployment was marked FAILED while the build log looked like a clean Next build.
+
+Setting that field to `null` through IaC **silently did not persist** — it
+reappeared in `railway config plan` after every apply. Setting it to a harmless
+`echo docker-build` stuck on the first try. If an IaC field keeps reappearing in
+the plan, it is not being applied; set a real value rather than null.
+
+**Knock-on:** with no successful deployment, nothing served the admin, so
+`/api/v1/config` returned nothing, the portal could not construct its Supabase
+client, and login failed with a generic error. The credentials were never at
+fault — they were verified directly against Supabase throughout.
+
+**The hassle / what was done badly**
+- The admin was taken **completely down** for several minutes. Before that it was
+  serving the old branding but working. Cycling redeploys without reading the
+  failure reason caused this.
+- "Health check" was guessed as the cause and `healthcheckPath: "/healthz"` was
+  set against a build that had no such route — actively creating the failure it
+  was meant to fix. `healthcheckPath` had been `null` all along. Reverted.
+- `admin/app/healthz/route.ts` was added during that detour. It is harmless and
+  worth keeping, but it was not the fix.
+- **`git checkout <branch> -- <paths>` silently reverts fixes made since.** It
+  restored the site's Login links to the *previous owner's* deployment and reset
+  the Privacy footer link to `#`. Caught only by auditing afterwards.
+
+**Rule learned:** read the platform's failure reason before changing anything. The
+build log named the cause on the first failure for the site, and the CLI's own
+`config plan` was showing the bad `buildCommand` for the admin the whole time.
+
+---
+
 ## 2026-09-21 (later) — Brand guidelines v1.0 applied to site and admin
 
 Re-applied the rebrand that was built on 09-17 and rolled back on 09-18. Taken
