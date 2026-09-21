@@ -33,3 +33,17 @@
 .legal .who > div { flex: 1 1 260px; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
 .legal .who strong { display: block; margin-bottom: 4px; }
 .legal .who p { font-size: 14.5px; margin: 0; color: var(--muted); }
+
+/* Unfilled values awaiting real business details — deliberately loud so they
+   cannot ship by accident. Remove the class once the value is filled in. */
+.legal .tbc {
+  background: #fff1cf; color: #7a5200; font-weight: 600;
+  padding: 1px 7px; border-radius: 5px; font-size: 13.5px;
+  border: 1px dashed #d9a21a;
+}
+
+/* Business identity block in the site footer (Meta business verification) */
+.foot-biz { border-top: 1px solid rgba(255,255,255,.08); }
+.foot-biz .wrap { padding: 18px 24px 0; }
+.foot-biz p { font-size: 12.5px; line-height: 1.6; color: var(--muted-on-dark); margin: 0; }
+.foot-biz .tbc { color: #ffd88a; font-weight: 600; }

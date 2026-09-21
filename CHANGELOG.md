@@ -7,6 +7,37 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-21 (night) — Site audit against Meta Tech Provider verification
+
+**Outcome** — `site/about.html` and `site/support.html` added; a business-identity block added to the
+footer of all four marketing pages; the four dead `href="#"` About links wired up. No dead links
+remain anywhere on the site.
+
+**Why these two pages specifically**
+Meta business verification checks that the website carries the **legal business name, registered
+address and business phone**, and that they match Business Manager and the uploaded documents
+exactly — mismatch is the most-cited rejection reason. None of the three appeared anywhere on the
+site. They now appear in the footer of every page and in a table on `about.html`.
+
+Separately the WhatsApp Business Messaging Policy requires a maintained, accurate **customer support
+contact**. There wasn't one beyond a demo-booking form, hence `support.html`, which also documents
+opt-in rules, prohibited categories and number-quality guidance — useful to merchants and a positive
+signal to a reviewer that we enforce policy rather than ignore it.
+
+**The dead links mattered more than they look.** All four marketing pages footer-linked About to
+`href="#"`. A reviewer clicking a dead link on a site under verification is a bad signal, and About
+is exactly where they go looking for the legal entity.
+
+**Unfillable values are deliberately loud.** Registered name, NTN, address and phone are wrapped in
+a `.tbc` class that renders as dashed amber pills, so they cannot ship unnoticed. They must be filled
+before submitting to Meta; only the owner has the values and they must match the documents.
+
+**Verified** — all 9 pages 200, every internal link resolves to a real file, `legal.css` now linked
+from the marketing pages too (the footer block needs it), footer block confirmed rendering with 3
+placeholders.
+
+---
+
 ## 2026-09-21 (night) — Legal pages: User Agreement, Privacy Policy v2, Data Deletion
 
 **Outcome** — three legal pages on the marketing site, written against Meta's actual Tech Provider
