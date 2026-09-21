@@ -19,7 +19,7 @@ export default defineRailway(() => {
   });
   const _appadmin = service("@app/admin", {
     source: sahulatcart_app,
-    build: { buildCommand: "npm run start -w @app/admin", buildEnvironment: "V3", builder: "DOCKERFILE", dockerfilePath: "admin/Dockerfile", watchPatterns: ["/admin/**"] },
+    build: { buildEnvironment: "V3", builder: "DOCKERFILE", dockerfilePath: "admin/Dockerfile", watchPatterns: ["/admin/**"] },
     start: "npm run start -w @app/admin",
     replicas: { "sfo": 1 },
     networking: { privateNetworkEndpoint: "appadmin" },
