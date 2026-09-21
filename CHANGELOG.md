@@ -38,9 +38,13 @@ the intended state, not the current one.
   available**; that has to be disclosed, not glossed over.
 - The prohibited-goods list is taken from Meta's Commerce Policy, not invented.
 
-**Still to do (needs the user)** — `legal@sahulatcart.com` and `privacy@sahulatcart.com` are cited on
-all three pages and do not exist yet. `demo.html` still shows the previous owner's
-`hello@sahulatkaar.pk`. Governing law says "courts of Pakistan" generically; a city should be named.
+**Contact address** — all three pages, plus the demo form, now use `sahulatcart2026@gmail.com`
+(confirmed by the owner). This also removed the last reference to the previous owner's
+`hello@sahulatkaar.pk`, which was still the target of the demo page's mailto form — enquiries from
+the contact form had been going to him.
+
+**Still to do (needs the user)** — governing law says "courts of Pakistan" generically; a city should
+be named. A branded address on the domain would look more credible than Gmail once DNS is set up.
 
 **Verified** — all three pages render, every table-of-contents anchor resolves to a real heading,
 every internal link resolves to a real file, no horizontal overflow at 375px, all 7 site pages 200.
