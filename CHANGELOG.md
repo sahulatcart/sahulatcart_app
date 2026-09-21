@@ -7,6 +7,50 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-21 (later) — Brand guidelines v1.0 applied to site and admin
+
+Re-applied the rebrand that was built on 09-17 and rolled back on 09-18. Taken
+from `backup/pre-rollback-2026-09-18` rather than rewritten.
+
+**Changed**
+- Brand tokens + the three sanctioned gradients in both stylesheets; existing
+  semantic names mapped onto them. Site accents re-mapped: rose -> Signal Green,
+  amber -> Mint, sky -> Teal.
+- Kaisei Decol + Poppins + JetBrains Mono replace Bricolage Grotesque + Inter.
+- Real cart mark + favicon + apple-touch-icon; Sahulatkaar -> Sahulatcart;
+  Urdu-script copy removed (Roman Urdu kept).
+- Two-tone wordmark on all 5 site pages and in the admin.
+- `privacy.html` was written *after* the rollback so it was still on the old
+  identity — rebranded separately.
+
+**The hassle**
+`git checkout <branch> -- <paths>` brings back the file as it was on that
+branch, which **silently reverted three fixes made since**: the site's Login
+links went back to pointing at the *previous owner's* admin deployment, the
+Privacy footer link went back to `#`, and privacy.html was not covered at all
+because it did not exist on that branch. Caught by auditing for old identity
+markers after the checkout rather than trusting it. **Cherry-picking an old
+branch onto a diverged main needs a regression pass, not just a conflict check.**
+
+**Decisions kept from the original implementation**
+- The **icon is flat teal, never gradiented** (§09). Gradients belong to the
+  wordmark only.
+- On the **dark** nav the wordmark uses `--grad-glow`, not `--grad-cart`: cart
+  passes through forest `#113320` at its 55% midpoint, which swallows the
+  letterforms at 20px. Glow is the book's designated gradient for dark surfaces,
+  so each sanctioned gradient is used on the surface it was drawn for.
+- The trust gradient carries its specified **70% opacity** — that is what makes
+  the fade subtle, and it is easy to miss when transcribing hex stops.
+- Primary buttons are **Signal Green**, not teal: teal on white is 3.33:1, which
+  the book marks "Avoid" for text.
+- CSS `background` shorthand **resets `background-clip`** — the wordmark must use
+  `background-image` or the gradient paints as a solid block.
+
+**Verified** admin typecheck 0, shared build 0, backend tests 71/71, site renders
+with `--color-teal #249E87`, Poppins, 12px radius and the wordmark present.
+
+---
+
 ## 2026-09-21 — Migrated onto our own infrastructure
 
 The project was inherited from a previous owner. Everything ran on his Supabase,
