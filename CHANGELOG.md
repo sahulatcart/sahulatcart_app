@@ -7,6 +7,32 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-21 (night) — Added docs/PITFALLS.md
+
+**Outcome** — [docs/PITFALLS.md](docs/PITFALLS.md), linked from the top of CLAUDE.md so any
+collaborator or AI agent reads it before their first change.
+
+**Why** — this session cost hours to avoidable mistakes, and the changelog records them scattered
+across entries where nobody would find them before repeating one. PITFALLS.md pulls them into one
+place as rules, grouped by secrets / deployment / monitoring / git / verification / communication.
+
+**The worst ones, for the record**
+- `railway variables` printed API keys and tokens into the transcript — twice. Everything had to be
+  rotated. Mask before reading config, not after.
+- The marketing site was redeployed four times without reading the build log, which had named the
+  cause (`/etc/nginx/templates/: nonexistent directory`) on the first failure.
+- The admin was taken fully offline by cycling redeploys, and a guessed "health check" fix
+  (`healthcheckPath: /healthz` against a build with no such route) created the failure it was meant
+  to fix. It was working — on an old build — before any of that.
+- Background monitors polling `/readyz?llm=1` every 15s burned the entire 20-requests-per-**day**
+  Gemini free quota, making a working bot look broken.
+- `npx tsc` pulled a squatted `tsc@2.0.4` and a shell `&&` chained off `tail`, producing a confident
+  but false "typecheck: PASS".
+
+**Nothing functional changed.** Docs only.
+
+---
+
 ## 2026-09-21 (evening) — Admin rebrand deployed; admin outage caused and fixed
 
 **Outcome** — site, admin and backend all live and rebranded; admin login verified

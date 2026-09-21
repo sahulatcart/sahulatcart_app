@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Read this first
+
+[docs/PITFALLS.md](docs/PITFALLS.md) — rules distilled from real mistakes made on this repo: leaked
+secrets, an admin outage caused by blind redeploys, a burned API quota, a falsely reported passing
+typecheck. **Read it before your first change**, whether you are a person or an AI agent. It is short.
+
 ## Project History
 
 See [CHANGELOG.md](CHANGELOG.md) for a chronological log of changes and decisions. Read it at the start
