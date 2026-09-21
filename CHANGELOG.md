@@ -7,6 +7,40 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-21 (night) — CLAUDE.md brought back in line with reality
+
+**Outcome** — the standing reference no longer contradicts the codebase. Rewrote the Branding
+section, added Deployment and "Legal pages and Meta Tech Provider status" sections, and corrected
+four gotchas that had become false.
+
+**What was actually wrong**
+- It said the brand name was "not final" and that the rebrand had been **rolled back**. The rebrand
+  has been live since `55973c0`. It also described the old truck-art palette, the Urdu-glyph
+  placeholder logos and the 🛺 emoji favicon — none of which are still the case.
+- It said **"Railway is not auto-deploying"** and "do not assume a push makes anything visible".
+  Railway deploys fine; pushes were verified landing on the live URLs today. Replaced with the traps
+  that *did* bite: a start command in the `buildCommand` slot, IaC nulls not persisting, and
+  `--skip-deploys`.
+- The site's portal links were documented as pointing at `alluring-happiness-production-9190` — the
+  **previous owner's** admin. They point at the current one, and `site.js` rewrites them to
+  `localhost:3000` when served locally.
+- `/readyz?llm=1` was described as merely "useful for diagnosing" with no mention that each call
+  costs quota.
+
+**Caught while writing it, not from memory** — the deployment table first said the backend builds
+from `backend/Dockerfile`. It does not; it uses **Railpack**. Checking `.railway/railway.ts` before
+committing is the only reason that did not become the next piece of stale documentation.
+
+**Newly documented and easy to break**
+- The old truck-art CSS variable names (`--rose`, `--amber`, `--sky`…) are **aliases remapped onto
+  brand tokens**, not dead code. Replacing an alias with a raw hex is how the palette drifts.
+- The admin's `echo docker-build` buildCommand is a deliberate no-op, not junk to tidy away.
+- `GEMINI_MODEL` defaults to `gemini-2.5-flash` in `config.ts`, which is retired for new Google
+  accounts; `.env` overrides it to `gemini-3.5-flash`.
+- The admin cannot log in locally without the backend running — it needs `/api/v1/config`.
+
+---
+
 ## 2026-09-21 (night) — Legal entity added: Nubrix Technologies (Pvt) Ltd
 
 **Outcome** — the operating company is now named across the whole site: footer of all four marketing

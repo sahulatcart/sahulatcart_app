@@ -21,7 +21,7 @@ saves the next person hours. Dead ends are the most valuable thing in this file.
 
 ## What this is
 
-Sahulatkaar (internal codename — brand name not final, see the branding note below) is a multi-tenant
+Sahulatcart (formerly "Sahulatkaar" — see Branding below) is a multi-tenant
 SaaS that gives a Pakistani merchant an autonomous **WhatsApp sales agent**. The bot chats with buyers in
 **Roman Urdu**, negotiates price within merchant-set floors, builds and confirms orders, handles COD or
 bank-transfer-by-screenshot payments, generates an order slip, and notifies the merchant. Merchants
@@ -56,7 +56,7 @@ backend/   Node + TypeScript (Fastify) — webhook, admin API, orchestration, ne
 admin/     Next.js (App Router) — merchant admin portal
 shared/    TS enums + types, single source consumed by both backend & admin (@app/shared)
 db/        Supabase SQL migrations (schema, RLS, auth hook) — plain SQL, applied in filename order
-site/      Static marketing site (pure HTML/CSS/JS, no deps; nginx Dockerfile for Railway)
+site/      Static marketing site + legal pages (pure HTML/CSS/JS, no deps; nginx Dockerfile)
 pitch/     Investor/competition deck + financial model, plus their generator scripts
 docs/      spec (docs/spec/) + dev and founder plans
 ```
@@ -206,6 +206,35 @@ vars are required at boot; Meta and LLM secrets are optional and asserted only w
 exercised (`assertMetaSecrets`, `assertAnthropicSecrets`). Not every var in `.env.example` is needed to
 boot locally.
 
+## Deployment
+
+Three Railway services, all built from this repo, all in the owner's own Railway account (migrated
+off the previous owner's on 2026-09-21).
+
+| Service | URL | Build |
+|---|---|---|
+| Marketing site | `site-production-d318.up.railway.app` | `site/Dockerfile` (nginx) |
+| Admin portal | `appadmin-production-0a30.up.railway.app` | `admin/Dockerfile` |
+| Backend | `appbackend-production-dae8.up.railway.app` | Railpack, `npm run build --workspace=@app/backend` |
+
+Custom domains (`www` / `app` / `api`.sahulatcart.com) are not yet attached.
+
+Infrastructure is declared in [.railway/railway.ts](.railway/railway.ts) and applied with
+`railway config plan` / `railway config apply`. **Always re-run `railway config plan` after an apply**
+— if a field is still listed, it did not persist.
+
+The admin's `buildCommand` is deliberately `echo docker-build` — a harmless no-op. It is **not**
+leftover junk: Railway previously held a *start* command in that slot, which failed every deploy, and
+setting the field to `null` silently would not persist. Do not "tidy" it away.
+
+**There must be no `railway.json` at the repo root.** One used to sit there setting
+`startCommand: node backend/dist/index.js` for *every* service built from the root, so the admin and
+the site both booted the backend. Each service declares its own start command in the IaC file.
+
+`site/Dockerfile` builds on `nginx:alpine`, which ships with **neither** `/etc/nginx/conf.d/default.conf`
+**nor** `/etc/nginx/templates/` — the Dockerfile `mkdir -p`s the templates dir before writing the
+envsubst template. Removing that `mkdir` breaks the build.
+
 ## Conventions
 
 - **Money is paisa** (integer, 1/100 rupee) everywhere in the backend and DB. Convert to rupees only at
@@ -225,22 +254,53 @@ boot locally.
 
 ## Branding — current state
 
-The code currently uses the **Sahulatkaar** identity throughout. A **Sahulatcart** brand guidelines
-document (v1.0) exists outside the repo, and a full rebrand to it was implemented and then rolled back
-(see CHANGELOG). If that work is picked up again, the key facts are:
+The **Sahulatcart** brand guidelines v1.0 are **implemented and live** across the marketing site and
+the admin portal (commit `55973c0`, deployed 2026-09-21). An earlier attempt was rolled back on
+09-18 and then re-applied; the changelog has that history. `backup/pre-rollback-2026-09-18` is a
+local-only branch preserving the pre-rollback tree.
 
 - The name is **"Sahulatcart"** — one word, capital S, lowercase c. Explicitly *not* "SahulatCart".
+- The legal entity is **Nubrix Technologies (Pvt) Ltd**, Lahore. "Sahulatcart" is the trading name.
+  The terms name the company as the contracting party and the privacy policy as data controller.
 - Brand tokens: teal `#249E87`, green `#268D3C`, mint `#C2FFB4`, forest `#113320`, navy `#0A0D13`,
   slate `#6D7486`, border `#E7E9ED`, surface `#F6F7F9`. Kaisei Decol / Poppins / JetBrains Mono.
+- Three sanctioned gradients only. `--grad-trust` carries a deliberate **70% opacity** on both stops —
+  that is part of the mark, not a styling choice, and transcribing it as solid hex is wrong.
 - The **standalone icon is flat teal, never gradiented**; the gradients belong to the wordmark.
-- Teal on white is 3.33:1 — the guidelines mark it "Avoid" for body text. Signal Green is for primary
-  buttons; body text is charcoal or slate.
-- The full implementation is preserved on the local branch `backup/pre-rollback-2026-09-18`.
+- Teal on white is 3.33:1 — "Avoid" for body text. Signal Green is for primary buttons; body text is
+  navy or slate.
 
-The current site identity is the **truck-art** palette (ink green, chai cream, rose `#f43f7b`, amber
-`#ffb01f`) with Bricolage Grotesque + Inter + Noto Nastaliq Urdu. The admin uses `--brand: #0d9488` and
-Inter. Site logos are placeholder marks (an Urdu **س** glyph) and the favicon is an inline 🛺 emoji
-data-URI. There is no `admin/public/` directory.
+**The old truck-art variable names still exist and are aliases, not dead code.** `--rose`, `--amber`,
+`--sky`, `--ink`, `--cream` and friends are re-mapped onto brand tokens at the top of
+[site/assets/style.css](site/assets/style.css) so the existing rules keep working
+(`--rose` → Signal Green, `--amber` → Mint, `--sky` → Teal). Changing a rule to a raw hex instead of
+an alias is how the palette drifts. The admin does the same: `--brand: var(--color-teal)` in
+[admin/app/globals.css](admin/app/globals.css).
+
+**Wordmark gradient:** the `.wordmark` split ("Sahulat" + "cart") uses `background-clip: text`. Use
+`background-image`, never the `background` shorthand — the shorthand resets `background-clip` and the
+gradient paints as solid blocks. `admin/components/Wordmark.tsx` does the split for the portal.
+
+## Legal pages and Meta Tech Provider status
+
+`site/` carries `terms.html`, `privacy.html`, `data-deletion.html`, `about.html` and `support.html`,
+written against Meta's actual Tech Provider obligations rather than a generic template. If you edit
+them, these points are load-bearing and were put there for a reason:
+
+- **Controller/processor split.** For buyer data the merchant is controller, we are processor. For
+  merchant account data we are controller. Both legal pages lead with this.
+- **The WhatsApp Business Solution Terms forbid** using Business Solution Data to build profiles of
+  WhatsApp users, to train or improve any ML/AI model, or to share it with third parties. The privacy
+  policy states each of these as a binding commitment. Do not soften them.
+- **Meta business verification matches the website against Business Manager and the uploaded
+  documents, character for character.** The legal name, address and phone appear in the footer of
+  every page and in the `about.html` table. Registered address (full street) and NTN are still
+  placeholders marked with a loud `.tbc` class — do not remove the class until the real values land.
+- `data-deletion.html` exists because Meta wants a **separate** Data Deletion Instructions URL, not a
+  privacy-policy section.
+- Pakistan has **no enacted** data protection statute; the PDP Bill is still before the legislature.
+  The policy commits to its principles and cites PECA 2016 — it must not claim compliance with a law
+  that does not exist.
 
 ## Known gotchas
 
@@ -250,16 +310,33 @@ data-URI. There is no `admin/public/` directory.
   the API proxy is a dynamic route handler.
 - **Railway run image needs the whole workspace `node_modules`** — npm hoists deps (e.g. `@fastify/helmet`)
   to the root, so copying only `backend/node_modules` breaks at runtime.
-- **Railway is not auto-deploying.** As of 2026-09-18 the live services still serve the July build
-  (`df33be8`) despite pushes on 09-16 and 09-17. Dockerfiles, `.dockerignore` and CI gating were all
-  ruled out; the cause is Railway-side (auto-deploy disconnected, wrong branch, or a failing build) and
-  needs dashboard access. **Do not assume a push makes anything visible on the live URL.**
-- **Gemini free tier rate-limits aggressively.** The client honors 429 `RetryInfo` delays; expect
-  intermittent failures under load and rely on the fallback paths.
-- **`/readyz?llm=1`** probes LLM connectivity — useful for diagnosing a deployed backend that boots fine
-  but can't reach its provider.
+- **Railway auto-deploys again** (verified 2026-09-21 — pushes land on the live URLs). The old
+  "not auto-deploying" note is obsolete. The traps that actually bit, all logged in the changelog:
+  a **start command sitting in the `buildCommand` slot** fails every deploy while the build log looks
+  like a clean Next build; setting an IaC field to `null` **silently does not persist** (use a real
+  value like `echo docker-build`); and `railway variables --skip-deploys` means no container ever
+  picks the change up. **Read the build log before changing anything** — see
+  [docs/PITFALLS.md](docs/PITFALLS.md).
+- **Gemini free tier is 20 requests per DAY**, not per minute — the quota id is
+  `GenerateRequestsPerDayPerProjectPerModel-FreeTier`. Once exhausted the bot silently falls back to
+  `fallbackText()` templates, which looks exactly like the bot being broken. The client honors 429
+  `RetryInfo` delays.
+- **The free tier also breaches Meta's terms.** Google's free tier uses submitted content to improve
+  its models and human reviewers may read it; the WhatsApp Business Solution Terms forbid Business
+  Solution Data being used to train or improve any ML/AI system. **Billing must be enabled** — it
+  fixes the quota and the compliance problem together. Until it is, the privacy policy's "the provider
+  does not use this content to train" describes the intended state, not the current one.
+- **`GEMINI_MODEL` defaults to `gemini-2.5-flash` in [config.ts](backend/src/config.ts), which is
+  retired for new Google accounts.** `.env` sets `gemini-3.5-flash`. Do not rely on the default.
+- **`/readyz?llm=1` makes a live Gemini call — never poll it.** Background monitors hitting it every
+  15s once consumed an entire day's quota and sent hours into chasing a fault the monitoring caused.
+  Use plain `/readyz` for liveness.
 - **Reactions (👍) are store-only.** Never generate a reply to a reaction.
-- **The site's portal links are hardcoded** to `alluring-happiness-production-9190.up.railway.app`, so on
-  localhost "Login" leaves localhost for the deployed build.
+- **The site's portal links are hardcoded** to `appadmin-production-0a30.up.railway.app/login` (the
+  current admin). [site/assets/site.js](site/assets/site.js) rewrites any `*.railway.app` link to
+  `localhost:3000` when the site is served from localhost, so local "Login" stays local.
+- **The admin cannot log in locally unless the backend is running too.** It fetches `/api/v1/config`
+  for the Supabase URL and anon key; with nothing on `:8080` that fetch fails and the Supabase client
+  is never built. Start both (`.claude/launch.json` has entries for backend, admin and site).
 - **`python -m http.server` sends no cache headers**, so the marketing site's CSS caches hard during
   local work. Hard-refresh (`Cmd+Shift+R`) after style changes or you will debug a stale stylesheet.
