@@ -7,6 +7,29 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-21 (night) — Legal entity added: Nubrix Technologies (Pvt) Ltd
+
+**Outcome** — the operating company is now named across the whole site: footer of all four marketing
+pages, `about.html` company table, and — importantly — as the contracting party in `terms.html` and
+the data controller in `privacy.html`. Phone `+92 333 3051094` added as a `tel:` link everywhere.
+Governing law narrowed from "courts of Pakistan" to the courts at **Lahore**.
+
+**Why the legal pages had to change too.** They previously said "we/us/Sahulatcart mean the operator
+of this service" — which names nobody. A contract needs a party. Terms now bind Nubrix Technologies
+(Pvt) Ltd, and the privacy policy identifies it as controller. Sahulatcart is the trading name.
+
+**Two values still outstanding, and both can fail verification**
+- **Registered address is only "Lahore, Pakistan".** Meta matches the address on the site against the
+  incorporation certificate. A city is not an address; the full street address is needed.
+- **NTN / registration number not supplied.** Still a `.tbc` pill on `about.html`.
+
+**One judgement call flagged to the owner** — supplied as "Nubrix Technologies PVT LTD", rendered as
+"Nubrix Technologies (Pvt) Ltd". SECP certificates normally read "(Private) Limited" or "(Pvt) Ltd",
+and Meta matches character for character, so the exact form on the certificate has to win. If the
+certificate differs, this is a one-line change in six files.
+
+---
+
 ## 2026-09-21 (night) — Site audit against Meta Tech Provider verification
 
 **Outcome** — `site/about.html` and `site/support.html` added; a business-identity block added to the
