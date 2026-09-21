@@ -38,10 +38,19 @@ the intended state, not the current one.
   available**; that has to be disclosed, not glossed over.
 - The prohibited-goods list is taken from Meta's Commerce Policy, not invented.
 
-**Contact address** — all three pages, plus the demo form, now use `sahulatcart2026@gmail.com`
-(confirmed by the owner). This also removed the last reference to the previous owner's
-`hello@sahulatkaar.pk`, which was still the target of the demo page's mailto form — enquiries from
-the contact form had been going to him.
+**Contact address** — `sahulatcart2026@gmail.com` everywhere a contact address is shown: the three
+legal pages, the demo form, and the investor deck's title and closing slides.
+
+A repo-wide scan for email addresses turned up more than the site. The previous owner's **personal
+Gmail was on the investor deck's closing slide** ("Sahulatkaar · Farhan Kazim · farhan.kazim1@…")
+and in a sample API response in `docs/spec/03-backend-api.md`. The demo page's mailto form was also
+still pointed at `hello@sahulatkaar.pk`, so contact-form enquiries had been going to him. All
+replaced; the spec's sample JSON now uses neutral placeholder data rather than anyone's real
+address. `db/seed.mjs` and `docs/FOUNDER-REQUIREMENTS.md` had the old brand in example addresses.
+
+Left alone deliberately: `you@shop.com` in the admin login field, which is a form placeholder, not a
+contact. The `Sahulatkaar` → `Sahulatcart` rename across `docs/` is still outstanding — it is a
+separate job and was not in scope here.
 
 **Still to do (needs the user)** — governing law says "courts of Pakistan" generically; a city should
 be named. A branded address on the domain would look more credible than Gmail once DNS is set up.

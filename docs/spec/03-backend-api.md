@@ -176,8 +176,8 @@ Response:
 {
   "user": {
     "id": "0d2f...",
-    "name": "Farhan Kazim",
-    "email": "farhan.kazim1@gmail.com",
+    "name": "Shop Owner",
+    "email": "owner@example.com",
     "role": "owner",
     "isActive": true,
     "lastLoginAt": "2026-07-01T08:40:00Z"

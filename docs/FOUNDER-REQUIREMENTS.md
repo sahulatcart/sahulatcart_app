@@ -26,7 +26,7 @@ so **no payment gateway and no fund custody** — that removes the hardest requi
 | A3 | **Meta App** (Business type, WhatsApp product) | I create/configure this; you own it. |
 | A4 | **Meta Business Verification** [H] [K] | The gatekeeper. Requires documents proving **legal business name, business address, and phone number**. See section D — needs a business registration (an FBR **NTN** is enough). |
 | A5 | **App Review → Advanced Access** for `whatsapp_business_messaging` + `whatsapp_business_management` [H] | Needed for the multi-tenant Tech-Provider model. Requires: a **screencast** of the business-facing admin UI, a **written justification** stating you're a Tech Provider managing clients' numbers/templates. I prepare these; submitted under your app. |
-| A6 | **Valid business email** [H] | e.g. `you@sahulatkaar.pk`. Used for Meta + domain. |
+| A6 | **Valid business email** [H] | e.g. `you@sahulatcart.com`. Used for Meta + domain. |
 | A7 | **Credit/debit card on Meta** for message billing [$][K] | Meta charges per-message (see costs). A card must be on file once you exceed free messaging. |
 | A8 | **2FA / authenticator app** [K] | Meta requires 2FA on the business account. Just your phone. |
 

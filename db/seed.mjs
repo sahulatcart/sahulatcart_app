@@ -17,7 +17,7 @@ async function main() {
       {
         business_name: 'Test Shop',
         owner_name: 'Pilot Owner',
-        email: 'pilot@sahulatkaar.test',
+        email: 'pilot@sahulatcart.test',
         status: 'active',
         negotiation_defaults: {
           maxDiscountPct: 15,
