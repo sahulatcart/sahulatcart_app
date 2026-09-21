@@ -7,6 +7,75 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-21 — Migrated onto our own infrastructure
+
+The project was inherited from a previous owner. Everything ran on his Supabase,
+his Meta app and his Railway account, none of which we can access. This moves it
+onto ours end to end.
+
+**Infrastructure**
+- New **Supabase** project: 5 migrations applied, auth hook enabled, 22 tables
+  with RLS forced, 5 storage buckets, seeded merchant + 3 products.
+- New **Meta** app: webhook registered, `messages` field subscribed, WABA linked.
+- New **Railway** project (`exemplary-charm`) with three services — backend,
+  admin and site — all building from `sahulatcart/sahulatcart_app`.
+- Repo moved to the org: `sahulatcart/sahulatcart_app`.
+- Admin login created and linked as owner of the seeded merchant.
+
+**Root causes found (each cost real time)**
+
+- **`railway.json` at the repo root broke every other service.** It set
+  `startCommand: node backend/dist/index.js`, which applied to any service built
+  from the repo root — so the admin *and* the site both booted the backend and
+  died on missing Supabase vars. Deleted; each service now declares its own start
+  command in `.railway/railway.ts` (Railway Infrastructure-as-Code).
+- **`SUPABASE_URL` on Railway was truncated to `https://`.** Zod's `.url()`
+  accepts that, so the backend booted and reported healthy while every query
+  failed. A service can be "Online" and completely broken.
+- **Supabase's direct DB host is IPv6-only.** `db.<ref>.supabase.co` resolves but
+  is unreachable on IPv4 networks (`ENOTFOUND`). Migrations must use the session
+  pooler (`aws-0-<region>.pooler.supabase.com:5432`, username `postgres.<ref>`).
+- **`gemini-2.5-flash` is retired for new Google accounts.** The API says so
+  explicitly. Existing accounts are grandfathered, which is why it worked for the
+  previous owner. Moved to `gemini-3.5-flash`.
+- **Gemini free tier is 20 requests per DAY per model**, not per minute — quota id
+  `GenerateRequestsPerDayPerProjectPerModel-FreeTier`. That is ~10 customer
+  messages/day. The previous owner's account had the older, far larger allowance;
+  commit `209d72c` ("free-tier resilience") shows they hit limits too, just at a
+  survivable volume. **Billing must be enabled for this product to function.**
+- **`/readyz?llm=1` makes a live Gemini call.** Polling it for monitoring silently
+  consumes the daily quota. Do not poll it.
+- **The site Dockerfile `sed`-edited `/etc/nginx/conf.d/default.conf`**, which does
+  not exist in current `nginx:alpine`; the `&&` chain short-circuited and nginx
+  never started. Now uses `/etc/nginx/templates/` + envsubst — and that directory
+  must be `mkdir -p`'d first, it does not exist either.
+
+**Also fixed**
+- `.env.example` described Anthropic (unimplemented) and omitted Gemini entirely.
+  Railway reads it to suggest service variables, so fresh deploys were
+  pre-populated with the wrong ones.
+- Added `site/privacy.html` (required for Meta app publishing; the footer linked
+  "Privacy" to `#` on every page).
+- Site "Login" links pointed at the **previous owner's** admin deployment.
+
+**Live URLs**
+- site `https://site-production-d318.up.railway.app`
+- admin `https://appadmin-production-0a30.up.railway.app`
+- backend `https://appbackend-production-dae8.up.railway.app`
+
+**Known issues / TODO**
+- **Gemini billing not enabled** — the bot only sends `fallbackText()` templates
+  until it is. This is the single blocker to a working product.
+- Railway CLI `redeploy`/`up` frequently return FAILED or SKIPPED with empty logs;
+  forcing a variable change is what reliably triggers a deploy.
+- Admin password is weak and was set in plain sight; rotate before real data.
+- Custom domains (`www`/`app`/`api`.sahulatcart.com) not configured. Changing the
+  backend domain requires re-pointing the Meta webhook or inbound silently stops.
+- `db/seed.mjs` omits the `catalog-imports` bucket (created manually).
+- `hello@sahulatkaar.pk` on the contact page is still the previous owner's address.
+
+---
+
 ## 2026-09-18 — Rolled back to the pre-session state
 
 **Changed**
