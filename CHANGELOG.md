@@ -18,10 +18,14 @@ Governing law narrowed from "courts of Pakistan" to the courts at **Lahore**.
 of this service" — which names nobody. A contract needs a party. Terms now bind Nubrix Technologies
 (Pvt) Ltd, and the privacy policy identifies it as controller. Sahulatcart is the trading name.
 
-**Two values still outstanding, and both can fail verification**
+**Two values still outstanding, and both can fail verification** — owner expects both on
+**Saturday 26 September 2026**:
 - **Registered address is only "Lahore, Pakistan".** Meta matches the address on the site against the
   incorporation certificate. A city is not an address; the full street address is needed.
 - **NTN / registration number not supplied.** Still a `.tbc` pill on `about.html`.
+
+Also due from the owner: live domain and Gemini billing (both expected 2026-09-22). Meta submission
+is blocked until the address and NTN land, so Saturday is the earliest realistic submission date.
 
 **One judgement call flagged to the owner** — supplied as "Nubrix Technologies PVT LTD", rendered as
 "Nubrix Technologies (Pvt) Ltd". SECP certificates normally read "(Private) Limited" or "(Pvt) Ltd",
