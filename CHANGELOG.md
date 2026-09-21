@@ -22,6 +22,20 @@ onto ours end to end.
 - Repo moved to the org: `sahulatcart/sahulatcart_app`.
 - Admin login created and linked as owner of the seeded merchant.
 
+**How it actually went** (the short version, because the dead ends matter)
+
+Nothing failed loudly. Every problem presented as something else: the backend
+said "Online" while unable to reach the database; the admin crashed with the
+*backend's* error message; the bot replied politely to every message while
+having no working AI behind it; deploys reported SKIPPED or FAILED with empty
+logs. Roughly a day went into chasing symptoms instead of causes.
+
+Two mistakes were mine and are worth naming. Background monitors polling
+`/readyz?llm=1` every 15s silently consumed the entire daily Gemini quota, which
+made a working bot look broken. And the site was "fixed" and redeployed four
+times before anyone read its build log — which had named the real cause
+(`nonexistent directory`) on the very first failure. **Read the build log first.**
+
 **Root causes found (each cost real time)**
 
 - **`railway.json` at the repo root broke every other service.** It set

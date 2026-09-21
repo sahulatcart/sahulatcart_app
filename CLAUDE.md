@@ -5,8 +5,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project History
 
 See [CHANGELOG.md](CHANGELOG.md) for a chronological log of changes and decisions. Read it at the start
-of every session before making changes, and update it after completing any meaningful task or at the end
-of a session.
+of every session before making changes.
+
+**Update it after every change — not at the end of the session.** And record the *hassle*, not just the
+outcome: what was tried that failed, what the misleading symptom was, and what the real cause turned out
+to be. A note saying "the site now deploys" is nearly worthless; "the site failed four times because the
+root railway.json overrode its start command, and the build log said so on the first attempt" is what
+saves the next person hours. Dead ends are the most valuable thing in this file.
 
 ## What this is
 
