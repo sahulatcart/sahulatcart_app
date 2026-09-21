@@ -1,6 +1,6 @@
 # 03 — Backend API
 
-The full backend surface for Sahulatkaar: the REST API consumed by the Next.js admin portal, the
+The full backend surface for Sahulatcart: the REST API consumed by the Next.js admin portal, the
 internal services that run the bot, the webhook endpoints Meta calls, and the realtime channels the
 portal subscribes to.
 
@@ -34,11 +34,11 @@ Three distinct auth modes, distinguished by the caller:
 |---|---|---|---|
 | **Admin portal** (merchant users) | Supabase Auth JWT | `Authorization: Bearer <supabase_jwt>` | `sub` → `merchant_users.auth_user_id`; JWT custom claim `merchant_id` scopes the tenant; `role` claim mirrors `merchant_users.role` |
 | **Platform admin** (us) | Supabase JWT with `platform_admin: true` claim | `Authorization: Bearer <jwt>` | cross-tenant; bypasses `merchant_id` scoping. Claim sourced from `platform_admins` by the auth hook (CD-1/CD-36), never client-supplied |
-| **Internal service→service** (workers, jobs, bot) | HMAC service token | `Authorization: Bearer <service_token>` + `X-Sahulatkaar-Signature: <hmac_sha256>` | uses a **restricted worker DB role** (not full service-role; CD-39) acting on behalf of a `merchant_id` passed explicitly |
+| **Internal service→service** (workers, jobs, bot) | HMAC service token | `Authorization: Bearer <service_token>` + `X-Sahulatcart-Signature: <hmac_sha256>` | uses a **restricted worker DB role** (not full service-role; CD-39) acting on behalf of a `merchant_id` passed explicitly |
 | **Meta webhook** | Meta signature | `X-Hub-Signature-256: sha256=<hmac>` | verified against `META_APP_SECRET`; tenant resolved by `phone_number_id` |
 
 > **Internal auth is HMAC-only (CD-27).** The service→service caller presents a bearer
-> `service_token` **and** an `X-Sahulatkaar-Signature: <hmac_sha256>` over the raw body, keyed on the
+> `service_token` **and** an `X-Sahulatcart-Signature: <hmac_sha256>` over the raw body, keyed on the
 > shared `SERVICE_HMAC_SECRET` (doc 09, canonical env name). There is **no** `INTERNAL_API_KEY` — that name is
 > retired to remove ambiguity. Signature comparison uses `timingSafeEqual` on decoded buffers with a
 > length check (CD-44).

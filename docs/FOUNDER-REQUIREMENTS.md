@@ -1,4 +1,4 @@
-# Sahulatkaar — What the Founder Must Provide
+# Sahulatcart — What the Founder Must Provide
 
 Everything **you** (Farhan) need to supply or set up. I build all code. Payment flow = manual
 (bot shows merchant bank number → customer sends screenshot → merchant confirms in portal),
@@ -33,13 +33,13 @@ so **no payment gateway and no fund custody** — that removes the hardest requi
 ### 2. WhatsApp phone number(s)
 | # | Item | Notes |
 |---|---|---|
-| A9 | **One dedicated phone number** for Sahulatkaar's own display/test number [H][K] | Must **NOT be active on regular WhatsApp or WhatsApp Business app** (if it is, delete it from the app first). A cheap spare SIM works. Needs to receive an SMS/call verification code. |
+| A9 | **One dedicated phone number** for Sahulatcart's own display/test number [H][K] | Must **NOT be active on regular WhatsApp or WhatsApp Business app** (if it is, delete it from the app first). A cheap spare SIM works. Needs to receive an SMS/call verification code. |
 | A10 | Merchants bring **their own numbers** | Each merchant connects their own number via Embedded Signup — not your problem to supply. |
 
 ### 3. Domain + legal pages (Meta App Review checks these)
 | # | Item | Notes |
 |---|---|---|
-| A11 | **Registered domain name** [$][K] | e.g. `sahulatkaar.pk` or `.com`. ~$10–15/yr (or PKR ~3,500/yr for `.pk`). |
+| A11 | **Registered domain name** [$][K] | e.g. `sahulatcart.com` or `.com`. ~$10–15/yr (or PKR ~3,500/yr for `.pk`). |
 | A12 | **Public Privacy Policy page** (live) [H] | Must load fast, show business name + contact, explain data usage matching permissions. I write it; must be hosted live before review. |
 | A13 | **Terms of Service page** (live) [K] | Same hosting. I draft it. |
 | A14 | **A basic public landing page** [K] | A one-page site at the domain. I build it. |
@@ -109,7 +109,7 @@ Ongoing costs are hosting + Claude usage + WhatsApp template messages. No big ca
 None of the Meta/business items block me from building. To begin Phase 1 I only need:
 1. **Supabase project URL + service key** (or let me use a local/dev DB first)
 2. **Claude API key** (for the bot; can be added later — I'll stub it)
-3. Confirmation of the **project/brand name spelling** for the domain (Sahulatkaar).
+3. Confirmation of the **project/brand name spelling** for the domain (Sahulatcart).
 
 The Meta verification, NTN, domain, and phone number are needed **to connect real WhatsApp and go
 live** — you can start those in parallel while I build. I'll give you a step-by-step when we hit that stage.

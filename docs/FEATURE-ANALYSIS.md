@@ -1,4 +1,4 @@
-# Sahulatkaar — Feature-Set Analysis
+# Sahulatcart — Feature-Set Analysis
 
 WhatsApp Business negotiating order-bot SaaS for Pakistani merchants.
 Multi-tenant · Meta WhatsApp Cloud API · Roman-Urdu-first · Node.js + Supabase + Next.js + Claude.

@@ -7,6 +7,42 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-21 (night) — Testimonials made illustrative; Sahulatkaar rename completed
+
+**Outcome** — three jobs, all verified: fabricated testimonials replaced with labelled scenarios,
+`PRODUCT_NAME` default corrected, and the old brand name gone from every file except the changelog.
+
+**Testimonials.** `index.html` carried five quotes attributed to named people in named cities —
+"Ahmed H., Garments, Lahore" and so on. With a Meta review coming, invented social proof attributed
+to real-sounding individuals is a misrepresentation risk. They are now scenario cards (🌙 Raat ka
+order, 🤝 Bhao-taao, 🎤 Voice note, 🧾 Payment verify, 📈 Upsell) labelled by shop type with no
+personal names, under a bilingual caption stating plainly that they are illustrations and not
+customer testimonials. The marquee markup and CSS are untouched — same 5 cards duplicated for the
+scroll.
+
+**`PRODUCT_NAME` default was `'Sahulatkaar'`** in `config.ts`. `.env` overrode it, so nothing was
+visibly broken — which is exactly why it was worth fixing: any deploy that forgot the variable would
+have silently served the old brand to customers.
+
+**The rename** — 40 replacements across 20 files (docs, spec, README, package.json, two code
+comments, package-lock). Checked first that `X-Sahulatkaar-Signature` was **not implemented anywhere**
+— it appears only in `docs/spec/03-backend-api.md` for a service-to-service auth that was never
+built, so the rename is pure prose with no breaking surface.
+
+**The rename broke a sentence and the check caught it.** CLAUDE.md line 24 deliberately read
+`Sahulatcart (formerly "Sahulatkaar")`. A blanket replace turned it into `formerly "Sahulatcart"` —
+nonsense. Restored. A blanket rename over text that *discusses* the rename needs re-reading, not just
+a count of replacements. CHANGELOG.md was excluded from the sweep on purpose so the history stays
+readable.
+
+`package.json` also still described the brand as an "internal codename" that was "not final". Both
+untrue since the brand book landed.
+
+**Verified** — `npm run typecheck` exit 0; 8 test files, 71 tests passing; site renders with 10 cards
+(5 × 2) and the disclaimer present.
+
+---
+
 ## 2026-09-21 (night) — CLAUDE.md brought back in line with reality
 
 **Outcome** — the standing reference no longer contradicts the codebase. Rewrote the Branding

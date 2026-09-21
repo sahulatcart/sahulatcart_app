@@ -1,4 +1,4 @@
-# Sahulatkaar — Platform Constraints (WhatsApp Cloud API + Pakistan Payments)
+# Sahulatcart — Platform Constraints (WhatsApp Cloud API + Pakistan Payments)
 
 Build-blocking technical & legal constraints. Decides onboarding flow, cost model, payment layer.
 
@@ -26,9 +26,9 @@ Build-blocking technical & legal constraints. Decides onboarding flow, cost mode
 
 ## C. Pakistan payment legality  [H-verified]
 
-- **Do NOT custody funds or issue wallets.** Issuing e-money/wallets requires an SBP **EMI license** (non-bank, **Rs. 200M** initial capital). Sahulatkaar must stay a **software/orchestration layer**, never a money holder/issuer.
+- **Do NOT custody funds or issue wallets.** Issuing e-money/wallets requires an SBP **EMI license** (non-bank, **Rs. 200M** initial capital). Sahulatcart must stay a **software/orchestration layer**, never a money holder/issuer.
 - **Merely integrating a licensed gateway/rail does NOT require a license.** Route money **buyer → merchant** via a licensed rail or gateway.
-- **Raast (SBP's national instant rail) is the compliant collection path.** Its **Person-to-Merchant (P2M)** service is officially launched (SBP Circular C4 of 2023) — Raast QR, Raast Alias, IBAN, Request-to-Pay. Merchants access Raast **through their own bank/EMI**; Sahulatkaar surfaces the QR/alias in the bot checkout, it does not onboard with SBP.
+- **Raast (SBP's national instant rail) is the compliant collection path.** Its **Person-to-Merchant (P2M)** service is officially launched (SBP Circular C4 of 2023) — Raast QR, Raast Alias, IBAN, Request-to-Pay. Merchants access Raast **through their own bank/EMI**; Sahulatcart surfaces the QR/alias in the bot checkout, it does not onboard with SBP.
 - **Gateways** like AssanPay / PayFast / Safepay are the practical integration for WhatsApp payment links (Easypaisa, JazzCash, Raast QR, cards).
 - **⚠️ Unverified (verify before building payment layer):**
   - **WhatsApp Pay in Pakistan** — likely **India-only**; do not assume it's available.

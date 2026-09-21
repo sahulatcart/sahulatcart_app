@@ -92,7 +92,7 @@
 
 ## Repo layout (monorepo)
 ```
-sahulatkaar/
+sahulatcart/
 ├── backend/      Node.js — webhook, API, workers, services (negotiation, order, payment, whatsapp, claude)
 ├── admin/        Next.js — merchant portal
 ├── db/           Supabase migrations, RLS policies, seed

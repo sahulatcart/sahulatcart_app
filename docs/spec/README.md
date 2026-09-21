@@ -1,4 +1,4 @@
-# Sahulatkaar — Technical Specification
+# Sahulatcart — Technical Specification
 
 Complete design documentation: product, architecture, data, APIs, bot flows, screens, and ops.
 This is the source of truth for building. Read in order.
@@ -24,7 +24,7 @@ This is the source of truth for building. Read in order.
 - **Naming:** DB tables/columns `snake_case`; API routes REST under `/api/v1/`; JSON fields `camelCase`.
 - **Timestamps:** `created_at`, `updated_at` (UTC, `timestamptz`). Display in merchant timezone (default `Asia/Karachi`).
 - **Money:** integer **paisa** (1 PKR = 100 paisa) to avoid float errors; currency default `PKR`.
-- **Money principle:** Sahulatkaar NEVER holds funds. Payments happen merchant↔customer directly.
+- **Money principle:** Sahulatcart NEVER holds funds. Payments happen merchant↔customer directly.
 - **Price-floor principle:** all pricing/discount/floor decisions are DETERMINISTIC CODE; the LLM only phrases messages.
 - **Language:** buyer-facing bot = Roman Urdu first (English fallback); admin portal = English.
 - **Launch = Path C:** single merchant, official Cloud API, no Meta verification/App Review/Embedded Signup yet. Schema/code are multi-tenant-ready.

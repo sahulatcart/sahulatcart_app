@@ -1,8 +1,8 @@
 {
-  "name": "sahulatkaar-monorepo",
+  "name": "sahulatcart-monorepo",
   "version": "0.0.0",
   "private": true,
-  "description": "WhatsApp negotiating order-bot SaaS (internal codename Sahulatkaar; brand name is config-driven, not final).",
+  "description": "Sahulatcart — WhatsApp negotiating order-bot SaaS for Pakistani merchants. Brand name is config-driven via PRODUCT_NAME.",
   "workspaces": [
     "shared",
     "backend",

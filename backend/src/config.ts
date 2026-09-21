@@ -7,7 +7,7 @@ import { z } from 'zod';
  * are validated as a group when their feature is enabled.
  */
 const schema = z.object({
-  PRODUCT_NAME: z.string().min(1).default('Sahulatkaar'),
+  PRODUCT_NAME: z.string().min(1).default('Sahulatcart'),
   NODE_ENV: z.enum(['development', 'staging', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(8080),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),

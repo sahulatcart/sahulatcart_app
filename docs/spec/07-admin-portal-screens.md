@@ -33,7 +33,7 @@ Money display helper: `formatPKR(paisa) => "Rs. " + (paisa/100).toLocaleString('
 ### 1.1 App shell
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
-│  ☰  Sahulatkaar   [Business name]        🔔(3)  ● Bot: Active   [Avatar ▾] │  top bar
+│  ☰  Sahulatcart   [Business name]        🔔(3)  ● Bot: Active   [Avatar ▾] │  top bar
 ├──────────┬────────────────────────────────────────────────────────────────┤
 │ Dashboard│                                                                  │
 │ Inbox  ● │                                                                  │
@@ -190,7 +190,7 @@ are **unauthenticated** (public), rendered outside the app shell with a centered
 ### 2.1 Login — `/login`
 - **Purpose:** authenticate an existing merchant user.
 - **Access:** public.
-- **Layout:** centered card. Logo, "Sign in to Sahulatkaar", email field, password field, "Forgot
+- **Layout:** centered card. Logo, "Sign in to Sahulatcart", email field, password field, "Forgot
   password?" link, **Sign in** button, small "Don't have an account? Sign up" (Path C: may be hidden/invite-only).
 - **Data:** none read pre-auth. On success, session established; app fetches `GET /api/v1/session`
   (returns the `merchant_users` row + `merchants` row + role + `permissions`).
