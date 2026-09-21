@@ -4,8 +4,9 @@ import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
 import { BarChart3, LayoutDashboard, LogOut, Menu, MessagesSquare, Package, Settings, ShoppingBag } from 'lucide-react';
 import { hasSession, signOut } from '../lib/api';
+import Wordmark from '../components/Wordmark';
 
-const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Sahulatkaar';
+const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Sahulatcart';
 const NAV = [
   { href: '/', label: 'Dashboard', Icon: LayoutDashboard },
   { href: '/inbox', label: 'Inbox', Icon: MessagesSquare },
@@ -33,8 +34,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
     <div className="shell">
       <aside className={`sidebar ${open ? 'open' : ''}`}>
         <div className="logo">
-          <span className="mark">{PRODUCT_NAME.charAt(0)}</span>
-          <span className="name">{PRODUCT_NAME}</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className="mark" src="/logo.svg" alt="" width={37} height={30} />
+          <span className="name"><Wordmark name={PRODUCT_NAME} /></span>
         </div>
         <nav className="nav-group">
           {NAV.map(({ href, label, Icon }) => {

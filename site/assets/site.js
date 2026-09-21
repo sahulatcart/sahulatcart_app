@@ -1,4 +1,4 @@
-/* Sahulatkaar site interactions — no dependencies. */
+/* Sahulatcart site interactions — no dependencies. */
 (function () {
   'use strict';
 
@@ -140,6 +140,21 @@
           p.textContent = 'Rs ' + Number(yearly ? p.dataset.yearly : p.dataset.monthly).toLocaleString('en-PK');
         });
       });
+    });
+  }
+
+  /* Portal links are hardcoded to the deployed admin. When the site itself is
+     being served from localhost we're testing, so point them at the local admin
+     instead — otherwise "Login" leaves localhost for the deployed build. */
+  var host = location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1') {
+    var LOCAL_ADMIN = location.protocol + '//' + host + ':3000';
+    document.querySelectorAll('a[href*="railway.app"]').forEach(function (a) {
+      try {
+        a.href = LOCAL_ADMIN + new URL(a.href).pathname;
+      } catch (e) {
+        a.href = LOCAL_ADMIN + '/login';
+      }
     });
   }
 })();
