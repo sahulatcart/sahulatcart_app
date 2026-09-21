@@ -9,23 +9,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Kaisei+Decol:wght@400;700&family=Poppins:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="assets/style.css" />
+<link rel="stylesheet" href="assets/legal.css" />
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
-<style>
-  .legal { background: var(--paper); }
-  .legal .wrap { max-width: 780px; padding-top: 56px; padding-bottom: 80px; }
-  .legal h1 { font-family: var(--font-display); font-size: clamp(30px, 4vw, 42px); letter-spacing: -.02em; margin-bottom: 8px; }
-  .legal .updated { color: var(--muted); font-size: 14px; margin-bottom: 36px; }
-  .legal h2 { font-family: var(--font-display); font-size: 21px; margin: 34px 0 10px; }
-  .legal h3 { font-size: 16px; margin: 20px 0 6px; }
-  .legal p, .legal li { color: var(--text); font-size: 15.5px; line-height: 1.7; }
-  .legal ul { margin: 8px 0 8px 22px; }
-  .legal li { margin-bottom: 6px; }
-  .legal table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14.5px; }
-  .legal th, .legal td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  .legal th { font-weight: 700; }
-  .legal .note { background: var(--cream-2); border-left: 3px solid var(--emerald); padding: 14px 16px; border-radius: 8px; margin: 18px 0; }
-</style>
 </head>
 <body>
 
@@ -44,93 +30,278 @@
 <section class="legal">
   <div class="wrap">
     <h1>Privacy Policy</h1>
-    <p class="updated">Last updated: 21 September 2026</p>
+    <p class="updated">Last updated: 21 September 2026 · Version 2.0</p>
 
-    <p>Sahulatcart provides an automated WhatsApp sales assistant to merchants in Pakistan. This policy
-       explains what personal data we handle, why, and who it is shared with.</p>
+    <p class="lede">Sahulatcart provides an automated WhatsApp sales assistant to merchants in Pakistan.
+       This policy explains what personal data we handle, why, who it is shared with, how long we keep it
+       and how to have it deleted.</p>
 
-    <div class="note">
-      <strong>Two kinds of people are covered here.</strong> <em>Merchants</em> are our customers — the
-      shop owners who sign up. <em>Buyers</em> are the people who message a merchant on WhatsApp. We
-      process buyer data on the merchant's behalf; the merchant decides what their shop sells, what it
-      charges, and how long they keep their records.
+    <div class="toc">
+      <h4>Contents</h4>
+      <ol>
+        <li><a href="#who">Who this covers</a></li>
+        <li><a href="#roles">Our role: controller or processor</a></li>
+        <li><a href="#collect">Data we collect</a></li>
+        <li><a href="#use">How we use it</a></li>
+        <li><a href="#ai">Automated processing and AI</a></li>
+        <li><a href="#never">What we never do</a></li>
+        <li><a href="#share">Who we share data with</a></li>
+        <li><a href="#whatsapp">WhatsApp data residence</a></li>
+        <li><a href="#payments">Payments</a></li>
+        <li><a href="#retention">How long we keep data</a></li>
+        <li><a href="#security">Security</a></li>
+        <li><a href="#rights">Your rights and choices</a></li>
+        <li><a href="#deletion">Deleting your data</a></li>
+        <li><a href="#transfers">International transfers</a></li>
+        <li><a href="#children">Children</a></li>
+        <li><a href="#law">Legal position in Pakistan</a></li>
+        <li><a href="#changes">Changes</a></li>
+        <li><a href="#contact">Contact</a></li>
+      </ol>
     </div>
 
-    <h2>1. Data we collect</h2>
+    <h2 id="who">1. Who this covers</h2>
 
-    <h3>From buyers (via WhatsApp)</h3>
+    <div class="who">
+      <div>
+        <strong>Merchants</strong>
+        <p>Our customers — the shop owners who sign up, connect a WhatsApp number and use the admin portal.</p>
+      </div>
+      <div>
+        <strong>Buyers</strong>
+        <p>People who message a merchant on WhatsApp. We process your data on that merchant's behalf.</p>
+      </div>
+    </div>
+
+    <p>The merchant decides what their shop sells, what it charges, and how long they keep their records.
+       Your relationship for an order is with them, not with us.</p>
+
+    <h2 id="roles">2. Our role: controller or processor</h2>
+
+    <table>
+      <tr><th>Data</th><th>Who decides how it is used</th><th>Our role</th></tr>
+      <tr><td>Buyer conversations, orders, delivery details, payment screenshots</td><td>The merchant</td><td><strong>Processor</strong> — we act on the merchant's instructions only</td></tr>
+      <tr><td>Merchant account, billing, support and usage data</td><td>Sahulatcart</td><td><strong>Controller</strong></td></tr>
+      <tr><td>Website analytics and enquiry forms on sahulatcart.com</td><td>Sahulatcart</td><td><strong>Controller</strong></td></tr>
+    </table>
+
+    <p>Where we are a processor, requests about a specific shop's records are for that merchant to decide,
+       and we will pass your request to them. Where we are a controller, you can come to us directly.</p>
+
+    <h2 id="collect">3. Data we collect</h2>
+
+    <h3>3.1 From buyers, via WhatsApp</h3>
     <table>
       <tr><th>Data</th><th>Why</th></tr>
       <tr><td>WhatsApp phone number and profile name</td><td>To identify the conversation and route replies</td></tr>
       <tr><td>Message content — text, voice notes, images</td><td>To understand the request and reply</td></tr>
+      <tr><td>Voice note transcripts</td><td>So a spoken message can be understood and answered</td></tr>
       <tr><td>Delivery name, address, area and city</td><td>To create and fulfil the order</td></tr>
       <tr><td>Payment screenshots (bank transfer)</td><td>So the merchant can verify payment manually</td></tr>
-      <tr><td>Order and negotiation history</td><td>To maintain the conversation and the merchant's records</td></tr>
+      <tr><td>Order, negotiation and price history</td><td>To maintain the conversation and the merchant's records</td></tr>
+      <tr><td>Opt-out status</td><td>To stop messaging you when you ask us to</td></tr>
     </table>
 
-    <h3>From merchants</h3>
-    <p>Business name, owner name, email address, login credentials, catalogue, pricing rules and bank
-       account details shown to buyers who choose bank transfer.</p>
+    <h3>3.2 From merchants</h3>
+    <p>Business name, owner name, email address, login credentials (stored hashed by our authentication
+       provider — we never see your password), staff user accounts and roles, product catalogue, pricing
+       and discount rules, knowledge-base content, and the bank account details you choose to show buyers.</p>
 
-    <h2>2. How we use it</h2>
+    <h3>3.3 Automatically</h3>
+    <p>Technical logs needed to run and secure the service: IP address, timestamps, request paths, error
+       traces, and message delivery status from WhatsApp. On our marketing website we use only what is
+       necessary to serve the pages; we do not run advertising or cross-site tracking cookies.</p>
+
+    <h2 id="use">4. How we use it</h2>
     <ul>
-      <li>To operate the assistant: answer questions, negotiate within the merchant's limits, build orders, collect delivery details and confirm payment method.</li>
+      <li>To operate the assistant: answer questions, negotiate within the merchant's limits, build
+          orders, collect delivery details and record the chosen payment method.</li>
       <li>To generate order slips and notify the merchant.</li>
-      <li>To let the merchant view and take over conversations from their admin portal.</li>
-      <li>To keep the service secure and diagnose faults.</li>
+      <li>To let the merchant view, search and take over conversations from their admin portal.</li>
+      <li>To keep the service secure, prevent abuse, and diagnose faults.</li>
+      <li>To bill merchants and provide support.</li>
+      <li>To comply with legal obligations and with Meta's platform requirements.</li>
     </ul>
-    <p>We do not sell personal data, and we do not use buyer conversations to advertise to them.</p>
 
-    <h2>3. Automated processing</h2>
-    <p>Replies are produced with help from an AI language model. <strong>Prices are not decided by the
-       AI.</strong> All pricing and discount limits are computed by deterministic code from the rules the
-       merchant sets; the model is used only to interpret messages and phrase replies. A buyer can ask to
-       speak to a human at any point, and the merchant can take over the conversation.</p>
+    <h2 id="ai">5. Automated processing and AI</h2>
 
-    <h2>4. Who we share data with</h2>
+    <p>Replies are produced with help from an AI language model, which is used to interpret incoming
+       messages, transcribe voice notes, read images, and phrase replies.</p>
+
+    <div class="note">
+      <p><strong>Prices are not decided by the AI.</strong> All pricing and discount limits are computed
+         by deterministic code from the rules the merchant sets. Every reply that states a price is
+         checked against that code's figure before sending; if they disagree the AI's wording is
+         discarded in favour of a fixed template. The model cannot invent or exceed a discount.</p>
+    </div>
+
+    <p>Message content, voice notes and images are sent to our AI provider solely to produce that reply.
+       We use a paid, commercial processing tier under which <strong>the provider does not use this
+       content to train or improve its models</strong> and does not make it available for human review.</p>
+
+    <p>A buyer can ask to speak to a human at any point, and the merchant can take over the conversation.
+       No decision with a legal or similarly significant effect is made about you by automated means.</p>
+
+    <h2 id="never">6. What we never do</h2>
+
+    <p>These commitments are binding on us and reflect the requirements of the WhatsApp Business Solution
+       Terms:</p>
+    <ul>
+      <li>We <strong>do not sell, rent or license</strong> personal data.</li>
+      <li>We <strong>do not use buyer data to track, build or augment profiles</strong> of individual
+          WhatsApp users.</li>
+      <li>We <strong>do not use buyer data to create, develop, train or improve</strong> any machine
+          learning or artificial intelligence model — ours or anyone else's.</li>
+      <li>We <strong>do not use buyer conversations to advertise</strong> to buyers, and we do not share
+          data with advertising networks.</li>
+      <li>We <strong>do not share data between merchants.</strong> Each merchant's records are isolated at
+          the database level.</li>
+      <li>We <strong>do not process buyer data for our own purposes</strong> — only to deliver the service
+          the merchant asked for.</li>
+    </ul>
+
+    <h2 id="share">7. Who we share data with</h2>
+
+    <p>We use the following sub-processors. We do not add a sub-processor that handles buyer data without
+       updating this list.</p>
+
     <table>
-      <tr><th>Provider</th><th>What is shared</th><th>Purpose</th></tr>
-      <tr><td>Meta (WhatsApp Cloud API)</td><td>Messages and media</td><td>Sending and receiving WhatsApp messages</td></tr>
-      <tr><td>Google (Gemini API)</td><td>Message text, voice notes, product images</td><td>Understanding messages and drafting replies</td></tr>
-      <tr><td>Supabase</td><td>Database records and uploaded files</td><td>Hosting the database and file storage</td></tr>
-      <tr><td>Railway</td><td>Application traffic</td><td>Running the service</td></tr>
+      <tr><th>Provider</th><th>What is shared</th><th>Purpose</th><th>Where</th></tr>
+      <tr><td>Meta Platforms / WhatsApp</td><td>Messages and media</td><td>Sending and receiving WhatsApp messages</td><td>USA, EU</td></tr>
+      <tr><td>Google (Gemini API)</td><td>Message text, voice notes, product and payment images</td><td>Understanding messages and drafting replies</td><td>USA</td></tr>
+      <tr><td>Supabase</td><td>Database records, uploaded files, authentication</td><td>Database, file storage and merchant login</td><td>Per project region</td></tr>
+      <tr><td>Railway</td><td>Application traffic and logs</td><td>Hosting the service</td><td>USA</td></tr>
     </table>
-    <p>Each merchant can only access their own data. We do not share data between merchants.</p>
 
-    <h2>5. Payments</h2>
+    <p>We may also disclose data where we are legally required to — for example under a valid court order
+       or a lawful request from a competent authority — or where necessary to establish, exercise or
+       defend legal claims. If we are ever party to a merger or acquisition, data may transfer to the
+       successor, who will remain bound by this policy.</p>
+
+    <h2 id="whatsapp">8. WhatsApp data residence</h2>
+
+    <p>Messages sent through the WhatsApp Business Platform are processed on Meta's Cloud API
+       infrastructure and stored in Meta's data centres, currently located in North America and Europe.
+       Meta acts as a processor for the merchant in respect of that content. <strong>Data localisation
+       within Pakistan is not available</strong> for WhatsApp Business Platform messaging, and neither we
+       nor the merchant can change where Meta processes it.</p>
+
+    <p>Sahulatcart is an independent technology provider. We are not affiliated with, endorsed by, or
+       operated by WhatsApp LLC or Meta Platforms, Inc.</p>
+
+    <h2 id="payments">9. Payments</h2>
+
     <p>We never take custody of money and we are not a payment processor. Orders are Cash on Delivery, or
-       a bank transfer made directly to the merchant's own account. Payment screenshots are stored
-       privately so the merchant can verify them; we do not process card or bank credentials.</p>
+       a bank transfer made directly to the merchant's own account. Payment screenshots are stored in a
+       private bucket so the merchant can verify them manually; we do not read, verify or act on them
+       automatically beyond describing the image so the merchant can find it. We do not collect or process
+       card numbers or banking credentials from buyers.</p>
 
-    <h2>6. Storage and retention</h2>
-    <p>Data is stored in Supabase (Postgres and object storage) with access controls that isolate each
-       merchant. Payment screenshots and inbound media are kept in private buckets and are not publicly
-       accessible. Merchants control how long their order and conversation records are kept and may
-       request deletion.</p>
+    <h2 id="retention">10. How long we keep data</h2>
 
-    <h2>7. Your rights</h2>
-    <p>You may ask us to access, correct or delete your personal data, or to stop messaging you. A buyer
-       can stop the assistant at any time by replying <strong>STOP</strong> on WhatsApp, which opts that
-       number out of further messages.</p>
-    <p>Because we process buyer data on a merchant's behalf, requests about a specific shop's records may
-       be passed to that merchant.</p>
+    <table>
+      <tr><th>Data</th><th>Retention</th></tr>
+      <tr><td>Conversations and messages</td><td>While the merchant's account is active, unless they delete them sooner</td></tr>
+      <tr><td>Orders and order slips</td><td>While the account is active, or longer where the merchant must keep records for tax</td></tr>
+      <tr><td>Payment screenshots and inbound media</td><td>12 months, then deleted unless attached to an unresolved dispute</td></tr>
+      <tr><td>Voice notes</td><td>Deleted after transcription; the transcript follows the message retention above</td></tr>
+      <tr><td>Opt-out records</td><td>Kept indefinitely — we must remember not to message you</td></tr>
+      <tr><td>Technical and security logs</td><td>90 days</td></tr>
+      <tr><td>Merchant account and billing records</td><td>Duration of the account, plus the period required by tax law</td></tr>
+      <tr><td>After account closure</td><td>30 days to allow export, then deleted or anonymised</td></tr>
+    </table>
 
-    <h2>8. Children</h2>
-    <p>The service is intended for business use by adults and is not directed at children.</p>
+    <p>Merchants control how long their own conversation and order records are kept within these limits
+       and may delete them at any time.</p>
 
-    <h2>9. Changes</h2>
-    <p>We may update this policy. The revision date at the top shows when it last changed.</p>
+    <h2 id="security">11. Security</h2>
 
-    <h2>10. Contact</h2>
-    <p>Questions about this policy or your data can be sent through our
-       <a href="demo.html" style="color: var(--emerald-deep); font-weight: 600;">contact page</a>.</p>
+    <p>We maintain administrative, physical and technical safeguards appropriate to the sensitivity of the
+       data, including:</p>
+    <ul>
+      <li>Encryption in transit (HTTPS/TLS) for all traffic, and encryption at rest by our storage provider</li>
+      <li>Row-level database isolation so one merchant's queries cannot reach another's records</li>
+      <li>Role-based access control, so staff accounts cannot see cost prices or verify payments unless
+          the merchant grants that role</li>
+      <li>Private storage buckets for payment screenshots and inbound media — these are not publicly
+          accessible</li>
+      <li>Cryptographic verification of every inbound WhatsApp webhook before it is processed</li>
+      <li>Access credentials held in a secrets manager, not in source code, and rotated when exposed</li>
+    </ul>
+
+    <p>No system is perfectly secure. If a breach affects your personal data and creates a real risk to
+       you, we will notify the affected merchants without undue delay and support them in notifying
+       buyers where that is appropriate.</p>
+
+    <h2 id="rights">12. Your rights and choices</h2>
+
+    <p>You may ask us to:</p>
+    <ul>
+      <li><strong>Access</strong> the personal data we hold about you</li>
+      <li><strong>Correct</strong> data that is wrong or incomplete</li>
+      <li><strong>Delete</strong> your data — see <a href="data-deletion.html">Data Deletion</a></li>
+      <li><strong>Export</strong> your data in a portable format</li>
+      <li><strong>Stop messaging you</strong></li>
+    </ul>
+
+    <div class="note">
+      <p><strong>Buyers: to stop the assistant immediately</strong>, reply <strong>STOP</strong> on
+         WhatsApp. That opts your number out of further messages from that merchant. You can also ask for
+         a human at any time and the assistant will hand the conversation over.</p>
+    </div>
+
+    <p>Because we process buyer data on a merchant's behalf, a request about a specific shop's records
+       will be passed to that merchant, who decides it. We will help them act on it. We respond to
+       requests within 30 days.</p>
+
+    <h2 id="deletion">13. Deleting your data</h2>
+
+    <p>Full instructions, including what gets deleted and how long it takes, are on our dedicated
+       <a href="data-deletion.html">Data Deletion</a> page. In summary: buyers should contact the merchant
+       they messaged, or us at <strong>privacy@sahulatcart.com</strong>; merchants can close their account
+       from the admin portal or request deletion in writing.</p>
+
+    <h2 id="transfers">14. International transfers</h2>
+
+    <p>Our sub-processors operate outside Pakistan, principally in the United States and the European
+       Union. Using this service necessarily involves transferring personal data to those countries. We
+       rely on the contractual protections in our agreements with each provider, including their standard
+       data processing terms, to protect that data.</p>
+
+    <h2 id="children">15. Children</h2>
+
+    <p>The service is intended for business use by adults and is not directed at children. We do not
+       knowingly collect data from anyone under 18. If we learn that we have, we will delete it.</p>
+
+    <h2 id="law">16. Legal position in Pakistan</h2>
+
+    <p>At the date of this policy, Pakistan has no comprehensive enacted personal data protection statute;
+       the Personal Data Protection Bill remains in draft before the legislature. We have written this
+       policy to the principles that bill sets out — lawful basis, purpose limitation, data minimisation,
+       retention limits, security and data subject rights — so that the service is ready when it comes
+       into force. We also comply with the Prevention of Electronic Crimes Act 2016 and with Meta's
+       platform requirements, which apply to us contractually regardless of local law.</p>
+
+    <h2 id="changes">17. Changes</h2>
+
+    <p>We may update this policy. For material changes affecting merchants we will give notice by email or
+       in the admin portal before they take effect. The revision date at the top shows when it last
+       changed.</p>
+
+    <h2 id="contact">18. Contact</h2>
+
+    <p>Questions about this policy, or to exercise a right, contact <strong>privacy@sahulatcart.com</strong>
+       or use our <a href="demo.html">contact page</a>.</p>
+
+    <p>Related pages: <a href="terms.html">User Agreement</a> ·
+       <a href="data-deletion.html">Data Deletion</a></p>
   </div>
 </section>
 
 <footer>
   <div class="wrap" style="padding: 40px 24px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
     <span>© 2026 Sahulatcart. Made in Pakistan 🇵🇰</span>
-    <span><a href="index.html">Home</a> · <a href="privacy.html">Privacy</a></span>
+    <span><a href="index.html">Home</a> · <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a> · <a href="data-deletion.html">Data deletion</a></span>
   </div>
 </footer>
 

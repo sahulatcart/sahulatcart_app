@@ -7,6 +7,46 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-21 (night) — Legal pages: User Agreement, Privacy Policy v2, Data Deletion
+
+**Outcome** — three legal pages on the marketing site, written against Meta's actual Tech Provider
+obligations rather than a generic template: `site/terms.html` (new), `site/privacy.html` (rewritten
+to v2), `site/data-deletion.html` (new). Shared styling extracted to `site/assets/legal.css`. The
+`<a href="#">Terms</a>` placeholder in all four other pages' footers is now wired up.
+
+**The finding that mattered**
+Reading the WhatsApp Business Solution Terms turned up a hard prohibition: a provider must not let
+Business Solution Data be used to "create, develop, train, or improve any machine learning or
+artificial intelligence systems". Google's **Gemini free tier explicitly does the opposite** — it
+uses submitted content to improve its products, and human reviewers may read it. Paid tier does not.
+
+So running this product on the Gemini free tier is not just a quota problem (20 requests/day, already
+logged), it is a **breach of Meta's terms** — buyer names, addresses, phone numbers and payment
+screenshots are going somewhere that trains on them. Enabling billing fixes both at once. Until it is
+enabled, section 5 of the privacy policy ("the provider does not use this content to train") describes
+the intended state, not the current one.
+
+**Other things the research changed**
+- Pakistan has **no enacted** data protection statute — the PDP Bill is still before the legislature.
+  So the policy does not claim compliance with a law that does not exist; it commits to the bill's
+  principles and names PECA 2016 instead.
+- Meta app review wants a **Data Deletion Instructions URL** as a distinct page, not a privacy-policy
+  section — hence `data-deletion.html`.
+- Meta requires the buyer/merchant **controller-vs-processor split** to be explicit, so both pages
+  lead with it rather than burying it.
+- WhatsApp message content lives in Meta's data centres and **data localisation in Pakistan is not
+  available**; that has to be disclosed, not glossed over.
+- The prohibited-goods list is taken from Meta's Commerce Policy, not invented.
+
+**Still to do (needs the user)** — `legal@sahulatcart.com` and `privacy@sahulatcart.com` are cited on
+all three pages and do not exist yet. `demo.html` still shows the previous owner's
+`hello@sahulatkaar.pk`. Governing law says "courts of Pakistan" generically; a city should be named.
+
+**Verified** — all three pages render, every table-of-contents anchor resolves to a real heading,
+every internal link resolves to a real file, no horizontal overflow at 375px, all 7 site pages 200.
+
+---
+
 ## 2026-09-21 (night) — Added docs/PITFALLS.md
 
 **Outcome** — [docs/PITFALLS.md](docs/PITFALLS.md), linked from the top of CLAUDE.md so any
