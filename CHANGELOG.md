@@ -7,6 +7,49 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-22 — SEO foundations, and the nginx config that never applied
+
+**Outcome** — `robots.txt`, `sitemap.xml`, canonical tags on all 9 pages, complete Open Graph and
+Twitter cards with absolute image URLs, JSON-LD (Organization + WebSite + SoftwareApplication), and
+301 redirects for the previous sites' URLs. The nginx config is now actually applied, which also
+fixes extensionless URLs.
+
+**Why nothing ranked, even for "sahulatcart".** Three separate causes:
+
+1. **The domain has history.** Google's index holds `sahulatcart.com/product/tapal-tez-dam` —
+   "Sahulat Cart", a WooCommerce grocery shop that used to live here. Google's model of the domain is
+   a grocery store, not a WhatsApp product. Every one of those URLs 404s.
+2. **Nothing pointed Google at the new pages.** No `robots.txt` (404), no `sitemap.xml` (404), no
+   canonical tags anywhere. A new site on a domain with stale history and no Search Console
+   submission can sit undiscovered indefinitely.
+3. **Every old URL 404'd** — the Vercel paths (`/privacy-policy`, `/contact`, `/about`) and the shop
+   paths alike, throwing away whatever signal they carried instead of redirecting it.
+
+**The root cause behind the 404s was not the URLs, it was the start command.** `site/Dockerfile`
+wrote its server block to `/etc/nginx/templates/default.conf.template`, relying on nginx's
+`docker-entrypoint.sh` to run `envsubst` over it at boot. But the IaC sets
+`start: "nginx -g 'daemon off;'"`, and a custom start command **replaces the image's ENTRYPOINT** — so
+the entrypoint never ran, envsubst never ran, the template was silently ignored, and nginx served its
+stock default config. `try_files $uri $uri.html` has therefore never once been in effect, which is
+why `/privacy` 404'd while `/privacy.html` worked.
+
+Fixed by writing `site/nginx.conf` straight to `/etc/nginx/conf.d/default.conf` at build time, with a
+literal port 80 and no dependency on the entrypoint. `nginx -t` now runs during the build, so a bad
+config fails the build instead of deploying a broken site.
+
+**Redirects added** — `/privacy-policy`, `/contact`, `/book-a-demo`, `/terms-of-service` to their new
+equivalents; `/shop`, `/cart`, `/checkout`, `/my-account`, `/product/*`, `/product-category/*` and
+`/wp-*` to the homepage. Everything else resolves through `try_files`.
+
+**Canonicals point at the `.html` form**, which is what physically exists. Extensionless URLs now work
+as aliases, and the canonical tag tells Google which of the two to index, so the alias does not create
+duplicate content.
+
+**Still needs the owner:** verify the domain in Google Search Console, submit the sitemap, and use
+"Request indexing" on the homepage. Without that, the sitemap is a file nobody has asked for.
+
+---
+
 ## 2026-09-22 — Footer padding and single-column layout on phones
 
 **Outcome** — footer content now sits 24px from the screen edge on every page instead of flush

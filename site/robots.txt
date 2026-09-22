@@ -1,0 +1,10 @@
+# Sahulatcart — https://www.sahulatcart.com
+# Operated by Nubrix Technologies (Pvt) Ltd
+
+User-agent: *
+Allow: /
+
+# Nothing here is private, but these carry no search value.
+Disallow: /assets/
+
+Sitemap: https://www.sahulatcart.com/sitemap.xml
