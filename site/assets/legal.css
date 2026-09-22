@@ -47,3 +47,31 @@
 .foot-biz .wrap { padding: 18px 24px 0; }
 .foot-biz p { font-size: 12.5px; line-height: 1.6; color: var(--muted-on-dark); margin: 0; }
 .foot-biz .tbc { color: #ffd88a; font-weight: 600; }
+
+/* ── Tables on narrow screens ──────────────────────────────────
+   Legal tables carry long cells (email addresses, provider names) that cannot
+   wrap, so at phone width they push past the viewport. Each table sits in a
+   .table-wrap that scrolls on its own, instead of dragging the whole page
+   sideways. min-width keeps columns readable rather than crushing them. */
+.legal .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 14px 0; }
+.legal .table-wrap table { margin: 0; }
+
+@media (max-width: 720px) {
+  .legal .table-wrap { 
+    /* a soft edge hint that there is more to the right */
+    background:
+      linear-gradient(to right, var(--paper) 30%, transparent),
+      linear-gradient(to left,  var(--paper) 30%, transparent) 100% 0,
+      radial-gradient(farthest-side at 0 50%, rgba(10,13,19,.14), transparent),
+      radial-gradient(farthest-side at 100% 50%, rgba(10,13,19,.14), transparent) 100% 0;
+    background-repeat: no-repeat;
+    background-size: 36px 100%, 36px 100%, 14px 100%, 14px 100%;
+    background-attachment: local, local, scroll, scroll;
+  }
+  /* Let long unbreakable strings (emails, hostnames) wrap rather than force a
+     column wide and crush the others. The wrapper still scrolls if a table
+     genuinely cannot fit. */
+  .legal .table-wrap table { min-width: 0; width: 100%; }
+  .legal th, .legal td { padding: 8px 9px; font-size: 13.5px; overflow-wrap: anywhere; }
+  .legal .table-wrap table strong { font-weight: 600; }
+}

@@ -7,6 +7,41 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-22 — Fixed sideways scrolling on mobile
+
+**Outcome** — no page on the site scrolls horizontally at 375px any more, and every legal table fits
+without scrolling. Desktop is unchanged: sticky nav and the ticker band both still work.
+
+**Two separate causes, and the first one was not obvious.**
+
+1. **The `.ticker` band.** It carries `transform: rotate(-1.2deg) scale(1.02)`, so its *bounding box*
+   is ~384px wide on a 375px screen even though it clips its own contents. That 4px was dragging the
+   whole page sideways. Only `index.html` has it.
+2. **The legal tables.** `support.html` overflowed by 128px and `privacy.html` by 74px. Cause was
+   `table-layout: auto` plus `sahulatcart2026@gmail.com` — an unbreakable string that forced one
+   column wide and pushed the table to 475px.
+
+**`clip`, not `hidden`.** The nav is `position: sticky`. `overflow-x: hidden` on html/body would make
+an ancestor a scroll container and silently break it. `overflow-x: clip` does not create a scroll
+container, so sticky survives — verified by scrolling and checking the nav stayed pinned, not just by
+reading the computed style. An `@supports not (overflow: clip)` fallback covers older engines.
+
+**Clipping alone made it worse, briefly.** With the page clipped, `support.html`'s third column was
+simply cut off and unreadable — the scroll was gone but so was the content. The tables needed their
+own fix: each is now wrapped in a `.table-wrap`, and cells got `overflow-wrap: anywhere` so long
+emails break across lines instead of forcing a column open. After that every table fits at 375px and
+the wrapper's scroll is only a safety net.
+
+**The stale-stylesheet trap caught me again.** The first verification said the fix had not applied —
+`overflow-x` still read `visible`. The CSS was fine; `python -m http.server` sends no cache headers,
+exactly as CLAUDE.md warns. Every later check re-fetched the stylesheets with a cache-busting query
+before measuring.
+
+**Verified** — all 9 pages at 375px: no horizontal scroll, 7 tables all fitting; desktop re-checked
+for sticky nav, ticker and overflow.
+
+---
+
 ## 2026-09-22 — sahulatcart.com repointed from Vercel to Railway
 
 **Outcome** — `www.sahulatcart.com` now serves the Railway static site; all nine pages return 200 with

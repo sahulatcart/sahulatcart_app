@@ -50,6 +50,17 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { scroll-behavior: smooth; }
+
+/* The .ticker band is rotated and scaled (rotate(-1.2deg) scale(1.02)), so its
+   bounding box is wider than the viewport — ~384px at a 375px screen. That made
+   the whole page scroll sideways on phones.
+   `clip` rather than `hidden`: hidden would turn this into a scroll container and
+   break the `position: sticky` nav. clip does not. */
+html, body { overflow-x: clip; }
+@supports not (overflow: clip) {
+  /* Older engines: fall back to hiding on body only, so html keeps the sticky nav. */
+  body { overflow-x: hidden; }
+}
 body {
   font-family: var(--font-body);
   color: var(--text);
