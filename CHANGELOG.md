@@ -7,6 +7,30 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-22 — Shop name is editable from Settings
+
+**Outcome** — a "Shop name" card at the top of the admin Settings page. The backend already accepted
+it; only the UI was missing.
+
+**The gap.** `business_name` was set exactly once, in onboarding step 1, and never exposed again. The
+Settings page declared `business_name` in its `Settings` interface — so it was fetching it — but
+rendered no input for it. `PATCH /api/v1/admin/settings` has accepted a `businessName` field the
+whole time ([backend/src/routes/admin.ts:427](backend/src/routes/admin.ts:427)), so this was a
+missing form field, not missing functionality.
+
+Why it matters more than convenience: by the repo's own conventions, buyer-facing text uses
+`merchants.business_name`, never the platform name. That value is what customers see the bot using on
+WhatsApp. Wrong or empty, and every customer sees the wrong shop.
+
+**A near-miss worth recording.** The first patch attempt asserted on an 8-space indent for the
+knowledgebase card; the file uses 6. The assertion failed *before* the write, so nothing landed and
+the file stayed clean — which is the point of asserting on every anchor rather than doing a blind
+`replace`. Re-anchored on the exact bytes and it applied.
+
+Typechecked with `../node_modules/.bin/tsc`, not bare `npx` — see docs/PITFALLS.md for why.
+
+---
+
 ## 2026-09-22 — CLAUDE.md caught up again (it had drifted within a day)
 
 **Outcome** — CLAUDE.md now matches the codebase. Added a "Marketing site — SEO files" section and

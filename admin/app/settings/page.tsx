@@ -29,8 +29,18 @@ export default function SettingsPage() {
   const toast = useToast();
   const [s, setS] = useState<Settings | null>(null);
   const [bank, setBank] = useState({ bank_name: '', account_title: '', account_number: '' });
-  const load = () => apiJson<Settings>('/api/v1/admin/settings').then(setS).catch(() => {});
+  const [name, setName] = useState('');
+  const load = () => apiJson<Settings>('/api/v1/admin/settings')
+    .then((d) => { setS(d); setName(d.business_name ?? ''); })
+    .catch(() => {});
   useEffect(() => { load(); }, []);
+
+  async function saveName() {
+    const v = name.trim();
+    if (!v) { toast('Shop name cannot be empty', 'error'); return; }
+    const r = await api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify({ businessName: v }) });
+    if (r.ok) { toast('Shop name saved', 'success'); load(); } else { toast('Could not save', 'error'); }
+  }
 
   async function saveNeg() {
     if (!s) return;
@@ -117,6 +127,18 @@ export default function SettingsPage() {
           <div className="field" style={{ margin: 0 }}><label>Haggle rounds</label><input type="number" value={nd.roundsMax ?? 3} onChange={(e) => setS({ ...s, negotiation_defaults: { ...nd, roundsMax: Number(e.target.value) } })} className="mini" /></div>
           <div className="field" style={{ margin: 0 }}><label>Default delivery (Rs)</label><input type="number" value={Math.round((s.settings.defaultDeliveryCharge ?? 0) / 100)} onChange={(e) => setS({ ...s, settings: { ...s.settings, defaultDeliveryCharge: Math.round(Number(e.target.value)) * 100 } })} className="mini" style={{ width: 110 }} /></div>
           <button className="btn" onClick={saveNeg}>Save</button>
+        </div>
+      </div>
+
+      <div className="card pad">
+        <h2>Shop name</h2>
+        <p className="hint" style={{ marginBottom: 16 }}>Ye naam customers ko WhatsApp par dikhta hai — bot isi naam se baat karta hai. Platform ka naam nahi, aap ki apni dukaan ka naam.</p>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div className="field" style={{ margin: 0, flex: '1 1 260px' }}>
+            <label>Business name</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Ali Garments" onKeyDown={(e) => e.key === 'Enter' && saveName()} />
+          </div>
+          <button className="btn btn-primary" onClick={saveName} disabled={!name.trim() || name.trim() === (s.business_name ?? '')}>Save</button>
         </div>
       </div>
 
