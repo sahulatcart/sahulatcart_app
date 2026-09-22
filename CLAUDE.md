@@ -217,7 +217,21 @@ off the previous owner's on 2026-09-21).
 | Admin portal | `appadmin-production-0a30.up.railway.app` | `admin/Dockerfile` |
 | Backend | `appbackend-production-dae8.up.railway.app` | Railpack, `npm run build --workspace=@app/backend` |
 
-Custom domains (`www` / `app` / `api`.sahulatcart.com) are not yet attached.
+**`www.sahulatcart.com` is live** on the `site` service (cut over from a Vercel deployment on
+2026-09-22). The apex redirects to it through a Namecheap **URL Redirect Record**, not through
+Railway — the plan's custom-domain limit was already reached by `www`, so the apex could not be added
+as a second Railway domain.
+
+Consequence: `https://sahulatcart.com` (bare domain, https) **fails** — Namecheap's redirect server
+has no certificate. `http://sahulatcart.com` and `www` both work. Putting Cloudflare in front fixes
+it; that is unresolved and touches the MX/SPF records, so it needs the owner's go-ahead.
+
+The same limit blocks `app.sahulatcart.com` for the admin portal, which stays on its Railway URL. The
+site's 8 Login links point at it directly.
+
+Previous DNS values, and the MX/SPF rows that must not be touched, are in
+[DNS-ROLLBACK.md](DNS-ROLLBACK.md). The Google Search Console verification TXT also lives on `@` —
+**do not delete it**; losing it silently unverifies the property, which has already happened once.
 
 Infrastructure is declared in [.railway/railway.ts](.railway/railway.ts) and applied with
 `railway config plan` / `railway config apply`. **Always re-run `railway config plan` after an apply**
@@ -231,9 +245,20 @@ setting the field to `null` silently would not persist. Do not "tidy" it away.
 `startCommand: node backend/dist/index.js` for *every* service built from the root, so the admin and
 the site both booted the backend. Each service declares its own start command in the IaC file.
 
-`site/Dockerfile` builds on `nginx:alpine`, which ships with **neither** `/etc/nginx/conf.d/default.conf`
-**nor** `/etc/nginx/templates/` — the Dockerfile `mkdir -p`s the templates dir before writing the
-envsubst template. Removing that `mkdir` breaks the build.
+**The nginx config must go in `/etc/nginx/conf.d/`, never `/etc/nginx/templates/`.** The image runs
+`envsubst` over templates from `/docker-entrypoint.sh`, but Railway's custom start command
+(`start: "nginx -g 'daemon off;'"`) **replaces the image's ENTRYPOINT**, so that script never runs. A
+template there is silently ignored and nginx serves its stock default config.
+
+This cost weeks: `try_files $uri $uri.html` sat in a template and was never once in effect, so
+`/privacy` 404'd while `/privacy.html` worked, and nobody could see why. The config now lives in
+[site/nginx.conf](site/nginx.conf), copied straight to `conf.d/default.conf`, with `nginx -t` run at
+build time so a broken config fails the build instead of deploying.
+
+`site/nginx.conf` also holds the 301s from the previous Next.js site's paths and the WooCommerce
+shop URLs that Google still has indexed, plus `absolute_redirect off` — without it nginx builds
+redirects from `$scheme`, which is `http` behind Railway's TLS termination, sending every redirect
+through a pointless extra hop.
 
 ## Conventions
 
@@ -301,6 +326,23 @@ them, these points are load-bearing and were put there for a reason:
 - Pakistan has **no enacted** data protection statute; the PDP Bill is still before the legislature.
   The policy commits to its principles and cites PECA 2016 — it must not claim compliance with a law
   that does not exist.
+
+## Marketing site — SEO files
+
+`site/` carries `robots.txt` and `sitemap.xml`. **`sitemap.xml` lists 9 URLs and is not generated** —
+adding or renaming a page means editing it by hand, or Google never learns about the page.
+
+Canonical tags point at the **`.html`** form, which is what physically exists. Extensionless URLs work
+as aliases via `try_files`; the canonical tag is what stops the two counting as duplicate content.
+Keep them consistent if you add pages.
+
+The homepage carries two JSON-LD blocks: Organization/WebSite/SoftwareApplication, and a FAQPage.
+Both are validated at commit time only by eye — check them if you edit the head.
+
+**Context worth knowing:** this domain previously hosted a WooCommerce grocery shop ("Sahulat Cart"),
+then a separate Next.js marketing site on Vercel. Google indexed both. Their URLs are 301'd in
+`site/nginx.conf` rather than left to 404. Search Console is verified as a **Domain property** —
+DNS TXT is the only verification method those support, so there is no backup method to add.
 
 ## Known gotchas
 

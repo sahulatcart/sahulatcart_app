@@ -7,6 +7,37 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-22 — CLAUDE.md caught up again (it had drifted within a day)
+
+**Outcome** — CLAUDE.md now matches the codebase. Added a "Marketing site — SEO files" section and
+corrected two passages that had gone wrong since this morning.
+
+**It went stale in under a day, and only because the owner asked.** CLAUDE.md was brought in line at
+`03e5c70` and was wrong again 7 commits later. Two claims had flipped:
+
+- "Custom domains are not yet attached" — `www.sahulatcart.com` went live that afternoon.
+- The nginx description still explained the `mkdir -p /etc/nginx/templates` + envsubst arrangement,
+  which had just been removed for being the thing that never worked.
+
+CHANGELOG was current throughout: five entries the same day, written after each change as instructed.
+The gap is specifically CLAUDE.md, which is easy to forget because it describes standing facts rather
+than events. **Worth treating a change to deployment, branding or gotchas as a CLAUDE.md edit too,
+not only a changelog entry.**
+
+**Newly documented**
+- `sitemap.xml` is hand-maintained, not generated — a new page needs adding by hand or Google never
+  sees it.
+- Canonicals point at the `.html` form; extensionless URLs are aliases, and the canonical is what
+  stops them counting as duplicates.
+- The Search Console verification TXT sits on `@` beside the SPF record. Deleting it silently
+  unverifies the property, which has already happened once on this domain.
+- Search Console is a **Domain property**, and those support DNS verification only — there is no
+  backup method to add.
+- `absolute_redirect off` in `site/nginx.conf` is load-bearing: without it nginx builds redirects from
+  `$scheme`, which is `http` behind Railway's TLS termination.
+
+---
+
 ## 2026-09-22 — SEO round two: locale, FAQ schema, and a measured speed problem
 
 **Outcome** — `lang="en-PK"` on all 9 pages, FAQPage schema on the homepage (5 questions, eligible for
