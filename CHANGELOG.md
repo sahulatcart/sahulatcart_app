@@ -7,6 +7,49 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-22 — sahulatcart.com repointed from Vercel to Railway
+
+**Outcome** — `www.sahulatcart.com` now serves the Railway static site; all nine pages return 200 with
+a valid certificate. `sahulatcart.com` redirects to `www` via a Namecheap URL Redirect Record.
+
+**What was already on the domain.** Not a placeholder — a separate, branded Next.js Sahulatcart site
+on Vercel, using the brand fonts, from a codebase that is not in this repo. Worth knowing it still
+exists in the Vercel account; nothing was deleted, only DNS was repointed.
+
+It was missing exactly what Meta verification checks: `/terms`, `/about` and `/data-deletion` all
+404'd, and it carried no legal entity, phone or non-affiliation disclaimer. Its own footer linked to
+"Terms", which 404'd — a dead legal link on the domain being submitted for verification. That is why
+the owner chose to replace rather than patch it.
+
+**The Railway plan blocked the obvious approach.** The custom-domain limit was already reached after
+adding `www`, so the apex could not be added as a second Railway domain. Solved with a Namecheap URL
+Redirect Record on `@` pointing at `https://www.sahulatcart.com` — free, no plan upgrade.
+
+**Records changed** (rollback values in [DNS-ROLLBACK.md](DNS-ROLLBACK.md)):
+- `www` CNAME: `1f83ec8a952704d4.vercel-dns-017.com` → `nztzmw1x.up.railway.app`
+- `_railway-verify.www` TXT: added
+- `@` A `216.198.79.1`: deleted, replaced with a 301 URL Redirect Record
+
+The five MX records and the SPF TXT were left untouched and verified intact afterwards; deleting
+those would have broken email forwarding on the domain.
+
+**Verifying through a stale cache.** Every local check kept showing Vercel long after the records
+were correct, because the old CNAME carried a 30-minute TTL. Querying the authoritative nameservers
+directly, then `curl --resolve` against the Railway IP with the right SNI, confirmed the cutover was
+already working while the local resolver still disagreed. Worth remembering: during a DNS cutover the
+local resolver is the least reliable thing to trust.
+
+**Known gap, not fixed here.** Extensionless URLs 404 on the Railway site (`/privacy.html` works,
+`/privacy` does not) even though `try_files $uri $uri.html` is in `site/Dockerfile`. The old Vercel
+site used clean URLs, so inbound links to `/privacy-policy` and similar are now dead. Deliberately not
+touched during the cutover — changing nginx and DNS together makes a failure ambiguous. Give Meta the
+`.html` URLs until it is fixed.
+
+**Also outstanding:** the admin portal is still on `appadmin-production-0a30.up.railway.app` rather
+than `app.sahulatcart.com`, and the custom-domain limit blocks that too.
+
+---
+
 ## 2026-09-21 (night) — Testimonials made illustrative; Sahulatkaar rename completed
 
 **Outcome** — three jobs, all verified: fabricated testimonials replaced with labelled scenarios,
