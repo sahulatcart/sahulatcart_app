@@ -7,6 +7,34 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-22 — Footer padding and single-column layout on phones
+
+**Outcome** — footer content now sits 24px from the screen edge on every page instead of flush
+against it, and stacks in one column below 560px.
+
+**Cause was a shorthand overriding a shorthand.** `.wrap` supplies the site's 24px side gutter
+(`padding: 0 24px`). The footer elements carry both classes — `class="wrap foot-in"` — and `.foot-in`
+set `padding: 64px 0 44px`, whose horizontal `0` silently reset the gutter. Same in `.foot-base` with
+`padding: 20px 0`. Switching both to `padding-block` leaves the side gutter alone.
+
+Worth remembering for any element that combines `.wrap` with a layout class: use `padding-block`, not
+the `padding` shorthand, or the gutter disappears.
+
+**Also: two columns at 375px.** The only footer breakpoint was `max-width: 960px` → `1fr 1fr`, so a
+phone still got two cramped columns. Added a 560px breakpoint for a single column with tighter gaps,
+and stacked `.foot-base` vertically.
+
+**A verification mistake worth recording.** The first sweep across all nine pages reported every
+footer as failing its gutter check. It was measuring the padded *container*, which correctly starts
+at x=0 and insets its content with padding — not the content itself. The test was wrong, not the
+code. Re-measured against a child element and all nine passed. Measure the thing that is supposed to
+move, not its wrapper.
+
+**Verified** — all 9 pages at 375px: content at x=24, right edge at 351, no sideways scroll; desktop
+re-checked for column count and padding.
+
+---
+
 ## 2026-09-22 — Fixed sideways scrolling on mobile
 
 **Outcome** — no page on the site scrolls horizontally at 375px any more, and every legal table fits

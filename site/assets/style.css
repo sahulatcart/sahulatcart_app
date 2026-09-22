@@ -382,11 +382,15 @@ p.sub { color: var(--muted); font-size: 17px; max-width: 60ch; }
 
 /* ── Footer ────────────────────────────────────────────────── */
 footer { background: var(--ink); color: var(--muted-on-dark); }
-.foot-in { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 36px; padding: 64px 0 44px; }
+.foot-in { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 36px;
+  /* padding-block only: a `padding` shorthand here would reset .wrap's 24px
+     side gutter to 0 and push the footer hard against the screen edge. */
+  padding-block: 64px 44px; }
 .foot-in h5 { color: #fff; font-family: var(--font-display); font-size: 14.5px; margin-bottom: 14px; }
 .foot-in a { display: block; font-size: 14px; margin-bottom: 9px; transition: color .2s; }
 .foot-in a:hover { color: var(--amber); }
-.foot-base { border-top: 1px solid rgba(255,255,255,.08); padding: 20px 0; font-size: 13px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.foot-base { border-top: 1px solid rgba(255,255,255,.08); padding-block: 20px; font-size: 13px;
+  display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
 /* ── Reveal on scroll ──────────────────────────────────────── */
 .rv { opacity: 0; transform: translateY(28px); transition: opacity .7s ease, transform .7s ease; }
@@ -401,6 +405,21 @@ footer { background: var(--ink); color: var(--muted-on-dark); }
   .grid3, .plans { grid-template-columns: 1fr; }
   .dial-demo, .demo-grid { grid-template-columns: 1fr; }
   .foot-in { grid-template-columns: 1fr 1fr; }
+
+}
+
+/* Footer on phones: two columns at 375px crams the headings together, and the
+   brand block needs room to breathe above them. */
+@media (max-width: 560px) {
+  .foot-in {
+    grid-template-columns: 1fr;
+    gap: 28px;
+    padding-block: 48px 32px;
+  }
+  .foot-in > div:first-child { margin-bottom: 4px; }
+  .foot-in h5 { margin-bottom: 10px; }
+  .foot-in a { margin-bottom: 11px; }
+  .foot-base { padding-block: 18px; flex-direction: column; gap: 8px; align-items: flex-start; }
   .nav-links {
     display: none; position: absolute; top: 68px; left: 0; right: 0;
     background: var(--ink); flex-direction: column; padding: 22px; gap: 18px;
