@@ -7,6 +7,42 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-22 — SEO round two: locale, FAQ schema, and a measured speed problem
+
+**Outcome** — `lang="en-PK"` on all 9 pages, FAQPage schema on the homepage (5 questions, eligible for
+rich results). Search Console is verified on a Domain property with the sitemap submitted.
+
+**Search Console was already broken and nobody knew.** The existing property was verified by
+"Domain name provider" — a DNS TXT record that had gone missing, so Google had silently dropped
+ownership. Re-added the token at Namecheap alongside the SPF record (two TXT rows on `@`, which is
+correct) and it verified. Confirmed the token was live in public DNS *before* clicking Verify, which
+avoids the failed-attempt-then-guess-at-propagation loop.
+
+Also found in Search Console: a sitemap submitted **6 May 2022** for
+`https://sahulatcart.com/sitemap_index.xml`, status "Couldn't fetch". `sitemap_index.xml` is the
+WordPress/Yoast filename — independent confirmation that this domain ran a WooCommerce shop before.
+
+**A guidance error worth recording.** Told the owner to submit the sitemap as just `sitemap.xml`.
+That is right for a URL-prefix property, which shows the domain as a fixed prefix beside the box, but
+wrong for the Domain property they had switched to — those have no prefix and need the full URL.
+Corrected to `https://www.sahulatcart.com/sitemap.xml`. Check which property type is open before
+giving Search Console instructions; the UI differs.
+
+Similarly, suggested adding an HTML-tag verification method as a backup. **Domain properties only
+support DNS verification** — that option does not exist there. Withdrawn.
+
+**Measured the speed rather than assuming it.** First reading suggested a 5.26s TTFB, which was an
+outlier. Five samples put steady state at **0.75–0.85s**, with occasional spikes to 2.9s. A
+CDN-backed control site measured 0.16s from the same machine. Google's "good" threshold is 0.8s, so
+the site sits right on the line — and the test machine is far closer to the `sfo` replica than
+Pakistan is, so real users are worse off. Single replica, no CDN.
+
+**Not fixed here:** the speed problem and the `https://sahulatcart.com` certificate gap have the same
+solution — putting Cloudflare in front — and that touches the email records, so it needs the owner's
+go-ahead rather than being folded into an SEO commit.
+
+---
+
 ## 2026-09-22 — SEO foundations, and the nginx config that never applied
 
 **Outcome** — `robots.txt`, `sitemap.xml`, canonical tags on all 9 pages, complete Open Graph and
