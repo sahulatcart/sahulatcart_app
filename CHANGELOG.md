@@ -7,6 +7,16 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-24 — Temporary homepage hello popup
+
+**Outcome** — the marketing homepage now opens with a small, branded “Hello” welcome overlay for an
+end-to-end deployment test. Visitors dismiss it with the visible close button or the Escape key, after
+which normal page scrolling resumes. The popup is limited to `index.html`, so legal, support, pricing,
+and other direct links remain unobstructed.
+
+The dialog uses semantic dialog attributes, moves keyboard focus to the close control, provides a
+visible focus treatment, and disables its entrance animation for reduced-motion visitors.
+
 ## 2026-09-22 — Shop name is editable from Settings
 
 **Outcome** — a "Shop name" card at the top of the admin Settings page. The backend already accepted

@@ -74,6 +74,69 @@ a { color: inherit; text-decoration: none; }
 
 .wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
 
+/* ── Temporary launch-test welcome popup ───────────────────── */
+body.hello-popup-open { overflow: hidden; }
+.hello-popup {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(10, 13, 19, .72);
+  backdrop-filter: blur(8px);
+  animation: hello-popup-in .2s ease-out;
+}
+.hello-popup-card {
+  position: relative;
+  width: min(440px, 100%);
+  padding: 52px 40px 44px;
+  text-align: center;
+  background: var(--paper);
+  border: 1px solid var(--color-border);
+  border-radius: 24px;
+  box-shadow: var(--shadow);
+}
+.hello-popup-kicker {
+  display: inline-block;
+  margin-bottom: 10px;
+  color: var(--color-green);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+.hello-popup h2 {
+  font-family: var(--font-display);
+  font-size: clamp(36px, 8vw, 54px);
+  line-height: 1.05;
+}
+.hello-popup p { margin-top: 12px; color: var(--muted); }
+.hello-popup-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--color-navy);
+  font: 400 30px/1 var(--font-body);
+  cursor: pointer;
+  transition: background .2s, transform .2s;
+}
+.hello-popup-close:hover { background: var(--color-mint); transform: scale(1.05); }
+.hello-popup-close:focus-visible { outline: 3px solid var(--color-teal); outline-offset: 3px; }
+@keyframes hello-popup-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hello-popup { animation: none; }
+  .hello-popup-close { transition: none; }
+}
+
 /* ── Truck-art details ─────────────────────────────────────── */
 .scallop {
   height: 26px;

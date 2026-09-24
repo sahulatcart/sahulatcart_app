@@ -2,6 +2,24 @@
 (function () {
   'use strict';
 
+  /* Temporary homepage welcome popup. */
+  const helloPopup = document.querySelector('[data-hello-popup]');
+  const helloPopupClose = document.querySelector('[data-hello-popup-close]');
+  if (helloPopup && helloPopupClose) {
+    document.body.classList.add('hello-popup-open');
+    helloPopupClose.focus();
+
+    const closeHelloPopup = () => {
+      document.body.classList.remove('hello-popup-open');
+      helloPopup.remove();
+    };
+
+    helloPopupClose.addEventListener('click', closeHelloPopup);
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && helloPopup.isConnected) closeHelloPopup();
+    });
+  }
+
   /* Mobile nav */
   const burger = document.querySelector('.burger');
   const links = document.querySelector('.nav-links');
