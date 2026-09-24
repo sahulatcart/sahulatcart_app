@@ -17,6 +17,10 @@ and other direct links remain unobstructed.
 The dialog uses semantic dialog attributes, moves keyboard focus to the close control, provides a
 visible focus treatment, and disables its entrance animation for reduced-motion visitors.
 
+The homepage now versions its CSS and JavaScript asset URLs so a deployment cannot combine new HTML
+with an hour-old cached stylesheet or script. This ensures the popup is styled and dismissible as soon
+as the new page reaches the live domain.
+
 ## 2026-09-22 — Shop name is editable from Settings
 
 **Outcome** — a "Shop name" card at the top of the admin Settings page. The backend already accepted
