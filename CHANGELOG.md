@@ -7,6 +7,11 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-24 — Homepage hello-popup deployment test completed
+
+**Outcome** — removed the temporary homepage welcome popup after confirming the full GitHub-to-Railway
+deployment path and live-domain behavior. The homepage now opens directly again.
+
 ## 2026-09-24 — Temporary homepage hello popup
 
 **Outcome** — the marketing homepage now opens with a small, branded “Hello” welcome overlay for an
