@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../lib/logger';
-import { formatPkt, generateSlipPdf, uploadSlip } from './slip';
+import { rs } from '../lib/money';
+import { formatPkt, generateSlipPdf, uploadSlip, type SlipData } from './slip';
 
 export interface DeliveryInfo {
   name: string | null;
@@ -10,16 +11,50 @@ export interface DeliveryInfo {
   phone: string | null;
 }
 
-const rs = (paisa: number): string => `Rs ${Math.round(paisa / 100)}`;
+/** The orders columns a placed order carries into its slip and confirmation. */
+interface OrderRow {
+  order_number: string;
+  subtotal: number;
+  discount_total: number;
+  delivery_charge: number;
+  total: number;
+  delivery_name: string | null;
+  delivery_address: string | null;
+  delivery_area: string | null;
+  delivery_city: string | null;
+  delivery_phone: string | null;
+  placed_at: string | null;
+  created_at: string;
+}
+type Placed = { orderNumber: string; total: number; slip: string; slipKey: string | null };
 
-/** Human-friendly order number, unique-ish per merchant (pilot). */
-async function nextOrderNumber(db: SupabaseClient, merchantId: string): Promise<string> {
-  const { count } = await db
+async function nextOrderNumber(db: SupabaseClient, merchantId: string): Promise<string | null> {
+  const { data, error } = await db.rpc('next_order_number', { p_merchant: merchantId });
+  if (!error && data) return data as string;
+  logger.error({ err: error?.message, merchantId }, 'order number allocation failed');
+  if (error?.code !== 'PGRST202') return null;
+  // TEMPORARY until 0006 is applied (PGRST202 = function missing): the old racy count keeps
+  // checkout open instead of refusing every order. Delete this once 0006 is live.
+  const { count } = await db.from('orders').select('id', { count: 'exact', head: true }).eq('merchant_id', merchantId).not('order_number', 'is', null);
+  return `SK-${1001 + (count ?? 0)}`;
+}
+
+/**
+ * Promote a DRAFT order to a placed one. The number comes from an atomic per-merchant
+ * counter (db/migrations/0006), and the `status = 'draft'` filter makes this idempotent:
+ * a repeated "cod", or a draft that was cancelled meanwhile, updates nothing → null.
+ */
+async function placeDraft(db: SupabaseClient, merchantId: string, orderId: string, set: Record<string, string>): Promise<OrderRow | null> {
+  const orderNumber = await nextOrderNumber(db, merchantId);
+  if (!orderNumber) return null;
+  const { data, error } = await db
     .from('orders')
-    .select('id', { count: 'exact', head: true })
-    .eq('merchant_id', merchantId)
-    .not('order_number', 'is', null);
-  return `SK-${1000 + (count ?? 0) + 1}`;
+    .update({ ...set, order_number: orderNumber, placed_at: new Date().toISOString() })
+    .match({ id: orderId, merchant_id: merchantId, status: 'draft' })
+    .select('*')
+    .maybeSingle();
+  if (error) logger.error({ err: error.message, orderId }, 'order placement failed');
+  return (data as OrderRow | null) ?? null;
 }
 
 /**
@@ -98,24 +133,18 @@ export async function createDraftOrder(
   }
   const orderId = orderRes.data.id;
   const itemsRes = await db.from('order_items').insert(items.map((i) => ({ ...i, order_id: orderId })));
-  if (itemsRes.error) logger.error({ err: itemsRes.error.message }, 'order_items insert failed');
+  if (itemsRes.error) {
+    // An order with a total but no lines must never reach the customer — drop the empty draft.
+    logger.error({ err: itemsRes.error.message, orderId }, 'order_items insert failed');
+    await db.from('orders').delete().eq('id', orderId).eq('status', 'draft');
+    return null;
+  }
 
   return { orderId, subtotal, discount: discountTotal, total };
 }
 
 /** Build a plain-text order slip (Roman Urdu labels) for WhatsApp. */
-export function buildSlipText(o: {
-  orderNumber: string;
-  placedAt: string | null;
-  businessName: string;
-  items: { name: string; qty: number; lineTotal: number }[];
-  subtotal: number;
-  discount: number;
-  deliveryCharge: number;
-  total: number;
-  delivery: DeliveryInfo;
-  paymentLabel: string;
-}): string {
+export function buildSlipText(o: SlipData): string {
   const lines: string[] = [];
   lines.push(`🧾 *${o.businessName}* — Order ${o.orderNumber}`);
   const when = formatPkt(o.placedAt);
@@ -134,100 +163,15 @@ export function buildSlipText(o: {
 }
 
 /** Confirm a draft order as COD: number, status, payments row, slip, notification. */
-export async function confirmCodOrder(
-  db: SupabaseClient,
-  ctx: { merchantId: string },
-  orderId: string,
-  businessName: string
-): Promise<{ orderNumber: string; total: number; slip: string; slipKey: string | null } | null> {
-  const orderRes = await db.from('orders').select('*').eq('id', orderId).single();
-  const order = orderRes.data;
+export async function confirmCodOrder(db: SupabaseClient, ctx: { merchantId: string }, orderId: string, businessName: string): Promise<Placed | null> {
+  const order = await placeDraft(db, ctx.merchantId, orderId, { status: 'confirmed', payment_method: 'cod', payment_status: 'cod_pending' });
   if (!order) return null;
-
-  const orderNumber = await nextOrderNumber(db, ctx.merchantId);
-  const placedAt = new Date().toISOString();
-  await db
-    .from('orders')
-    .update({ status: 'confirmed', order_number: orderNumber, payment_method: 'cod', payment_status: 'cod_pending', placed_at: placedAt })
-    .eq('id', orderId);
-  await db.from('payments').insert({ order_id: orderId, merchant_id: ctx.merchantId, method: 'cod', amount: order.total, status: 'cod_pending' });
-  await db.from('order_status_history').insert({ order_id: orderId, from_status: 'draft', to_status: 'confirmed', changed_by: 'bot' });
-  await db.from('notifications').insert({
-    merchant_id: ctx.merchantId,
-    type: 'new_order',
-    title: `New COD order ${orderNumber}`,
-    body: `${rs(order.total)} — ${order.delivery_name ?? 'customer'}`,
-    data: { orderId, orderNumber, paymentMethod: 'cod' },
-    channel: 'portal',
-  });
-
-  const { text, key } = await finalizeSlip(db, ctx.merchantId, orderId, orderNumber, businessName, { ...order, placed_at: placedAt }, 'Cash on Delivery');
-  return { orderNumber, total: order.total, slip: text, slipKey: key };
-}
-
-/** Build the text + PDF slip for an order, store the PDF, save order.slip_url. */
-export async function finalizeSlip(
-  db: SupabaseClient,
-  merchantId: string,
-  orderId: string,
-  orderNumber: string,
-  businessName: string,
-  order: { subtotal: number; discount_total: number; delivery_charge: number; total: number; delivery_name: string | null; delivery_address: string | null; delivery_area: string | null; delivery_city: string | null; delivery_phone: string | null; placed_at?: string | null; created_at?: string | null },
-  paymentLabel: string
-): Promise<{ text: string; key: string | null }> {
-  const itemsRes = await db.from('order_items').select('name_snapshot, quantity, line_total').eq('order_id', orderId);
-  const items = (itemsRes.data ?? []).map((i) => ({ name: i.name_snapshot, qty: i.quantity, lineTotal: i.line_total }));
-  const sd = {
-    orderNumber,
-    placedAt: order.placed_at ?? order.created_at ?? new Date().toISOString(),
-    businessName,
-    items,
-    subtotal: order.subtotal,
-    discount: order.discount_total,
-    deliveryCharge: order.delivery_charge,
-    total: order.total,
-    delivery: { name: order.delivery_name, address: order.delivery_address, area: order.delivery_area, city: order.delivery_city, phone: order.delivery_phone },
-    paymentLabel,
-  };
-  const text = buildSlipText(sd);
-  let key: string | null = null;
-  try {
-    key = await uploadSlip(db, merchantId, orderId, await generateSlipPdf(sd));
-    if (key) await db.from('orders').update({ slip_url: key }).eq('id', orderId);
-  } catch (e) {
-    logger.error({ err: (e as Error).message }, 'slip pdf failed');
-  }
-  return { text, key };
-}
-
-/** Switch a bank-transfer order (awaiting_payment) to COD — customer changed their mind before paying. */
-export async function switchBankOrderToCod(
-  db: SupabaseClient,
-  ctx: { merchantId: string },
-  orderId: string,
-  businessName: string
-): Promise<{ orderNumber: string; total: number; slip: string; slipKey: string | null } | null> {
-  const orderRes = await db.from('orders').select('*').eq('id', orderId).eq('merchant_id', ctx.merchantId).maybeSingle();
-  const order = orderRes.data;
-  if (!order || order.status !== 'awaiting_payment' || !order.order_number) return null;
-
-  await db
-    .from('orders')
-    .update({ status: 'confirmed', payment_method: 'cod', payment_status: 'cod_pending' })
-    .eq('id', orderId);
-  await db.from('payments').update({ method: 'cod', status: 'cod_pending' }).eq('order_id', orderId);
-  await db.from('order_status_history').insert({ order_id: orderId, from_status: 'awaiting_payment', to_status: 'confirmed', changed_by: 'customer' });
-  await db.from('notifications').insert({
-    merchant_id: ctx.merchantId,
-    type: 'new_order',
-    title: `Order ${order.order_number} switched to COD`,
-    body: `${rs(order.total)} — customer chose cash on delivery instead of bank transfer`,
-    data: { orderId, orderNumber: order.order_number, paymentMethod: 'cod' },
-    channel: 'portal',
-  });
-
-  const { text, key } = await finalizeSlip(db, ctx.merchantId, orderId, order.order_number, businessName, order, 'Cash on Delivery');
-  return { orderNumber: order.order_number, total: order.total, slip: text, slipKey: key };
+  await Promise.all([
+    db.from('payments').insert({ order_id: orderId, merchant_id: ctx.merchantId, method: 'cod', amount: order.total, status: 'cod_pending' }),
+    db.from('order_status_history').insert({ order_id: orderId, from_status: 'draft', to_status: 'confirmed', changed_by: 'bot' }),
+    notifyNewOrder(db, ctx.merchantId, orderId, order, `New COD order ${order.order_number}`, 'cod'),
+  ]);
+  return placed(db, ctx.merchantId, orderId, businessName, order, 'Cash on Delivery');
 }
 
 /** Confirm a draft order for bank transfer: number, awaiting_payment, unpaid payments row. */
@@ -236,31 +180,75 @@ export async function confirmBankOrder(
   ctx: { merchantId: string },
   orderId: string,
   bankAccountId: string,
-  businessName = 'Shop'
+  businessName: string
 ): Promise<{ orderNumber: string; total: number; paymentId: string } | null> {
-  const orderRes = await db.from('orders').select('*').eq('id', orderId).single();
-  if (!orderRes.data) return null;
-  const orderNumber = await nextOrderNumber(db, ctx.merchantId);
-  const placedAt = new Date().toISOString();
-  await db
+  const order = await placeDraft(db, ctx.merchantId, orderId, { status: 'awaiting_payment', payment_method: 'bank_transfer', payment_status: 'unpaid' });
+  if (!order) return null;
+  const [pay] = await Promise.all([
+    db.from('payments').insert({ order_id: orderId, merchant_id: ctx.merchantId, method: 'bank_transfer', amount: order.total, status: 'unpaid', bank_account_id: bankAccountId }).select('id').single(),
+    db.from('order_status_history').insert({ order_id: orderId, from_status: 'draft', to_status: 'awaiting_payment', changed_by: 'bot' }),
+    notifyNewOrder(db, ctx.merchantId, orderId, order, `New bank order ${order.order_number}`, 'bank_transfer', 'awaiting payment'),
+  ]);
+  await finalizeSlip(db, ctx.merchantId, orderId, businessName, order, 'Bank Transfer'); // stored now; sent to the buyer on verify
+  return { orderNumber: order.order_number, total: order.total, paymentId: pay.data?.id ?? '' };
+}
+
+/** Switch a bank-transfer order (awaiting_payment) to COD — customer changed their mind before paying. */
+export async function switchBankOrderToCod(db: SupabaseClient, ctx: { merchantId: string }, orderId: string, businessName: string): Promise<Placed | null> {
+  const { data, error } = await db
     .from('orders')
-    .update({ status: 'awaiting_payment', order_number: orderNumber, payment_method: 'bank_transfer', payment_status: 'unpaid', placed_at: placedAt })
-    .eq('id', orderId);
-  const pay = await db
-    .from('payments')
-    .insert({ order_id: orderId, merchant_id: ctx.merchantId, method: 'bank_transfer', amount: orderRes.data.total, status: 'unpaid', bank_account_id: bankAccountId })
-    .select('id')
-    .single();
-  await db.from('order_status_history').insert({ order_id: orderId, from_status: 'draft', to_status: 'confirmed', changed_by: 'bot' });
-  await db.from('order_status_history').insert({ order_id: orderId, from_status: 'confirmed', to_status: 'awaiting_payment', changed_by: 'bot' });
-  await db.from('notifications').insert({
-    merchant_id: ctx.merchantId,
+    .update({ status: 'confirmed', payment_method: 'cod', payment_status: 'cod_pending' })
+    .match({ id: orderId, merchant_id: ctx.merchantId, status: 'awaiting_payment' })
+    .select('*')
+    .maybeSingle();
+  if (error) logger.error({ err: error.message, orderId }, 'switch to COD failed');
+  const order = data as OrderRow | null;
+  if (!order) return null;
+  await Promise.all([
+    db.from('payments').update({ method: 'cod', status: 'cod_pending' }).eq('order_id', orderId),
+    db.from('order_status_history').insert({ order_id: orderId, from_status: 'awaiting_payment', to_status: 'confirmed', changed_by: 'customer' }),
+    notifyNewOrder(db, ctx.merchantId, orderId, order, `Order ${order.order_number} switched to COD`, 'cod', 'customer chose cash on delivery instead of bank transfer'),
+  ]);
+  return placed(db, ctx.merchantId, orderId, businessName, order, 'Cash on Delivery');
+}
+
+function notifyNewOrder(db: SupabaseClient, merchantId: string, orderId: string, order: OrderRow, title: string, paymentMethod: string, note = order.delivery_name ?? 'customer') {
+  return db.from('notifications').insert({
+    merchant_id: merchantId,
     type: 'new_order',
-    title: `New bank order ${orderNumber}`,
-    body: `${rs(orderRes.data.total)} — awaiting payment`,
-    data: { orderId, orderNumber, paymentMethod: 'bank_transfer' },
+    title,
+    body: `${rs(order.total)} — ${note}`,
+    data: { orderId, orderNumber: order.order_number, paymentMethod },
     channel: 'portal',
   });
-  await finalizeSlip(db, ctx.merchantId, orderId, orderNumber, businessName, { ...orderRes.data, placed_at: placedAt }, 'Bank Transfer'); // stores slip_url; sent to buyer on verify
-  return { orderNumber, total: orderRes.data.total, paymentId: pay.data?.id ?? '' };
+}
+
+async function placed(db: SupabaseClient, merchantId: string, orderId: string, businessName: string, order: OrderRow, paymentLabel: string): Promise<Placed> {
+  const { text, key } = await finalizeSlip(db, merchantId, orderId, businessName, order, paymentLabel);
+  return { orderNumber: order.order_number, total: order.total, slip: text, slipKey: key };
+}
+
+/** Build the text + PDF slip for an order, store the PDF, save order.slip_url. */
+async function finalizeSlip(db: SupabaseClient, merchantId: string, orderId: string, businessName: string, order: OrderRow, paymentLabel: string): Promise<{ text: string; key: string | null }> {
+  const itemsRes = await db.from('order_items').select('name_snapshot, quantity, line_total').eq('order_id', orderId);
+  const sd: SlipData = {
+    orderNumber: order.order_number,
+    placedAt: order.placed_at ?? order.created_at,
+    businessName,
+    items: (itemsRes.data ?? []).map((i) => ({ name: i.name_snapshot, qty: i.quantity, lineTotal: i.line_total })),
+    subtotal: order.subtotal,
+    discount: order.discount_total,
+    deliveryCharge: order.delivery_charge,
+    total: order.total,
+    delivery: { name: order.delivery_name, address: order.delivery_address, area: order.delivery_area, city: order.delivery_city, phone: order.delivery_phone },
+    paymentLabel,
+  };
+  let key: string | null = null;
+  try {
+    key = await uploadSlip(db, merchantId, orderId, await generateSlipPdf(sd));
+    if (key) await db.from('orders').update({ slip_url: key }).eq('id', orderId);
+  } catch (e) {
+    logger.error({ err: (e as Error).message }, 'slip pdf failed');
+  }
+  return { text: buildSlipText(sd), key };
 }

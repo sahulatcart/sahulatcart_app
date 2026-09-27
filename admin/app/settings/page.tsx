@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import AppShell, { PageHead } from '../../components/AppShell';
-import { api, apiJson } from '../../lib/api';
+import { api, apiError, apiJson } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 
 interface Kb {
@@ -35,51 +35,57 @@ export default function SettingsPage() {
     .catch(() => {});
   useEffect(() => { load(); }, []);
 
+  /** PATCH settings; on failure show the server's reason and reload so optimistic edits revert. */
+  async function patch(body: object, ok: string, kind: 'success' | 'info' = 'success'): Promise<boolean> {
+    const r = await api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify(body) });
+    if (r.ok) toast(ok, kind); else { toast(await apiError(r), 'error'); load(); }
+    return r.ok;
+  }
+
   async function saveName() {
     const v = name.trim();
     if (!v) { toast('Shop name cannot be empty', 'error'); return; }
-    const r = await api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify({ businessName: v }) });
-    if (r.ok) { toast('Shop name saved', 'success'); load(); } else { toast('Could not save', 'error'); }
+    if (await patch({ businessName: v }, 'Shop name saved')) load();
   }
 
   async function saveNeg() {
     if (!s) return;
-    await api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify({ negotiationDefaults: s.negotiation_defaults, settings: { defaultDeliveryCharge: s.settings.defaultDeliveryCharge } }) });
-    toast('Saved', 'success');
+    await patch({ negotiationDefaults: s.negotiation_defaults, settings: { defaultDeliveryCharge: s.settings.defaultDeliveryCharge } }, 'Saved');
   }
   async function toggleBot(on: boolean) {
     if (!s) return;
     setS({ ...s, settings: { ...s.settings, botEnabled: on } });
-    await api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify({ settings: { botEnabled: on } }) });
-    toast(on ? 'Bot is now active' : 'Bot paused', on ? 'success' : 'info');
+    await patch({ settings: { botEnabled: on } }, on ? 'Bot is now active' : 'Bot paused', on ? 'success' : 'info');
   }
   async function setStyle(style: string) {
     if (!s) return;
     const preset = STYLES[style];
     setS({ ...s, bot_persona: { ...(s.bot_persona ?? {}), style }, negotiation_defaults: { ...s.negotiation_defaults, roundsMax: preset.roundsMax } });
-    const r = await api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify({ botPersona: { style }, negotiationDefaults: { concessionSteps: preset.concessionSteps, roundsMax: preset.roundsMax } }) });
-    if (r.ok) toast(`Bargaining style: ${preset.label}`, 'success'); else toast('Could not save style', 'error');
+    await patch({ botPersona: { style }, negotiationDefaults: { concessionSteps: preset.concessionSteps, roundsMax: preset.roundsMax } }, `Bargaining style: ${preset.label}`);
   }
   async function toggleUpsell(on: boolean) {
     if (!s) return;
     setS({ ...s, settings: { ...s.settings, upsellEnabled: on } });
-    const r = await api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify({ settings: { upsellEnabled: on } }) });
-    if (r.ok) toast(on ? 'Upsell suggestions on' : 'Upsell suggestions off', 'success'); else toast('Could not save', 'error');
+    await patch({ settings: { upsellEnabled: on } }, on ? 'Upsell suggestions on' : 'Upsell suggestions off');
   }
   const kb = s?.settings.kb ?? {};
   const setKb = (patch: Partial<Kb>) => s && setS({ ...s, settings: { ...s.settings, kb: { ...kb, ...patch } } });
   async function saveKb() {
     if (!s) return;
     const faqs = (kb.faqs ?? []).filter((f) => f.q.trim() && f.a.trim());
-    const r = await api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify({ settings: { kb: { ...kb, faqs } } }) });
-    if (r.ok) toast('Knowledgebase saved — bot ab in se jawab dega', 'success'); else toast('Could not save', 'error');
+    await patch({ settings: { kb: { ...kb, faqs } } }, 'Knowledgebase saved — bot ab in se jawab dega');
   }
   async function addBank() {
     if (!bank.bank_name || !bank.account_number) return;
-    await api('/api/v1/admin/bank-accounts', { method: 'POST', body: JSON.stringify({ ...bank, is_default: (s?.bankAccounts.length ?? 0) === 0 }) });
+    const r = await api('/api/v1/admin/bank-accounts', { method: 'POST', body: JSON.stringify({ ...bank, is_default: (s?.bankAccounts.length ?? 0) === 0 }) });
+    if (!r.ok) return toast(await apiError(r), 'error');
     setBank({ bank_name: '', account_title: '', account_number: '' }); toast('Bank account added', 'success'); load();
   }
-  async function delBank(id: string) { await api(`/api/v1/admin/bank-accounts/${id}`, { method: 'DELETE' }); load(); }
+  async function delBank(id: string) {
+    const r = await api(`/api/v1/admin/bank-accounts/${id}`, { method: 'DELETE' });
+    if (!r.ok) toast(await apiError(r), 'error');
+    load();
+  }
 
   if (!s) return <AppShell><PageHead title="Settings" /><div className="card pad"><div className="skeleton" style={{ height: 60 }} /></div></AppShell>;
   const nd = s.negotiation_defaults;

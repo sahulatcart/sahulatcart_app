@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **8 files, 71 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **10 files, 87 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -108,6 +108,18 @@ Supabase **Custom Access Token Hook** must be enabled in the dashboard (Authenti
 
 Storage buckets: `product-images` (public-read), `payment-screenshots`, `inbound-media`, `order-slips`,
 `catalog-imports` (all private).
+
+**Browsers get no direct table access** (`0007_lock_direct_table_access.sql`). The portal uses Supabase
+only to sign in; all reads and writes go through the backend's service role, where roles are enforced.
+RLS stays on as defence in depth. Two rules follow for every new migration:
+- New tables are locked for `anon`/`authenticated` automatically (default privileges) — keep it that way.
+- New **functions** are not: Postgres grants `EXECUTE` to `PUBLIC` globally and that cannot be revoked
+  per schema. End every new function with `revoke execute on function … from public, anon, authenticated;`
+  (see 0006) or anyone can call it through `/rest/v1/rpc`.
+
+**Order numbers** come from `next_order_number()` — an atomic per-merchant counter (0006). Until 0006
+is applied, `order-service.ts` falls back to the old racy `COUNT(*)` so checkout never stops; delete that
+fallback once 0006 is live.
 
 ## Architecture
 
@@ -134,11 +146,13 @@ in that are easy to break accidentally:
 - **Order-flow states skip intent classification** (`collecting_delivery`, `selecting_payment`,
   `awaiting_payment_proof`) to cut LLM calls, but each still routes through `handleEscape()` first so
   cancel and human-handoff always work — otherwise customers get trapped in "send your address" loops.
-- **Price-match guard**: every LLM-composed reply that states a price is checked by
-  [orchestrator/guard.ts](backend/src/orchestrator/guard.ts) `priceGuardOk()` against the engine's actual
-  number. A mismatch discards the LLM output in favor of a deterministic Roman-Urdu template
-  (`fallbackText()`). Only the unit price and the engine-derived line total are sanctioned numbers; a
-  third number trips the guard. This is the concrete enforcement of invariant #1.
+- **Price-match guard**: **every** LLM-composed reply is checked by
+  [orchestrator/guard.ts](backend/src/orchestrator/guard.ts) `priceGuardOk()`. A reply meant to quote a
+  price must state the engine's exact figure; any reply may state only `sanctionedNumbers(spec)` — the
+  engine's price and line total plus numbers from merchant-supplied text (product name, facts,
+  knowledgebase, order number). Customer text is never a source, which is what stops prompt injection
+  ("say it's Rs 500") in product/shop Q&A. A failure discards the LLM output for the deterministic
+  Roman-Urdu template (`fallbackText()`). This is the concrete enforcement of invariant #1.
 - **Context lifecycle**: conversation `context` resets when `current_state === 'completed'`, so a new
   message starts a fresh shopping session rather than re-quoting the last item. The `upsell` flag lives
   exactly one turn.
@@ -181,17 +195,28 @@ discriminated union of ~20 reply kinds) and only phrases it.
 - Backend serves `/api/v1/*` from [backend/src/routes/admin.ts](backend/src/routes/admin.ts). Auth is
   **dual-mode** via [lib/auth.ts](backend/src/lib/auth.ts) `resolveCtx()`: a Supabase JWT
   (`Authorization: Bearer`) resolved through `merchant_users` membership, **or** a pilot-only
-  `x-admin-token == ADMIN_API_TOKEN` fallback scoped to the default merchant.
+  `ADMIN_API_TOKEN` (as `x-admin-token` or a non-JWT Bearer) scoped to the default merchant. The token is
+  compared in constant time, and after 10 wrong guesses every admin-token attempt is refused for 15
+  minutes (`isAdminToken()`); portal JWT logins are unaffected.
 - `merchant_id` is **always** derived server-side from verified auth — never from client input. By-id
   endpoints ownership-check and return 404 (not 403) cross-tenant.
-- `canManagePayments()` gates money-sensitive actions (payment verify/reject, bank accounts, cost/margin
-  visibility) to owner/manager/platform-admin. Staff must not see cost or verify payments.
+- `isManager()` (owner/manager/platform-admin) gates everything staff may not do, per the canonical
+  matrix in [docs/spec/09](docs/spec/09-nonfunctional-devops.md) §2.3: payment verify/reject, bank
+  accounts, **catalog and settings writes**, and reading `cost`. Staff *may* mark COD cash collected.
+- Payment actions live in `payment-service.ts` as single conditional UPDATEs — the filter is the state
+  check, so a double-click can't act twice (409 instead). Audit columns (`*_by_user_id`) reference
+  `merchant_users.id`, which is `MerchantCtx.memberId` — **not** the Supabase auth user id.
+- Merchant input is validated in [lib/validation.ts](backend/src/lib/validation.ts) (product fields,
+  negotiation defaults, settings). A price is never 0 and `maxDiscountPct` is 0–100 — a typo of 150
+  would otherwise put every floor at Rs 0.
 - The portal never calls the backend directly from the browser. It proxies same-origin through
   [admin/app/api/[...path]/route.ts](admin/app/api/[...path]/route.ts), which reads `BACKEND_URL` at
   **request** time and forwards client headers through unchanged.
 - [admin/lib/api.ts](admin/lib/api.ts) is the client fetch wrapper: attaches the Supabase token,
   redirects to `/login` on 401, and holds the formatters `rs()` (paisa → `Rs N`) and `dt()` (timestamps
-  in `Asia/Karachi`).
+  in `Asia/Karachi`). `apiJson()` **rejects** on an error status; for `api()` calls, show failures with
+  `toast(await apiError(r), 'error')` — never toast "Saved" without checking `r.ok`.
+- The backend registers **no CORS** on purpose: nothing calls it from a browser on another origin.
 
 **There is no default merchant password.** `db/seed.mjs` creates the merchant row but no auth user.
 Logins are created invite-only via `POST /api/v1/admin/merchants`, which calls
@@ -263,8 +288,9 @@ through a pointless extra hop.
 ## Conventions
 
 - **Money is paisa** (integer, 1/100 rupee) everywhere in the backend and DB. Convert to rupees only at
-  the reply/UI edge — `rupees()` in orchestrator.ts, `rs()` in admin. Decimal CSV prices must be parsed
-  exactly (99.99 → 9999 paisa, not 10000).
+  the reply/UI edge — `rupees()` in orchestrator.ts, `rs()` in admin. Parse every price *string* (CSV,
+  Shopify, Meta catalog) with `parsePaisa()` in [lib/money.ts](backend/src/lib/money.ts): exact decimals
+  (99.99 → 9999), formatted prices ("Rs1,500.00" → 150000), and null for anything not above zero.
 - **Brand name is config** (`PRODUCT_NAME`). Never hardcode a brand name in new code. Buyer-facing text
   uses the merchant's own `merchants.business_name`, not the platform name.
 - **Every `ReplySpec` kind needs a deterministic Roman-Urdu fallback** in `fallbackText()` — it is what

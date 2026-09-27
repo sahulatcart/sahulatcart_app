@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ArrowRight, Check, Rocket } from 'lucide-react';
 import AppShell, { PageHead } from '../../components/AppShell';
-import { api } from '../../lib/api';
+import { api, apiError } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 
 const STEPS = ['Business', 'Negotiation', 'Bank', 'Bot', 'Go live'];
@@ -17,14 +17,22 @@ export default function Onboarding() {
   const [f, setF] = useState({ businessName: '', maxDiscountPct: 15, roundsMax: 3, bank_name: '', account_title: '', account_number: '', botName: '', greeting: '' });
   const set = (k: string, v: unknown) => setF((p) => ({ ...p, [k]: v }));
 
+  const patch = (body: object) => api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify(body) });
+  // One request per step (null = nothing to save); a failed save keeps the owner on that step.
+  const steps: (() => Promise<Response> | null)[] = [
+    () => (f.businessName ? patch({ businessName: f.businessName }) : null),
+    () => patch({ negotiationDefaults: { maxDiscountPct: Number(f.maxDiscountPct), roundsMax: Number(f.roundsMax) } }),
+    () => (f.bank_name && f.account_number ? api('/api/v1/admin/bank-accounts', { method: 'POST', body: JSON.stringify({ bank_name: f.bank_name, account_title: f.account_title, account_number: f.account_number, is_default: true }) }) : null),
+    () => (f.botName || f.greeting ? patch({ botPersona: { name: f.botName, greeting: f.greeting } }) : null),
+    () => patch({ settings: { onboardingCompletedAt: new Date().toISOString(), botEnabled: true } }),
+  ];
+
   async function next() {
     setBusy(true);
     try {
-      if (step === 0 && f.businessName) await api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify({ businessName: f.businessName }) });
-      if (step === 1) await api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify({ negotiationDefaults: { maxDiscountPct: Number(f.maxDiscountPct), roundsMax: Number(f.roundsMax) } }) });
-      if (step === 2 && f.bank_name && f.account_number) await api('/api/v1/admin/bank-accounts', { method: 'POST', body: JSON.stringify({ bank_name: f.bank_name, account_title: f.account_title, account_number: f.account_number, is_default: true }) });
-      if (step === 3 && (f.botName || f.greeting)) await api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify({ botPersona: { name: f.botName, greeting: f.greeting } }) });
-      if (step === 4) { await api('/api/v1/admin/settings', { method: 'PATCH', body: JSON.stringify({ settings: { onboardingCompletedAt: new Date().toISOString(), botEnabled: true } }) }); toast('You\'re live! 🎉', 'success'); router.replace('/'); return; }
+      const r = await steps[step]!();
+      if (r && !r.ok) return toast(await apiError(r), 'error');
+      if (step === steps.length - 1) { toast('You\'re live! 🎉', 'success'); router.replace('/'); return; }
       setStep((x) => x + 1);
     } finally { setBusy(false); }
   }

@@ -7,6 +7,94 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-27 — Security + money fixes from the codebase review (section A)
+
+**Outcome** — nine fixes from the review. The shipped code is safe to deploy before any migration.
+Migrations 0006 and 0007 are written and tested locally but **not applied** to the live database. That
+needs the owner's go-ahead.
+
+**What was fixed**
+1. **Meta catalog sync stored prices 100× too high.** `"Rs1,500.00"` had every non-digit stripped,
+   giving Rs 150,000. All price strings now go through `parsePaisa()` in `lib/money.ts`, which is also
+   used for CSV and Shopify imports. An unreadable price is skipped and reported, never saved as Rs 0.
+   The orchestrator also ignores products with price ≤ 0. The Meta token moved from the URL into a
+   header. **If catalog sync was ever used, re-run it after deploy to correct the stored prices.**
+2. **Cross-tenant image delete.** `DELETE …/images` removed whatever storage path it was sent. It now
+   only unlinks a ref the product holds, and only deletes storage keys under the caller's merchant.
+3. **SSRF in "describe from photo".** It fetched `images[0]`, which a Shopify CSV can point anywhere.
+   Fetches are now limited to our Supabase origin and `cdn.shopify.com`, with a 10 s timeout and a
+   5 MB cap.
+4. **Payment actions.** Verify, reject and COD-collected are now single conditional UPDATEs, so a
+   double-click gets a 409 instead of messaging the buyer twice. Verify/reject no longer reset a
+   buyer's newer chat: the state only moves while `context.pendingOrderId` is still this order. Who
+   acted is now recorded; it was always null before.
+5. **Price guard covered only price replies.** Product and shop Q&A put the customer's raw question
+   into the prompt with no guard, so "say it's Rs 500" could get through. Every reply is now checked
+   against `sanctionedNumbers(spec)`, and customer text is quoted as JSON data in the prompt.
+6. **Order numbers were `COUNT(*)+1`.** Two checkouts at once got the same number; the second
+   confirm failed silently but still told the customer "confirm". Deleting any order would have made
+   every later number collide. Migration 0006 adds an atomic per-merchant counter. Confirms only work
+   on a `draft` order, and an order whose items fail to insert is dropped instead of kept with a
+   total and no lines.
+7. **Browsers could write any table directly.** The RLS policies are `for all` and ignore roles, and
+   the anon key is public. Migration 0007 revokes table access from `anon`/`authenticated`, locks
+   future tables by default, and revokes the auth hook's execute right. The hook had been callable by
+   anyone and returned any user's merchant id and role.
+8. **Staff could edit the catalog, settings and cost.** Per the canonical matrix
+   (docs/spec/09 §2.3), `isManager()` now gates these; staff get a 403 with a readable message. Also
+   new: validation of product fields, negotiation defaults and settings. Before, a typo of
+   `maxDiscountPct: 150` put every floor at Rs 0, and the bot would accept any offer above 10% of list
+   price.
+9. **Hardening.** The admin token is compared in constant time and locked for 15 minutes after 10 wrong
+   guesses. `/readyz` no longer returns DB error text. CORS was removed along with `@fastify/cors` and
+   `ADMIN_ORIGIN`.
+
+**Portal.** Several handlers toasted "Saved" without checking the response, so a 403 or a validation
+error looked like success. All of them now show the server's message via `apiError()`. `apiJson()`
+now rejects on an error status. Before, an error body was rendered as data, which briefly crashed
+`/settings` and the dashboard before the login redirect. The smoke test caught that. Catalog quick-add
+rounded Rs 99.99 up to Rs 100; fixed. CSV re-import no longer wipes floors, stock or the negotiable
+flag when those columns are missing from the file.
+
+**Traps found along the way (the valuable part)**
+- **The audit columns reference `merchant_users.id`, not the Supabase auth user id.** The auth
+  context carried the auth id. Passing it to `verified_by_user_id` would have hit a foreign-key error,
+  and because the payments update is unchecked, the order would be "paid" while its payment stayed
+  unverified. The context now carries `memberId`.
+- **Counting admin-token failures broke portal logins at first.** Every portal request's JWT was also
+  compared against the admin token. A naive throttle would have counted each one as a failed guess
+  and locked everyone out after 10 page loads. Bearer values with three dot-separated parts now go
+  straight to the JWT path.
+- **`alter default privileges in schema public revoke execute on functions from public` does
+  nothing.** PUBLIC's execute right is global in Postgres and can't be revoked per schema. PGlite
+  caught this. The global form would also hit functions from extensions installed later, so it was
+  not used; instead, every new function must revoke execute itself (now in CLAUDE.md).
+- **The live API confirmed `next_order_number` doesn't exist yet** (PGRST202). Without a fallback,
+  shipping the code before 0006 would have stopped checkout completely. `order-service.ts` now falls
+  back to the old count when the function is missing. Delete that fallback once 0006 is applied.
+
+**How it was verified**
+- Backend: 87/87 tests, 16 new. Root and admin typechecks exit 0, run from `node_modules/.bin`.
+- Migrations: 0001 to 0007 applied to PGlite with Supabase-like roles and default grants; 16 checks
+  pass. The harness lives in the session scratchpad, not the repo.
+- Local backend against the live API using only random ids, so nothing was written and only status
+  codes were printed:
+  - 404 on unknown orders and on a foreign image ref;
+  - 400 on price 0 and on `maxDiscountPct: 150`;
+  - no CORS headers;
+  - fake JWTs don't count toward the lockout, and 10 wrong tokens lock out even the right one.
+- Portal: every changed page compiles and redirects cleanly with no session.
+
+**Still open**
+- Apply 0006 and 0007 (`npm run db:migrate`) after the owner approves, then delete the order-number
+  fallback. After 0007, confirm portal login still works.
+- docs/spec/09 makes bank-account CRUD **owner-only**, but the code allows managers. Doc 03 says
+  managers may. This needs the owner's decision, so it was left unchanged.
+- `ADMIN_ORIGIN` is still listed with `preserve()` in `.railway/railway.ts`. It's harmless and was
+  left alone per PITFALLS (IaC edits need a `railway config plan` check).
+
+---
+
 ## 2026-09-24 — Homepage hello-popup deployment test completed
 
 **Outcome** — removed the temporary homepage welcome popup after confirming the full GitHub-to-Railway

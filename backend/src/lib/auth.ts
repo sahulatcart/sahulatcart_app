@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { loadConfig } from '../config';
 import { getAnonClient, getServiceClient } from './supabase';
@@ -6,7 +7,7 @@ export type Role = 'owner' | 'manager' | 'staff';
 export interface MerchantCtx {
   merchantId: string;
   role: Role;
-  userId?: string;
+  memberId?: string; // merchant_users.id — what the *_by_user_id audit columns reference
   isPlatformAdmin: boolean;
 }
 
@@ -33,48 +34,68 @@ export async function defaultMerchantId(): Promise<string | undefined> {
   return defaultMerchantCache;
 }
 
+// Brute-force brake on the shared admin token: after 10 wrong guesses, every admin-token
+// attempt (right or wrong) is refused until the 15-minute window rolls over. Portal
+// logins use Supabase JWTs and are unaffected.
+const MAX_FAILS = 10;
+const FAIL_WINDOW_MS = 15 * 60_000;
+let fails = { n: 0, since: 0 };
+const sha256 = (s: string): Buffer => crypto.createHash('sha256').update(s).digest();
+
+/** Constant-time check against ADMIN_API_TOKEN (hashing equalises lengths for timingSafeEqual). */
+export function isAdminToken(tok: unknown): boolean {
+  const want = loadConfig().ADMIN_API_TOKEN;
+  if (!want || typeof tok !== 'string' || !tok) return false;
+  if (Date.now() - fails.since > FAIL_WINDOW_MS) fails = { n: 0, since: Date.now() };
+  if (fails.n >= MAX_FAILS) return false;
+  const ok = crypto.timingSafeEqual(sha256(tok), sha256(want));
+  if (!ok) fails.n++;
+  return ok;
+}
+
+async function adminCtx(): Promise<MerchantCtx | null> {
+  const mid = await defaultMerchantId();
+  return mid ? { merchantId: mid, role: 'owner', isPlatformAdmin: true } : null;
+}
+
+async function jwtCtx(token: string): Promise<MerchantCtx | null> {
+  const { data, error } = await getAnonClient().auth.getUser(token);
+  if (error || !data.user) return null;
+  const mu = await getServiceClient()
+    .from('merchant_users')
+    .select('id, merchant_id, role')
+    .eq('auth_user_id', data.user.id)
+    .eq('is_active', true)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!mu.data) return null;
+  return { merchantId: mu.data.merchant_id as string, role: mu.data.role as Role, memberId: mu.data.id as string, isPlatformAdmin: false };
+}
+
 /**
  * Resolve the caller's merchant context (DUAL AUTH):
  *  (a) Authorization: Bearer <supabase-jwt> → verified user → their merchant_users membership.
- *  (b) x-admin-token == ADMIN_API_TOKEN     → platform-admin, scoped to the default merchant (pilot fallback).
+ *  (b) ADMIN_API_TOKEN as the Bearer value or x-admin-token → platform-admin, scoped to the
+ *      default merchant (pilot fallback).
  * merchant_id is ALWAYS derived here — never taken from client input.
  */
 export async function resolveCtx(req: FastifyRequest): Promise<MerchantCtx | null> {
-  const cfg = loadConfig();
   const authz = req.headers.authorization;
-  if (authz?.startsWith('Bearer ')) {
-    const token = authz.slice(7).trim();
-    // Not the admin token masquerading as a bearer — treat real JWTs only.
-    if (cfg.ADMIN_API_TOKEN && token === cfg.ADMIN_API_TOKEN) {
-      const mid = await defaultMerchantId();
-      return mid ? { merchantId: mid, role: 'owner', isPlatformAdmin: true } : null;
-    }
-    const { data, error } = await getAnonClient().auth.getUser(token);
-    if (error || !data.user) return null;
-    const mu = await getServiceClient()
-      .from('merchant_users')
-      .select('merchant_id, role')
-      .eq('auth_user_id', data.user.id)
-      .eq('is_active', true)
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (!mu.data) return null;
-    return { merchantId: mu.data.merchant_id as string, role: mu.data.role as Role, userId: data.user.id, isPlatformAdmin: false };
-  }
-  const tok = req.headers['x-admin-token'];
-  if (cfg.ADMIN_API_TOKEN && typeof tok === 'string' && tok === cfg.ADMIN_API_TOKEN) {
-    const mid = await defaultMerchantId();
-    return mid ? { merchantId: mid, role: 'owner', isPlatformAdmin: true } : null;
-  }
-  return null;
+  const bearer = authz?.startsWith('Bearer ') ? authz.slice(7).trim() : null;
+  // A JWT has three dot-separated parts; any other bearer value is an admin-token attempt.
+  if (bearer && bearer.split('.').length === 3) return jwtCtx(bearer);
+  return isAdminToken(bearer ?? req.headers['x-admin-token']) ? adminCtx() : null;
 }
 
-/** True if the role may take money-sensitive actions (verify/reject payments, edit bank accounts, see cost). */
-export function canManagePayments(ctx: MerchantCtx): boolean {
+/**
+ * Owner, manager or platform admin (docs/spec/09 §2.3). Gates everything staff may not do:
+ * verify/reject payments, bank accounts, catalog and settings writes, and reading `cost`.
+ */
+export function isManager(ctx: MerchantCtx): boolean {
   return ctx.isPlatformAdmin || ctx.role === 'owner' || ctx.role === 'manager';
 }
 
 export function forbid(reply: FastifyReply): void {
-  reply.code(403).send({ error: { code: 'FORBIDDEN', message: 'not allowed for your role' } });
+  reply.code(403).send({ error: { code: 'FORBIDDEN', message: 'Only an owner or manager can do this' } });
 }

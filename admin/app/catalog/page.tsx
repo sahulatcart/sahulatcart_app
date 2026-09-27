@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Download, FileUp, Plus, RefreshCw } from 'lucide-react';
 import AppShell, { PageHead } from '../../components/AppShell';
-import { api, apiJson } from '../../lib/api';
+import { api, apiError, apiJson } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 
 interface P { id: string; name: string; price: number; stock: number | null; is_active: boolean; negotiable: boolean; max_discount_pct: number | null; min_price: number | null; thumbnailUrl?: string | null }
@@ -20,22 +20,29 @@ export default function Catalog() {
   const edit = (id: string, patch: Partial<P>) => setProducts((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   async function save(p: P) {
     setSaving(p.id);
-    await api(`/api/v1/admin/products/${p.id}`, { method: 'PATCH', body: JSON.stringify({ price: p.price, stock: p.stock, is_active: p.is_active, negotiable: p.negotiable, max_discount_pct: p.max_discount_pct, min_price: p.min_price }) });
-    setSaving(null); toast('Saved', 'success');
+    const r = await api(`/api/v1/admin/products/${p.id}`, { method: 'PATCH', body: JSON.stringify({ price: p.price, stock: p.stock, is_active: p.is_active, negotiable: p.negotiable, max_discount_pct: p.max_discount_pct, min_price: p.min_price }) });
+    setSaving(null);
+    if (r.ok) toast('Saved', 'success'); else toast(await apiError(r), 'error');
   }
   async function add() {
     if (!adding.name || !adding.price) return;
-    await api('/api/v1/admin/products', { method: 'POST', body: JSON.stringify({ name: adding.name, price: Math.round(Number(adding.price)) * 100, stock: adding.stock ? Number(adding.stock) : null, track_stock: !!adding.stock, negotiable: true, is_active: true }) });
+    const r = await api('/api/v1/admin/products', { method: 'POST', body: JSON.stringify({ name: adding.name, price: Math.round(Number(adding.price) * 100), stock: adding.stock ? Number(adding.stock) : null, track_stock: !!adding.stock, negotiable: true, is_active: true }) });
+    if (!r.ok) return toast(await apiError(r), 'error');
     setAdding({ name: '', price: '', stock: '' }); toast('Product added', 'success'); load();
   }
   async function importCsv(file: File) {
-    const r = await apiJson<{ imported: number; errors: string[]; total: number }>('/api/v1/admin/products/import', { method: 'POST', body: JSON.stringify({ csv: await file.text() }) });
+    const res = await api('/api/v1/admin/products/import', { method: 'POST', body: JSON.stringify({ csv: await file.text() }) });
+    if (!res.ok) return toast(await apiError(res), 'error');
+    const r = (await res.json()) as { imported: number; errors: string[]; total: number };
     toast(`Imported ${r.imported}/${r.total}${r.errors.length ? ` · ${r.errors.length} errors` : ''}`, r.errors.length ? 'error' : 'success');
     load();
   }
   async function metaSync() {
-    const r = await apiJson<{ synced: number; message?: string }>('/api/v1/admin/products/catalog-sync', { method: 'POST' });
-    toast(r.message ? r.message : `Synced ${r.synced} products from Meta`, r.message ? 'info' : 'success');
+    const res = await api('/api/v1/admin/products/catalog-sync', { method: 'POST' });
+    if (!res.ok) return toast(await apiError(res), 'error');
+    const r = (await res.json()) as { synced: number; skipped?: number; message?: string };
+    const skipped = r.skipped ? ` · ${r.skipped} skipped (no readable price)` : '';
+    toast(r.message ?? `Synced ${r.synced} products from Meta${skipped}`, r.message ? 'info' : 'success');
     load();
   }
   const template = 'data:text/csv;charset=utf-8,' + encodeURIComponent('name,price,stock,negotiable,max_discount_pct,min_price,sku,description\nT-Shirt,2500,50,yes,20,,TSHIRT,Cotton tee\nMug,800,100,no,,,MUG,');
