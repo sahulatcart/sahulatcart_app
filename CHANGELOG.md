@@ -7,6 +7,91 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-27 — Reliability fixes from the codebase review (section B)
+
+**Outcome** — seven fixes to how the bot handles messages, AI outages, stock and the 24-hour window.
+Also a portal notifications page, which the other fixes turned out to depend on. This work is on
+branch `fix/review-section-b`, stacked on section A. Migration 0008 is written and tested locally but
+**not applied**; the code runs safely without it.
+
+**What was fixed**
+- **Lost messages (#10).** Meta gets its 200 before processing, so a crash or redeploy mid-message
+  lost it forever: its `webhook_events` row blocked any retry. Now:
+  - every message in a payload is claimed (with enough stored to replay it) before any is processed;
+  - each ends `processed` or `error`;
+  - a sweeper (production only) replays messages stuck in `received` for 5–60 minutes, up to 3 times;
+  - shutdown drains in-flight messages for up to 25 s.
+- **Races within one chat (#11).** Two quick messages from a buyer ran at the same time and overwrote
+  each other's conversation state. `lib/keyed-queue.ts` now runs each buyer's messages in order.
+- **The AI going down (#12).** A failed classification used to reply "Ek minute, check kar ke batata
+  hoon" and never follow up. It now hands the chat to the merchant with a notification. Address
+  extraction used to swallow AI failures, so the customer was asked for their name forever; it hands
+  off too.
+- **LLM cost (#13).** Eight procedural reply kinds now always use their Roman-Urdu template, with no
+  call (`TEMPLATE_ONLY_KINDS`). The `ComposedSpec` type keeps them from ever reaching `compose()`.
+  Their eight prompt cases were removed.
+- **24-hour window (#14, safe part).** `notifyBuyer()` doesn't attempt a send WhatsApp will refuse; it
+  notifies the merchant with the message text so they can pass it on. Any failed send does the same.
+  The inbox disables replies in that case and says why. Template sending waits for templates to be
+  approved in Meta.
+- **Stock (#15).** Stock was checked but never reduced, so the last unit could be sold to everyone.
+  Migration 0008 adds `reserve_stock` / `release_stock`: all or nothing, and idempotent through
+  `orders.stock_reserved`. A placed order reserves its items; if one sold out meanwhile, the checkout
+  is cancelled with an apology. Cancellations release the stock. The bot also refuses quantities above
+  stock ("sirf N available hain") and hands bulk requests for untracked items (over 100) to the
+  merchant. There's a new **Cancel order** action (API and a button on the order page) so an unpaid
+  bank order can't hold stock forever.
+- **Unstable product matching (#16).** The first substring match won, and the catalog query had no
+  ORDER BY, so "shirt" could mean a different product on each message. `resolveProduct()` now returns
+  every candidate when a mention is ambiguous, and the bot asks which. A name that contains the others
+  still wins ("t shirt" over "shirt"). The catalog is ordered.
+
+**The discovery that changed the plan: notifications were never shown.** The backend has always
+written notifications (new orders, payment screenshots, "bot needs help", cancellations), but the
+portal had no screen for them and the API no endpoint to read them. #12 and #14 both depend on the
+merchant seeing a notification, so this adds `GET /admin/notifications`, `POST …/read`, a
+`/notifications` page and an unread badge in the nav.
+
+**Traps and dead ends**
+- **`callGemini` swallowed its own errors.** Its `catch` caught the `LlmUnavailableError` it had just
+  thrown and retried it. An invalid key or exhausted quota took 5 attempts, with up to 20 s waits,
+  before the bot answered anything. Now a per-day 429 and any API error fail immediately.
+- **Reserve stock *after* placing the order, not before.** Reserving first means releasing when
+  placement fails. But placement also "fails" on a repeated "cod" for an order that's already placed,
+  and that release would hand back the *first* placement's stock. After the draft-only update succeeds,
+  exactly one caller reaches the reservation.
+- **The replay job only runs in production.** Local `.env` points at the live database *and* the
+  live WhatsApp token. A local sweeper would pick up real stuck messages and answer real customers
+  from a laptop.
+- **5-minute minimum age for replays.** During a Railway deploy the old container can still be
+  finishing a message. The in-flight map only protects within one process, so the age threshold is
+  what prevents two containers processing the same message.
+- **TypeScript can't narrow through an alias of two variables.** `notifyBuyer` needed its send and
+  slip kept inside one `if` block. A combined `ok` flag didn't narrow `waId` and `phoneNumberId`.
+
+**How it was verified**
+- Backend: 94/94 tests (7 new: keyed queue, ambiguity). Root and admin typechecks exit 0.
+- Migrations: PGlite with 0001–0008 applied, 26 checks, 10 of them new for stock: reserve, idempotent
+  re-reserve, all-or-nothing refusal, release, double release, and service-role-only.
+- Local backend (development), status codes only:
+  - `/readyz` 200; notifications count and list 200; cancel an unknown order 404; send to an unknown
+    conversation 404; unsigned webhook 401;
+  - no `replay` lines in the log, so the sweeper stayed off locally.
+- Portal: `/notifications`, `/inbox`, `/orders/:id` and `/settings` compile and redirect cleanly when
+  signed out, with only the expected 401s in a fresh tab.
+- Not exercised: the replay sweeper against real data. Running it locally would have processed live
+  customer messages; see the production-only rule above.
+
+**Still open**
+- Apply 0008 together with 0006 and 0007 once the owner approves.
+- Confirm `NODE_ENV=production` on the Railway backend; the replay sweeper only runs then.
+- Railway decides how long a container gets between SIGTERM and SIGKILL. If that's shorter than the
+  25 s drain, messages cut off are replayed after 5 minutes rather than finishing.
+- WhatsApp message templates (for buyers outside the 24-hour window) need creating and approving in
+  Meta by the owner.
+
+---
+
 ## 2026-09-27 — Security + money fixes from the codebase review (section A)
 
 **Outcome** — nine fixes from the review. The shipped code is safe to deploy before any migration.

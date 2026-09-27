@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **10 files, 87 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **11 files, 94 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -121,6 +121,12 @@ RLS stays on as defence in depth. Two rules follow for every new migration:
 is applied, `order-service.ts` falls back to the old racy `COUNT(*)` so checkout never stops; delete that
 fallback once 0006 is live.
 
+**Stock** (0008): a placed order (COD confirmed, or bank transfer awaiting payment) reserves its items
+with `reserve_stock()` — all or nothing, so a sold-out item cancels the checkout instead of overselling.
+Any cancellation calls `release_stock()`. Both are idempotent via `orders.stock_reserved`. Only products
+with `track_stock` and a known count are touched. Before 0008 is applied the RPC errors, is logged, and
+the order goes through untracked, as before.
+
 ## Architecture
 
 ### Inbound message pipeline
@@ -130,6 +136,18 @@ the exact raw bytes (a scoped content-type parser preserves `rawBody`), fast-ACK
 processes out of band: dedupes by `wa_message_id` via a `webhook_events` insert (the unique-constraint
 violation *is* the idempotency check), transcribes voice notes, upserts customer + conversation,
 persists the message, and calls `runOrchestrator`.
+
+Meta has its 200 before any work happens, so nothing may be lost after the ACK:
+- **Claim first.** Every message in a payload is claimed (`webhook_events` row, storing
+  `{ phoneNumberId, msg }`) before any is processed, then marked `processed` or `error`.
+- **One at a time per buyer.** [lib/keyed-queue.ts](backend/src/lib/keyed-queue.ts) `serialize()` keys on
+  merchant + sender, so a burst ("hi", "ye kitne ka?") can't race over one conversation's state. It is
+  in-process: correct while the backend runs as **one instance**; more replicas need a DB lock instead.
+- **Replay.** `startReplaySweeper()` re-runs messages left `received` for 5–60 minutes (a crash or
+  redeploy killed them), at most 3 times, then `dead_letter`. It runs **only when `NODE_ENV=production`**:
+  a local backend shares the live DB and WhatsApp token via `.env` and must never answer real customers.
+  A replay can repeat a reply that was already sent — a duplicate beats silence.
+- **Shutdown** stops taking webhooks, then waits up to 25 s for queued messages (`drainWebhooks`).
 
 Tenant routing: one backend, one webhook endpoint; inbound is routed to a merchant by looking up
 `phone_number_id` in `whatsapp_numbers`. Unknown numbers are logged and ignored.
@@ -143,6 +161,17 @@ in that are easy to break accidentally:
 
 - **Human takeover**: if `conversations.status === 'human_takeover'`, the bot stays silent — it only
   stores the message and bumps `unread_count`.
+- **AI down → hand off.** If intent classification or address extraction fails (quota, outage, bad key),
+  the chat goes to `handoff()` with a "Bot needs help" notification. Never promise a follow-up the bot
+  can't deliver, and never re-ask for an address it can't read.
+- **Template-only replies.** `TEMPLATE_ONLY_KINDS` in [llm/types.ts](backend/src/llm/types.ts) are
+  procedural lines (ask for address, send screenshot, handoff, clarify, …) that always use
+  `fallbackText()` — no LLM call. A new reply kind that says the same thing every time belongs there.
+- **Ambiguous products.** `resolveProduct()` returns *several* candidates when a mention fits more than
+  one product ("shirt" → T-Shirt, Dress Shirt); the bot keeps the active one if it is among them, else
+  asks which. It never picks arbitrarily. The catalog query is ordered, so results are stable.
+- **Stock and bulk.** A quantity above tracked stock gets "sirf N available hain"; above 100 of an
+  untracked item goes to the merchant as a bulk request.
 - **Order-flow states skip intent classification** (`collecting_delivery`, `selecting_payment`,
   `awaiting_payment_proof`) to cut LLM calls, but each still routes through `handleEscape()` first so
   cancel and human-handoff always work — otherwise customers get trapped in "send your address" loops.
@@ -217,6 +246,12 @@ discriminated union of ~20 reply kinds) and only phrases it.
   in `Asia/Karachi`). `apiJson()` **rejects** on an error status; for `api()` calls, show failures with
   `toast(await apiError(r), 'error')` — never toast "Saved" without checking `r.ok`.
 - The backend registers **no CORS** on purpose: nothing calls it from a browser on another origin.
+- **Notifications** (new orders, payment claims, handoffs, failed buyer messages) are listed at
+  `/notifications`, with an unread badge in the nav. Before this the backend wrote them and nothing ever
+  read them — anything meant for the merchant needs a notification *and* this page to be seen.
+- **WhatsApp's 24-hour window.** Free-form messages to a buyer who last wrote over 24h ago are refused
+  unless they use an approved template, and none exist yet. `notifyBuyer()` doesn't attempt them; it
+  notifies the merchant to reach the buyer another way. The inbox disables replies and says why.
 
 **There is no default merchant password.** `db/seed.mjs` creates the merchant row but no auth user.
 Logins are created invite-only via `POST /api/v1/admin/merchants`, which calls
@@ -386,9 +421,9 @@ DNS TXT is the only verification method those support, so there is no backup met
   picks the change up. **Read the build log before changing anything** — see
   [docs/PITFALLS.md](docs/PITFALLS.md).
 - **Gemini free tier is 20 requests per DAY**, not per minute — the quota id is
-  `GenerateRequestsPerDayPerProjectPerModel-FreeTier`. Once exhausted the bot silently falls back to
-  `fallbackText()` templates, which looks exactly like the bot being broken. The client honors 429
-  `RetryInfo` delays.
+  `GenerateRequestsPerDayPerProjectPerModel-FreeTier`. Once exhausted, replies fall back to
+  `fallbackText()` templates and every new chat is handed to the merchant (see "AI down → hand off").
+  The client fails fast on a per-day 429 and on API errors, and honors `RetryInfo` delays otherwise.
 - **The free tier also breaches Meta's terms.** Google's free tier uses submitted content to improve
   its models and human reviewers may read it; the WhatsApp Business Solution Terms forbid Business
   Solution Data being used to train or improve any ML/AI system. **Billing must be enabled** — it

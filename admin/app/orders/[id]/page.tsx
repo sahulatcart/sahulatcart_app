@@ -24,7 +24,7 @@ export default function OrderDetail() {
 
   async function act(path: string, body?: object, msg?: string) {
     setBusy(true);
-    const r = await api(`/api/v1/admin/orders/${id}/payment/${path}`, { method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}) });
+    const r = await api(`/api/v1/admin/orders/${id}/${path}`, { method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}) });
     setBusy(false);
     if (r.ok) toast(msg || 'Done', 'success'); else toast(await apiError(r), 'error');
     load();
@@ -37,11 +37,13 @@ export default function OrderDetail() {
   if (!d) return <AppShell><div className="card pad"><div className="skeleton" style={{ height: 200 }} /></div></AppShell>;
   const o = d.order;
   const claimed = o.payment_status === 'claimed';
+  const cancellable = ['draft', 'confirmed', 'awaiting_payment', 'preparing'].includes(o.status);
+  const cancel = () => confirm('Cancel this order? Its items go back into stock and the buyer is told on WhatsApp.') && act('cancel', undefined, 'Order cancelled');
 
   return (
     <AppShell>
       <Link href="/orders" className="hint" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginBottom: 10 }}><ArrowLeft size={15} /> Orders</Link>
-      <PageHead title={`Order ${o.order_number}`} sub={`Placed ${dt(o.placed_at ?? o.created_at, true)} (PKT)`} action={<PaymentPill status={o.payment_status} />} />
+      <PageHead title={`Order ${o.order_number}`} sub={`Placed ${dt(o.placed_at ?? o.created_at, true)} (PKT) · ${o.status.replace('_', ' ')}`} action={<PaymentPill status={o.payment_status} />} />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16, alignItems: 'start' }}>
         <div>
@@ -82,15 +84,16 @@ export default function OrderDetail() {
               <div style={{ display: 'grid', gap: 8 }}>
                 <button className="btn ghost" onClick={viewShot}><ImageIcon /> View screenshot</button>
                 <div className="row">
-                  <button className="btn" disabled={!claimed || busy} onClick={() => act('verify', undefined, 'Payment verified')}><Check /> Verify</button>
-                  <button className="btn danger" disabled={!claimed || busy} onClick={() => act('reject', { reason: 'screenshot not valid' }, 'Payment rejected')}><X /> Reject</button>
+                  <button className="btn" disabled={!claimed || busy} onClick={() => act('payment/verify', undefined, 'Payment verified')}><Check /> Verify</button>
+                  <button className="btn danger" disabled={!claimed || busy} onClick={() => act('payment/reject', { reason: 'screenshot not valid' }, 'Payment rejected')}><X /> Reject</button>
                 </div>
                 {!claimed && <div className="hint">No claim to review yet.</div>}
               </div>
             )}
             {o.payment_method === 'cod' && (
-              <button className="btn" disabled={o.payment_status === 'cod_collected' || busy} onClick={() => act('cod-collected', undefined, 'Marked collected')}><Check /> Mark cash collected</button>
+              <button className="btn" disabled={o.payment_status === 'cod_collected' || busy} onClick={() => act('payment/cod-collected', undefined, 'Marked collected')}><Check /> Mark cash collected</button>
             )}
+            {cancellable && <button className="btn ghost" style={{ marginTop: 10, width: '100%' }} disabled={busy} onClick={cancel}><X /> Cancel order</button>}
           </div>
         </div>
       </div>

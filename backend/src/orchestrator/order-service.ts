@@ -27,6 +27,8 @@ interface OrderRow {
   created_at: string;
 }
 type Placed = { orderNumber: string; total: number; slip: string; slipKey: string | null };
+/** Placement failed because a tracked item sold out between the deal and checkout. */
+export const OUT_OF_STOCK = 'out_of_stock' as const;
 
 async function nextOrderNumber(db: SupabaseClient, merchantId: string): Promise<string | null> {
   const { data, error } = await db.rpc('next_order_number', { p_merchant: merchantId });
@@ -43,8 +45,10 @@ async function nextOrderNumber(db: SupabaseClient, merchantId: string): Promise<
  * Promote a DRAFT order to a placed one. The number comes from an atomic per-merchant
  * counter (db/migrations/0006), and the `status = 'draft'` filter makes this idempotent:
  * a repeated "cod", or a draft that was cancelled meanwhile, updates nothing → null.
+ * The order's items then leave stock (0008), all or nothing; if one sold out meanwhile the
+ * order is cancelled again and OUT_OF_STOCK returned.
  */
-async function placeDraft(db: SupabaseClient, merchantId: string, orderId: string, set: Record<string, string>): Promise<OrderRow | null> {
+async function placeDraft(db: SupabaseClient, merchantId: string, orderId: string, set: Record<string, string>): Promise<OrderRow | typeof OUT_OF_STOCK | null> {
   const orderNumber = await nextOrderNumber(db, merchantId);
   if (!orderNumber) return null;
   const { data, error } = await db
@@ -54,7 +58,17 @@ async function placeDraft(db: SupabaseClient, merchantId: string, orderId: strin
     .select('*')
     .maybeSingle();
   if (error) logger.error({ err: error.message, orderId }, 'order placement failed');
-  return (data as OrderRow | null) ?? null;
+  if (!data) return null;
+  const stock = await db.rpc('reserve_stock', { p_order: orderId });
+  if (stock.error) logger.error({ err: stock.error.message, orderId }, 'stock reservation failed — order kept'); // e.g. 0008 not applied
+  if (stock.data === false) {
+    await Promise.all([
+      db.from('orders').update({ status: 'cancelled', cancelled_reason: 'out of stock at checkout' }).eq('id', orderId),
+      db.from('order_status_history').insert({ order_id: orderId, from_status: set.status, to_status: 'cancelled', changed_by: 'bot', note: 'out of stock at checkout' }),
+    ]);
+    return OUT_OF_STOCK;
+  }
+  return data as OrderRow;
 }
 
 /**
@@ -163,9 +177,9 @@ export function buildSlipText(o: SlipData): string {
 }
 
 /** Confirm a draft order as COD: number, status, payments row, slip, notification. */
-export async function confirmCodOrder(db: SupabaseClient, ctx: { merchantId: string }, orderId: string, businessName: string): Promise<Placed | null> {
+export async function confirmCodOrder(db: SupabaseClient, ctx: { merchantId: string }, orderId: string, businessName: string): Promise<Placed | typeof OUT_OF_STOCK | null> {
   const order = await placeDraft(db, ctx.merchantId, orderId, { status: 'confirmed', payment_method: 'cod', payment_status: 'cod_pending' });
-  if (!order) return null;
+  if (!order || order === OUT_OF_STOCK) return order;
   await Promise.all([
     db.from('payments').insert({ order_id: orderId, merchant_id: ctx.merchantId, method: 'cod', amount: order.total, status: 'cod_pending' }),
     db.from('order_status_history').insert({ order_id: orderId, from_status: 'draft', to_status: 'confirmed', changed_by: 'bot' }),
@@ -181,9 +195,9 @@ export async function confirmBankOrder(
   orderId: string,
   bankAccountId: string,
   businessName: string
-): Promise<{ orderNumber: string; total: number; paymentId: string } | null> {
+): Promise<{ orderNumber: string; total: number; paymentId: string } | typeof OUT_OF_STOCK | null> {
   const order = await placeDraft(db, ctx.merchantId, orderId, { status: 'awaiting_payment', payment_method: 'bank_transfer', payment_status: 'unpaid' });
-  if (!order) return null;
+  if (!order || order === OUT_OF_STOCK) return order;
   const [pay] = await Promise.all([
     db.from('payments').insert({ order_id: orderId, merchant_id: ctx.merchantId, method: 'bank_transfer', amount: order.total, status: 'unpaid', bank_account_id: bankAccountId }).select('id').single(),
     db.from('order_status_history').insert({ order_id: orderId, from_status: 'draft', to_status: 'awaiting_payment', changed_by: 'bot' }),

@@ -6,10 +6,10 @@ import {
   type ClassifyContext,
   type Classification,
   type ComposeContext,
+  type ComposedSpec,
   type DeliveryDetails,
   type LlmClient,
   LlmUnavailableError,
-  type ReplySpec,
 } from './types';
 
 const BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -42,6 +42,8 @@ async function callGemini(
         let waitMs = 500 * (attempt + 1);
         if (res.status === 429) {
           const j = (await res.json().catch(() => null)) as { error?: { details?: { '@type'?: string; retryDelay?: string }[] } } | null;
+          // A per-DAY quota (quotaId "…PerDay…") won't reset for hours: fail now instead of waiting ~100s.
+          if (JSON.stringify(j?.error?.details ?? []).includes('PerDay')) throw new LlmUnavailableError('Gemini daily quota exhausted');
           const rd = j?.error?.details?.find((d) => (d['@type'] ?? '').includes('RetryInfo'))?.retryDelay;
           if (rd) waitMs = Math.min(parseFloat(rd) * 1000 + 500, 20000);
         }
@@ -58,6 +60,7 @@ async function callGemini(
       }
       return text;
     } catch (e) {
+      if (e instanceof LlmUnavailableError) throw e; // an API error (bad key, quota) won't fix itself on retry
       lastErr = e instanceof Error ? e.message : String(e);
       await sleep(300 * (attempt + 1));
     }
@@ -135,25 +138,25 @@ export class GeminiClient implements LlmClient {
     };
   }
 
+  /** Throws LlmUnavailableError when the AI is down, so the caller can hand off instead of re-asking forever. */
   async extractDelivery(text: string): Promise<DeliveryDetails> {
-    const empty: DeliveryDetails = { name: null, address: null, area: null, city: null, phone: null };
+    const raw = await callGemini({
+      contents: [{ parts: [{ text:
+        `Extract delivery details from this Pakistani customer's WhatsApp message. ` +
+        `Return name (person's name), address (house/street), area (locality/mohalla), city, phone if present, else null. ` +
+        `Message: "${text.replace(/"/g, "'")}"` }] }],
+      generationConfig: { temperature: 0, maxOutputTokens: 200, responseMimeType: 'application/json', responseSchema: DELIVERY_SCHEMA, ...NO_THINKING },
+    });
     try {
-      const raw = await callGemini({
-        contents: [{ parts: [{ text:
-          `Extract delivery details from this Pakistani customer's WhatsApp message. ` +
-          `Return name (person's name), address (house/street), area (locality/mohalla), city, phone if present, else null. ` +
-          `Message: "${text.replace(/"/g, "'")}"` }] }],
-        generationConfig: { temperature: 0, maxOutputTokens: 200, responseMimeType: 'application/json', responseSchema: DELIVERY_SCHEMA, ...NO_THINKING },
-      });
       const p = JSON.parse(raw) as Record<string, unknown>;
       const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
       return { name: str(p.name), address: str(p.address), area: str(p.area), city: str(p.city), phone: str(p.phone) };
     } catch {
-      return empty;
+      return { name: null, address: null, area: null, city: null, phone: null }; // unparseable → ask again
     }
   }
 
-  async compose(spec: ReplySpec, ctx: ComposeContext): Promise<string> {
+  async compose(spec: ComposedSpec, ctx: ComposeContext): Promise<string> {
     const prompt = replySpecToPrompt(spec, ctx);
     const raw = await callGemini({
       contents: [{ parts: [{ text: prompt }] }],

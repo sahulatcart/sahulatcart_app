@@ -2,15 +2,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MessagesSquare, Send, User, Undo2 } from 'lucide-react';
 import AppShell, { PageHead } from '../../components/AppShell';
-import { api, apiJson } from '../../lib/api';
+import { api, apiError, apiJson } from '../../lib/api';
+import { useToast } from '../../components/Toast';
 
 interface Convo { id: string; status: string; current_state: string; last_message_at: string; unread_count: number; customers: { name: string | null; wa_id: string } | null }
 interface Msg { direction: string; sender: string; body: string; status: string; created_at: string }
-interface Detail { conversation: { id: string; status: string; customers: { name: string | null; wa_id: string } | null }; messages: Msg[] }
+interface Detail { conversation: { id: string; status: string; window_expires_at: string | null; customers: { name: string | null; wa_id: string } | null }; messages: Msg[] }
 
 const initials = (s: string) => (s || '?').trim().slice(0, 1).toUpperCase();
 
 export default function Inbox() {
+  const toast = useToast();
   const [convos, setConvos] = useState<Convo[]>([]);
   const [sel, setSel] = useState<string | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -28,11 +30,17 @@ export default function Inbox() {
   async function act(path: string, body?: object) {
     if (!sel) return;
     setBusy(true);
-    await api(`/api/v1/admin/conversations/${sel}/${path}`, { method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}) });
+    const r = await api(`/api/v1/admin/conversations/${sel}/${path}`, { method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}) });
     setBusy(false); loadDetail(sel); loadConvos();
+    if (!r.ok) toast(await apiError(r), 'error');
+    return r.ok;
   }
-  async function send() { if (!text.trim()) return; const t = text; setText(''); await act('send', { text: t }); }
+  async function send() { if (!text.trim()) return; const t = text; setText(''); if (!(await act('send', { text: t }))) setText(t); }
   const takenOver = detail?.conversation.status === 'human_takeover';
+  // WhatsApp refuses free-form replies 24h after the buyer's last message.
+  const expires = detail?.conversation.window_expires_at;
+  const windowClosed = !!expires && new Date(expires).getTime() <= Date.now();
+  const canType = takenOver && !windowClosed;
 
   return (
     <AppShell>
@@ -80,8 +88,8 @@ export default function Inbox() {
                 })}
               </div>
               <div className="row" style={{ padding: 12, borderTop: '1px solid var(--border)', gap: 8 }}>
-                <input style={{ flex: 1 }} placeholder={takenOver ? 'Type a reply…' : 'Take over to reply as a human'} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} disabled={!takenOver} />
-                <button className="btn" onClick={send} disabled={!takenOver || !text.trim()}><Send /></button>
+                <input style={{ flex: 1 }} placeholder={windowClosed ? 'Buyer last wrote 24h+ ago — WhatsApp blocks replies until they message again' : takenOver ? 'Type a reply…' : 'Take over to reply as a human'} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} disabled={!canType} />
+                <button className="btn" onClick={send} disabled={!canType || !text.trim()}><Send /></button>
               </div>
             </>
           )}

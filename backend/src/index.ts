@@ -1,6 +1,7 @@
 import { loadConfig } from './config';
 import { logger } from './lib/logger';
 import { buildServer } from './server';
+import { drainWebhooks, startReplaySweeper } from './whatsapp/webhook';
 
 async function main(): Promise<void> {
   const cfg = loadConfig(); // fail-fast env validation
@@ -14,10 +15,16 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Only production replays stuck messages: a local backend shares the live database and
+  // WhatsApp token through .env, and must never answer real customers.
+  if (cfg.NODE_ENV === 'production') startReplaySweeper();
+
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
-    process.on(sig, () => {
+    process.once(sig, async () => {
       logger.info(`${sig} received, shutting down`);
-      app.close().then(() => process.exit(0));
+      await app.close(); // stop taking webhooks
+      await drainWebhooks(25_000); // let queued messages finish; anything cut off is replayed after restart
+      process.exit(0);
     });
   }
 }
