@@ -184,6 +184,20 @@ describe('floor / margin / bulk (§10.2)', () => {
     expect(computeFloor(p, baseDefaults(), 60)).toBe(rs(2700));
   });
 
+  // Review #17: the tiers live in merchants.negotiation_defaults (doc 02), but the engine only
+  // read product.bulkTiers — which nothing ever sets — so bulk discounts never applied.
+  it('merchant-wide bulk tiers apply when the product has none', () => {
+    const tiers = [{ minQty: 10, extraDiscountPct: 5 }, { minQty: 50, extraDiscountPct: 10 }];
+    const p = product({ price: rs(3000), maxDiscountPct: 5 });
+    expect(computeFloor(p, { ...baseDefaults(), bulkTiers: tiers }, 60)).toBe(rs(2550));
+    expect(computeFloor(p, { ...baseDefaults(), bulkTiers: tiers }, 1)).toBe(rs(2850));
+  });
+
+  it("a product's own bulk tiers override the merchant's", () => {
+    const p = product({ price: rs(3000), maxDiscountPct: 5, bulkTiers: [{ minQty: 10, extraDiscountPct: 1 }] });
+    expect(computeFloor(p, { ...baseDefaults(), bulkTiers: [{ minQty: 10, extraDiscountPct: 10 }] }, 12)).toBe(rs(2820));
+  });
+
   it('#19 rounding never breaks the floor', () => {
     const f = computeFloor(product({ price: 99900, maxDiscountPct: 33, minPrice: null }), baseDefaults(), 1);
     expect(f).toBe(66900); // Rs.669

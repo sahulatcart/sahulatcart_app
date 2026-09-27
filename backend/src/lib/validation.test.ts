@@ -33,6 +33,13 @@ describe('invalidNegotiationField', () => {
     expect(invalidNegotiationField({ concessionSteps: [0.5, 2] })).toBe('concessionSteps');
     expect(invalidNegotiationField({ concessionSteps: [] })).toBe('concessionSteps');
   });
+  it('checks stalemate action and bulk tiers', () => {
+    expect(invalidNegotiationField({ stalemateAction: 'hold_and_close', bulkTiers: [{ minQty: 10, extraDiscountPct: 5 }] })).toBeNull();
+    expect(invalidNegotiationField({ bulkTiers: [] })).toBeNull(); // clears them
+    expect(invalidNegotiationField({ stalemateAction: 'walk_away' })).toBe('stalemateAction');
+    expect(invalidNegotiationField({ bulkTiers: [{ minQty: 1, extraDiscountPct: 5 }] })).toBe('bulkTiers');
+    expect(invalidNegotiationField({ bulkTiers: [{ minQty: 10, extraDiscountPct: 150 }] })).toBe('bulkTiers');
+  });
 });
 
 describe('invalidSettingsField', () => {
