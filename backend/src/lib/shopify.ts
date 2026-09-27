@@ -1,6 +1,7 @@
 // Shopify product-export CSV → Sahulatcart products. Pure mapping, no I/O.
 // Shopify exports one row per variant; image-only rows have empty variant fields.
 // Rows are grouped by Handle. Headers arrive lowercased from parseCsv.
+import { parsePaisa } from './money';
 
 export interface ShopifyProduct {
   name: string;
@@ -57,11 +58,8 @@ export function mapShopifyRows(rows: Record<string, string>[]): ShopifyProduct[]
     const attributes: Record<string, Set<string>> = {};
 
     for (const r of group) {
-      const p = Number(r['variant price']);
-      if (r['variant price'] && Number.isFinite(p) && p > 0) {
-        const paisa = Math.round(p * 100);
-        if (price == null || paisa < price) price = paisa;
-      }
+      const paisa = parsePaisa(r['variant price']);
+      if (paisa != null && (price == null || paisa < price)) price = paisa;
       const q = Number(r['variant inventory qty']);
       if (r['variant inventory qty'] && Number.isFinite(q)) stock = (stock ?? 0) + Math.max(0, Math.round(q));
       if (!sku && r['variant sku']?.trim()) sku = r['variant sku'].trim();

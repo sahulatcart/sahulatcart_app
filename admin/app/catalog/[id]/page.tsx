@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, ImagePlus, Loader2, Sparkles, Trash2 } from 'lucide-react';
 import AppShell, { PageHead } from '../../../components/AppShell';
-import { api, apiJson } from '../../../lib/api';
+import { api, apiError, apiJson } from '../../../lib/api';
 import { useToast } from '../../../components/Toast';
 
 interface Product {
@@ -58,7 +58,7 @@ export default function ProductDetail() {
         max_discount_pct: p.max_discount_pct, min_price: p.min_price, sku: p.sku,
         attributes: fromRows(attrs),
       }) });
-      if (r.ok) toast('Saved', 'success'); else toast('Save failed', 'error');
+      if (r.ok) toast('Saved', 'success'); else toast(await apiError(r), 'error');
     } finally { setBusy(null); }
   }
 
@@ -68,7 +68,7 @@ export default function ProductDetail() {
     try {
       const dataBase64 = btoa(new Uint8Array(await file.arrayBuffer()).reduce((s, b) => s + String.fromCharCode(b), ''));
       const r = await api(`/api/v1/admin/products/${id}/images`, { method: 'POST', body: JSON.stringify({ dataBase64, contentType: file.type }) });
-      if (r.ok) { toast('Photo uploaded', 'success'); load(); } else toast('Upload failed', 'error');
+      if (r.ok) { toast('Photo uploaded', 'success'); load(); } else toast(await apiError(r), 'error');
     } finally { setBusy(null); }
   }
 
@@ -76,7 +76,7 @@ export default function ProductDetail() {
     setBusy(ref);
     try {
       const r = await api(`/api/v1/admin/products/${id}/images`, { method: 'DELETE', body: JSON.stringify({ ref }) });
-      if (r.ok) load(); else toast('Delete failed', 'error');
+      if (r.ok) load(); else toast(await apiError(r), 'error');
     } finally { setBusy(null); }
   }
 

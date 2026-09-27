@@ -1,9 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { BotState } from '@app/shared';
 import { logger } from '../lib/logger';
 import { sendDocument, sendText } from '../whatsapp/client';
 import { signedSlipUrl } from './slip';
 
-const rs = (paisa: number): string => `Rs ${Math.round(paisa / 100)}`;
+/** Who is acting: the merchant is always server-derived; memberId (merchant_users.id) feeds the audit columns. */
+export interface Actor {
+  merchantId: string;
+  memberId?: string;
+}
+export type ActionResult = { ok: true } | { ok: false; status: 404 | 409; message: string };
 
 interface OrderRow {
   id: string;
@@ -11,39 +17,54 @@ interface OrderRow {
   customer_id: string;
   conversation_id: string | null;
   order_number: string | null;
-  total: number;
-  payment_status: string;
   slip_url: string | null;
 }
 
-/** Load the buyer's WhatsApp channel (phone_number_id + wa_id) for an order and message them. */
+interface Transition {
+  from: string[]; // order.status values the action is valid in
+  match: Record<string, string>; // further required column values (payment method/status)
+  set: Record<string, unknown>;
+  conflict: string; // shown to the merchant when the order is not in that state
+}
+
+/**
+ * Apply a status change atomically: the UPDATE's own filter is the state check, so a
+ * double-click, two tabs or a stale page can never verify/reject/collect twice.
+ */
+async function transition(db: SupabaseClient, a: Actor, orderId: string, t: Transition): Promise<{ order: OrderRow } | Exclude<ActionResult, { ok: true }>> {
+  const { data, error } = await db
+    .from('orders')
+    .update(t.set)
+    .match({ id: orderId, merchant_id: a.merchantId, ...t.match })
+    .in('status', t.from)
+    .select('id, merchant_id, customer_id, conversation_id, order_number, slip_url')
+    .maybeSingle();
+  if (error) logger.error({ err: error.message, orderId }, 'order transition failed');
+  if (data) return { order: data as OrderRow };
+  const exists = await db.from('orders').select('id').match({ id: orderId, merchant_id: a.merchantId }).maybeSingle();
+  return exists.data ? { ok: false, status: 409, message: t.conflict } : { ok: false, status: 404, message: 'Order not found' };
+}
+
+/** WhatsApp the buyer on the number their chat came in on (or the merchant's first number). */
 async function notifyBuyer(db: SupabaseClient, order: OrderRow, text: string, slipKey?: string | null): Promise<void> {
-  const cust = await db.from('customers').select('wa_id').eq('id', order.customer_id).single();
-  const waId = cust.data?.wa_id;
-  if (!waId) return;
-  let phoneNumberId: string | undefined;
-  let conversationId = order.conversation_id ?? undefined;
-  if (conversationId) {
-    const conv = await db.from('conversations').select('whatsapp_number_id').eq('id', conversationId).single();
-    if (conv.data?.whatsapp_number_id) {
-      const num = await db.from('whatsapp_numbers').select('phone_number_id').eq('id', conv.data.whatsapp_number_id).single();
-      phoneNumberId = num.data?.phone_number_id;
-    }
-  }
-  if (!phoneNumberId) {
-    const num = await db.from('whatsapp_numbers').select('phone_number_id').eq('merchant_id', order.merchant_id).limit(1).maybeSingle();
-    phoneNumberId = num.data?.phone_number_id;
-  }
-  if (!phoneNumberId) return;
+  const [cust, conv] = await Promise.all([
+    db.from('customers').select('wa_id').eq('id', order.customer_id).single(),
+    order.conversation_id ? db.from('conversations').select('whatsapp_number_id').eq('id', order.conversation_id).single() : null,
+  ]);
+  const waId = cust.data?.wa_id as string | undefined;
+  const numberQuery = db.from('whatsapp_numbers').select('phone_number_id');
+  const num = conv?.data?.whatsapp_number_id
+    ? await numberQuery.eq('id', conv.data.whatsapp_number_id).maybeSingle()
+    : await numberQuery.eq('merchant_id', order.merchant_id).limit(1).maybeSingle();
+  const phoneNumberId = num.data?.phone_number_id as string | undefined;
+  if (!waId || !phoneNumberId) return;
+
   const sent = await sendText(phoneNumberId, waId, text);
-  // Attach the order slip PDF if available.
-  if (slipKey) {
-    const url = await signedSlipUrl(db, slipKey);
-    if (url) await sendDocument(phoneNumberId, waId, url, `Order-${order.order_number ?? 'slip'}.pdf`, undefined);
-  }
-  if (conversationId) {
+  const url = slipKey ? await signedSlipUrl(db, slipKey) : null;
+  if (url) await sendDocument(phoneNumberId, waId, url, `Order-${order.order_number ?? 'slip'}.pdf`);
+  if (order.conversation_id) {
     await db.from('messages').insert({
-      conversation_id: conversationId,
+      conversation_id: order.conversation_id,
       merchant_id: order.merchant_id,
       direction: 'outbound',
       sender: 'system',
@@ -52,55 +73,68 @@ async function notifyBuyer(db: SupabaseClient, order: OrderRow, text: string, sl
       wa_message_id: sent.waMessageId,
       status: sent.waMessageId ? 'sent' : 'queued',
     });
-    await db.from('conversations').update({ current_state: 'completed' }).eq('id', conversationId);
   }
 }
 
-async function loadOrder(db: SupabaseClient, orderId: string): Promise<OrderRow | null> {
-  const r = await db.from('orders').select('id, merchant_id, customer_id, conversation_id, order_number, total, payment_status, slip_url').eq('id', orderId).single();
-  return (r.data as OrderRow) ?? null;
+/**
+ * Move the buyer's chat to `state` only while it is still in THIS order's checkout. A buyer
+ * who has since started another purchase must not have that chat reset under them.
+ */
+async function setCheckoutState(db: SupabaseClient, order: OrderRow, state: BotState): Promise<void> {
+  if (!order.conversation_id) return;
+  await db.from('conversations').update({ current_state: state }).eq('id', order.conversation_id).eq('context->>pendingOrderId', order.id);
 }
 
 /** Merchant verifies a bank-transfer payment → order paid, buyer confirmed (CD-16). */
-export async function verifyPayment(db: SupabaseClient, orderId: string, byUserId?: string): Promise<{ ok: boolean; error?: string }> {
-  const order = await loadOrder(db, orderId);
-  if (!order) return { ok: false, error: 'order not found' };
+export async function verifyPayment(db: SupabaseClient, a: Actor, orderId: string): Promise<ActionResult> {
+  const r = await transition(db, a, orderId, {
+    from: ['awaiting_payment'],
+    match: { payment_method: 'bank_transfer' },
+    set: { status: 'paid', payment_status: 'verified', payment_locked: true },
+    conflict: 'Only an order awaiting a bank transfer can be verified',
+  });
+  if (!('order' in r)) return r;
+  const by = a.memberId ?? null;
   const now = new Date().toISOString();
-
-  await db.from('payments').update({ status: 'verified', verified_at: now, verified_by_user_id: byUserId ?? null }).eq('order_id', orderId);
-  const claim = await db.from('payment_claims').select('id').eq('order_id', orderId).eq('status', 'claimed').order('created_at', { ascending: false }).limit(1).maybeSingle();
-  if (claim.data) await db.from('payment_claims').update({ status: 'verified', decided_at: now, decided_by_user_id: byUserId ?? null }).eq('id', claim.data.id);
-  await db.from('orders').update({ status: 'paid', payment_status: 'verified', payment_locked: true }).eq('id', orderId);
-  await db.from('order_status_history').insert({ order_id: orderId, from_status: 'awaiting_payment', to_status: 'paid', changed_by: 'agent', user_id: byUserId ?? null });
-
-  await notifyBuyer(db, order, `Payment mil gaya! ✅ Aapka order ${order.order_number ?? ''} confirm ho gaya. Jald deliver karenge, shukriya!`, order.slip_url);
+  await Promise.all([
+    db.from('payments').update({ status: 'verified', verified_at: now, verified_by_user_id: by }).eq('order_id', orderId),
+    db.from('payment_claims').update({ status: 'verified', decided_at: now, decided_by_user_id: by }).eq('order_id', orderId).eq('status', 'claimed'),
+    db.from('order_status_history').insert({ order_id: orderId, from_status: 'awaiting_payment', to_status: 'paid', changed_by: 'agent', user_id: by }),
+  ]);
+  await notifyBuyer(db, r.order, `Payment mil gaya! ✅ Aapka order ${r.order.order_number ?? ''} confirm ho gaya. Jald deliver karenge, shukriya!`, r.order.slip_url);
+  await setCheckoutState(db, r.order, 'completed');
   logger.info({ orderId }, 'payment verified');
   return { ok: true };
 }
 
-/** Merchant rejects a claim → stays awaiting_payment, buyer asked to resend (CD-18). */
-export async function rejectPayment(db: SupabaseClient, orderId: string, reason: string, byUserId?: string): Promise<{ ok: boolean; error?: string }> {
-  const order = await loadOrder(db, orderId);
-  if (!order) return { ok: false, error: 'order not found' };
+/** Merchant rejects a claim → order stays awaiting_payment, buyer asked to resend (CD-18). */
+export async function rejectPayment(db: SupabaseClient, a: Actor, orderId: string, reason: string): Promise<ActionResult> {
+  const r = await transition(db, a, orderId, {
+    from: ['awaiting_payment'],
+    match: { payment_status: 'claimed' },
+    set: { payment_status: 'failed' },
+    conflict: 'There is no payment screenshot waiting for review',
+  });
+  if (!('order' in r)) return r;
   const now = new Date().toISOString();
-
-  await db.from('payments').update({ status: 'failed', rejection_reason: reason }).eq('order_id', orderId);
-  const claim = await db.from('payment_claims').select('id').eq('order_id', orderId).eq('status', 'claimed').order('created_at', { ascending: false }).limit(1).maybeSingle();
-  if (claim.data) await db.from('payment_claims').update({ status: 'rejected', rejection_reason: reason, decided_at: now, decided_by_user_id: byUserId ?? null }).eq('id', claim.data.id);
-  await db.from('orders').update({ payment_status: 'failed' }).eq('id', orderId);
-
-  await notifyBuyer(db, order, `Maazrat, payment verify nahi ho saka (${reason}). Baraye meharbani sahi screenshot dobara bhej dein.`);
-  // reopen the proof wait so a new screenshot is accepted
-  if (order.conversation_id) await db.from('conversations').update({ current_state: 'awaiting_payment_proof' }).eq('id', order.conversation_id);
+  await Promise.all([
+    db.from('payments').update({ status: 'failed', rejection_reason: reason }).eq('order_id', orderId),
+    db.from('payment_claims').update({ status: 'rejected', rejection_reason: reason, decided_at: now, decided_by_user_id: a.memberId ?? null }).eq('order_id', orderId).eq('status', 'claimed'),
+  ]);
+  await notifyBuyer(db, r.order, `Maazrat, payment verify nahi ho saka (${reason}). Baraye meharbani sahi screenshot dobara bhej dein.`);
+  await setCheckoutState(db, r.order, 'awaiting_payment_proof'); // accept a new screenshot
   return { ok: true };
 }
 
-/** Merchant marks COD cash collected (CD-17). */
-export async function markCodCollected(db: SupabaseClient, orderId: string, byUserId?: string): Promise<{ ok: boolean; error?: string }> {
-  const order = await loadOrder(db, orderId);
-  if (!order) return { ok: false, error: 'order not found' };
-  const now = new Date().toISOString();
-  await db.from('payments').update({ status: 'cod_collected', cod_collected_at: now, cod_collected_by_user_id: byUserId ?? null }).eq('order_id', orderId);
-  await db.from('orders').update({ payment_status: 'cod_collected' }).eq('id', orderId);
+/** COD cash received (CD-17). Staff may do this (docs/spec/09 §2.3). */
+export async function markCodCollected(db: SupabaseClient, a: Actor, orderId: string): Promise<ActionResult> {
+  const r = await transition(db, a, orderId, {
+    from: ['confirmed', 'preparing', 'dispatched', 'delivered'],
+    match: { payment_method: 'cod', payment_status: 'cod_pending' },
+    set: { payment_status: 'cod_collected' },
+    conflict: 'Only an open COD order with cash pending can be marked collected',
+  });
+  if (!('order' in r)) return r;
+  await db.from('payments').update({ status: 'cod_collected', cod_collected_at: new Date().toISOString(), cod_collected_by_user_id: a.memberId ?? null }).eq('order_id', orderId);
   return { ok: true };
 }

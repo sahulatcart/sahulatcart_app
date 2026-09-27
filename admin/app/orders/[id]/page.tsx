@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Check, Image as ImageIcon, X } from 'lucide-react';
 import AppShell, { PageHead, PaymentPill } from '../../../components/AppShell';
-import { api, apiJson, dt, rs } from '../../../lib/api';
+import { api, apiError, apiJson, dt, rs } from '../../../lib/api';
 import { useToast } from '../../../components/Toast';
 
 interface Detail {
@@ -26,7 +26,7 @@ export default function OrderDetail() {
     setBusy(true);
     const r = await api(`/api/v1/admin/orders/${id}/payment/${path}`, { method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}) });
     setBusy(false);
-    if (r.ok) toast(msg || 'Done', 'success'); else toast('Action failed', 'error');
+    if (r.ok) toast(msg || 'Done', 'success'); else toast(await apiError(r), 'error');
     load();
   }
   async function viewShot() {

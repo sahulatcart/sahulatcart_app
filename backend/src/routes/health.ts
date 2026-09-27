@@ -11,23 +11,22 @@ import { getLlmClient } from '../llm';
 export async function healthRoutes(app: FastifyInstance): Promise<void> {
   app.get('/healthz', async () => ({ status: 'ok', uptime: process.uptime() }));
 
-  app.get('/readyz', async (_req, reply) => {
+  app.get('/readyz', async (req, reply) => {
     const checks: Record<string, 'ok' | 'fail'> = {};
-    let dbError: string | undefined;
 
-    // DB reachability — cheap probe.
+    // DB reachability — cheap probe. The error goes to the log, never the public response.
     try {
       const { error } = await getServiceClient().from('merchants').select('id').limit(1);
       checks.db = error ? 'fail' : 'ok';
-      if (error) dbError = error.message;
+      if (error) req.log.error({ err: error.message }, 'readyz: db check failed');
     } catch (e) {
       checks.db = 'fail';
-      dbError = e instanceof Error ? e.message : String(e);
+      req.log.error({ err: e instanceof Error ? e.message : String(e) }, 'readyz: db check failed');
     }
 
     // Optional LLM probe (?llm=1) — diagnostics for the deployed bot.
     let llm: Record<string, unknown> | undefined;
-    if ((_req.query as { llm?: string })?.llm) {
+    if ((req.query as { llm?: string })?.llm) {
       const cfg = loadConfig();
       llm = { provider: cfg.LLM_PROVIDER, model: cfg.GEMINI_MODEL, keyPresent: !!cfg.GEMINI_API_KEY };
       try {
@@ -43,6 +42,6 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
     const ready = Object.values(checks).every((v) => v === 'ok');
     return reply
       .code(ready ? 200 : 503)
-      .send({ status: ready ? 'ready' : 'not_ready', checks, ...(dbError ? { dbError } : {}), ...(llm ? { llm } : {}) });
+      .send({ status: ready ? 'ready' : 'not_ready', checks, ...(llm ? { llm } : {}) });
   });
 }

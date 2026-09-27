@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { productImageUrl } from './images';
+import { isTrustedImageUrl, productImageUrl } from './images';
 
 describe('productImageUrl', () => {
   const BASE = 'https://xyz.supabase.co';
@@ -17,5 +17,24 @@ describe('productImageUrl', () => {
     expect(productImageUrl(BASE, null)).toBeNull();
     expect(productImageUrl(BASE, '')).toBeNull();
     expect(productImageUrl(BASE, undefined)).toBeNull();
+  });
+});
+
+describe('isTrustedImageUrl', () => {
+  const BASE = 'https://xyz.supabase.co';
+
+  it('allows our own storage and the Shopify CDN', () => {
+    expect(isTrustedImageUrl(productImageUrl(BASE, 'm1/p1/a.jpg')!, BASE)).toBe(true);
+    expect(isTrustedImageUrl('https://cdn.shopify.com/s/files/tee.jpg', BASE)).toBe(true);
+  });
+  it('rejects anything else, including look-alike and internal hosts', () => {
+    for (const url of [
+      'http://appbackend.railway.internal/api/v1/config',
+      'http://169.254.169.254/latest/meta-data',
+      'https://cdn.shopify.com.evil.example/x.jpg',
+      'http://cdn.shopify.com/x.jpg',
+      'https://xyz.supabase.co.evil.example/x.jpg',
+      'not a url',
+    ]) expect(isTrustedImageUrl(url, BASE)).toBe(false);
   });
 });

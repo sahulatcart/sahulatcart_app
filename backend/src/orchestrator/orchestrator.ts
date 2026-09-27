@@ -12,7 +12,7 @@ import { signedSlipUrl } from './slip';
 import type { NormalizedMessage } from '../whatsapp/types';
 import { resolveProduct, type CatalogItem } from './resolve';
 import { pickUpsell, type UpsellCandidate } from './upsell';
-import { priceGuardOk } from './guard';
+import { priceGuardOk, sanctionedNumbers } from './guard';
 import { confirmBankOrder, confirmCodOrder, createDraftOrder, switchBankOrderToCod, type DeliveryInfo } from './order-service';
 
 export interface OrchestratorCtx {
@@ -112,14 +112,12 @@ function kbText(settings: unknown): string {
   return parts.join('\n');
 }
 
-/** Compose via LLM; enforce the price-match guard; fall back to a safe template. */
+/** Compose via LLM; enforce the price-match guard on EVERY reply; fall back to a safe template. */
 async function safeCompose(spec: ReplySpec, cc: ComposeContext): Promise<string> {
   const expected = 'priceRupees' in spec ? spec.priceRupees : null;
-  // The engine-derived line total is the only other number the LLM may utter.
-  const alsoAllowed = 'totalRupees' in spec && spec.totalRupees != null ? [spec.totalRupees] : [];
   try {
     const text = await getLlmClient().compose(spec, cc);
-    if (expected != null && !priceGuardOk(text, expected, alsoAllowed)) {
+    if (!priceGuardOk(text, expected, sanctionedNumbers(spec))) {
       logger.warn({ spec: spec.kind, expected }, 'price-match guard tripped — using fallback');
       return fallbackText(spec);
     }
@@ -214,7 +212,8 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
     .from('products')
     .select('id, name, price, cost, currency, negotiable, max_discount_pct, min_price, stock, track_stock, description, attributes, images')
     .eq('merchant_id', ctx.merchantId)
-    .eq('is_active', true);
+    .eq('is_active', true)
+    .gt('price', 0); // an unpriced product must never be quoted as "Rs 0"
   const catalog: CatalogItem[] = (catRes.data ?? []).map((r) => ({
     id: r.id,
     name: r.name,

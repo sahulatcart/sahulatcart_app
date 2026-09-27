@@ -1,14 +1,15 @@
 import crypto from 'node:crypto';
-import type { FastifyInstance } from 'fastify';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { loadConfig } from '../config';
 import { getServiceClient } from '../lib/supabase';
-import { canManagePayments, forbid, resolveCtx } from '../lib/auth';
-import { markCodCollected, rejectPayment, verifyPayment } from '../orchestrator/payment-service';
+import { forbid, isAdminToken, isManager, resolveCtx } from '../lib/auth';
+import { markCodCollected, rejectPayment, verifyPayment, type ActionResult, type Actor } from '../orchestrator/payment-service';
 import { signedScreenshotUrl } from '../whatsapp/media';
 import { sendText } from '../whatsapp/client';
 import { parseCsv } from '../lib/csv';
-import { productImageUrl } from '../lib/images';
+import { isTrustedImageUrl, MAX_IMAGE_BYTES, productImageUrl } from '../lib/images';
+import { parsePaisa } from '../lib/money';
+import { invalidNegotiationField, invalidProductField, invalidSettingsField } from '../lib/validation';
 import { getLlmClient } from '../llm';
 import { isShopifyCsv, mapShopifyRows } from '../lib/shopify';
 
@@ -19,15 +20,7 @@ const startOfTodayUtc = (): string => {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())).toISOString();
 };
 
-// Ownership guards — a by-id resource must belong to the caller's merchant (tenant isolation).
-async function orderMerchant(db: SupabaseClient, id: string): Promise<string | undefined> {
-  const r = await db.from('orders').select('merchant_id').eq('id', id).maybeSingle();
-  return r.data?.merchant_id as string | undefined;
-}
-async function convoMerchant(db: SupabaseClient, id: string): Promise<string | undefined> {
-  const r = await db.from('conversations').select('merchant_id').eq('id', id).maybeSingle();
-  return r.data?.merchant_id as string | undefined;
-}
+const badField = (field: string) => ({ error: { code: 'BAD', message: `${field} is missing or invalid` } });
 
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
   const db = getServiceClient();
@@ -48,12 +41,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   // ── Auth (token fallback path; email/password login happens client-side via Supabase) ──
   app.post('/api/v1/admin/login', async (req, reply) => {
-    const cfg = loadConfig();
-    const pw = (req.body as { password?: string })?.password;
-    if (!cfg.ADMIN_API_TOKEN || pw !== cfg.ADMIN_API_TOKEN) {
+    if (!isAdminToken((req.body as { password?: string } | undefined)?.password)) {
       return reply.code(401).send({ error: { code: 'BAD_LOGIN', message: 'galat password' } });
     }
-    return reply.send({ token: cfg.ADMIN_API_TOKEN });
+    return reply.send({ token: loadConfig().ADMIN_API_TOKEN });
   });
 
   app.get('/api/v1/admin/me', async (req, reply) => {
@@ -126,26 +117,19 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ url: await signedScreenshotUrl(db, key) });
   });
 
-  app.post('/api/v1/admin/orders/:id/payment/verify', async (req, reply) => {
-    if (!canManagePayments(req.merchantCtx!)) return forbid(reply);
-    const { id } = req.params as { id: string };
-    if ((await orderMerchant(db, id)) !== req.merchantCtx!.merchantId) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'order not found' } });
-    const r = await verifyPayment(db, id);
-    return reply.code(r.ok ? 200 : 400).send(r);
-  });
-  app.post('/api/v1/admin/orders/:id/payment/reject', async (req, reply) => {
-    if (!canManagePayments(req.merchantCtx!)) return forbid(reply);
-    const { id } = req.params as { id: string };
-    if ((await orderMerchant(db, id)) !== req.merchantCtx!.merchantId) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'order not found' } });
-    const r = await rejectPayment(db, id, (req.body as { reason?: string })?.reason ?? 'not verified');
-    return reply.code(r.ok ? 200 : 400).send(r);
-  });
-  app.post('/api/v1/admin/orders/:id/payment/cod-collected', async (req, reply) => {
-    const { id } = req.params as { id: string };
-    if ((await orderMerchant(db, id)) !== req.merchantCtx!.merchantId) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'order not found' } });
-    const r = await markCodCollected(db, id);
-    return reply.code(r.ok ? 200 : 400).send(r);
-  });
+  // Verify/reject are owner/manager only; staff may mark COD collected (docs/spec/09 §2.3).
+  const paymentRoute =
+    (managersOnly: boolean, act: (a: Actor, id: string, body: { reason?: string }) => Promise<ActionResult>) =>
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      const c = req.merchantCtx!;
+      if (managersOnly && !isManager(c)) return forbid(reply);
+      const r = await act({ merchantId: c.merchantId, memberId: c.memberId }, (req.params as { id: string }).id, (req.body ?? {}) as { reason?: string });
+      if (r.ok) return reply.send(r);
+      return reply.code(r.status).send({ error: { code: r.status === 404 ? 'NOT_FOUND' : 'CONFLICT', message: r.message } });
+    };
+  app.post('/api/v1/admin/orders/:id/payment/verify', paymentRoute(true, (a, id) => verifyPayment(db, a, id)));
+  app.post('/api/v1/admin/orders/:id/payment/reject', paymentRoute(true, (a, id, b) => rejectPayment(db, a, id, b.reason?.trim().slice(0, 200) || 'not verified')));
+  app.post('/api/v1/admin/orders/:id/payment/cod-collected', paymentRoute(false, (a, id) => markCodCollected(db, a, id)));
 
   // ── Inbox / Conversations ──
   app.get('/api/v1/admin/conversations', async (req, reply) => {
@@ -230,7 +214,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // ── Catalog ──
   app.get('/api/v1/admin/products', async (req, reply) => {
     const mid = req.merchantCtx!.merchantId;
-    const cols = canManagePayments(req.merchantCtx!) ? 'id, sku, name, description, price, cost, stock, track_stock, is_active, negotiable, max_discount_pct, min_price, images' : 'id, sku, name, description, price, stock, track_stock, is_active, negotiable, max_discount_pct, min_price, images';
+    const cols = isManager(req.merchantCtx!) ? 'id, sku, name, description, price, cost, stock, track_stock, is_active, negotiable, max_discount_pct, min_price, images' : 'id, sku, name, description, price, stock, track_stock, is_active, negotiable, max_discount_pct, min_price, images';
     const { data } = await db.from('products').select(cols as '*').eq('merchant_id', mid).order('created_at', { ascending: true });
     const cfg2 = loadConfig();
     const products = (data ?? []).map((p: Record<string, unknown>) => ({
@@ -243,7 +227,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/admin/products/:id', async (req, reply) => {
     const mid = req.merchantCtx!.merchantId;
     const { id } = req.params as { id: string };
-    const cols = canManagePayments(req.merchantCtx!) ? '*' : 'id, sku, name, description, price, stock, track_stock, is_active, negotiable, max_discount_pct, min_price, images, attributes, created_at';
+    const cols = isManager(req.merchantCtx!) ? '*' : 'id, sku, name, description, price, stock, track_stock, is_active, negotiable, max_discount_pct, min_price, images, attributes, created_at';
     const { data } = await db.from('products').select(cols as '*').eq('id', id).eq('merchant_id', mid).maybeSingle();
     if (!data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'product not found' } });
     const cfg2 = loadConfig();
@@ -254,6 +238,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   // Upload a product image (base64 JSON — route-level body limit raised for photos).
   app.post('/api/v1/admin/products/:id/images', { bodyLimit: 8 * 1024 * 1024 }, async (req, reply) => {
+    if (!isManager(req.merchantCtx!)) return forbid(reply);
     const mid = req.merchantCtx!.merchantId;
     const { id } = req.params as { id: string };
     const b = req.body as { dataBase64?: string; contentType?: string };
@@ -263,7 +248,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const prod = await db.from('products').select('id, images').eq('id', id).eq('merchant_id', mid).maybeSingle();
     if (!prod.data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'product not found' } });
     const buf = Buffer.from(b.dataBase64, 'base64');
-    if (buf.length > 5 * 1024 * 1024) return reply.code(400).send({ error: { code: 'TOO_BIG', message: 'image over 5MB' } });
+    if (buf.length > MAX_IMAGE_BYTES) return reply.code(400).send({ error: { code: 'TOO_BIG', message: 'image over 5MB' } });
     const ext = b.contentType.includes('png') ? 'png' : b.contentType.includes('webp') ? 'webp' : 'jpg';
     const key = `${mid}/${id}/${crypto.randomUUID()}.${ext}`;
     const cfg2 = loadConfig();
@@ -276,23 +261,25 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.delete('/api/v1/admin/products/:id/images', async (req, reply) => {
+    if (!isManager(req.merchantCtx!)) return forbid(reply);
     const mid = req.merchantCtx!.merchantId;
     const { id } = req.params as { id: string };
-    const { ref } = req.body as { ref?: string };
+    const { ref } = (req.body ?? {}) as { ref?: string };
     if (!ref) return reply.code(400).send({ error: { code: 'BAD', message: 'ref required' } });
-    const prod = await db.from('products').select('id, images').eq('id', id).eq('merchant_id', mid).maybeSingle();
-    if (!prod.data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'product not found' } });
-    const images = (((prod.data.images as string[] | null) ?? [])).filter((r) => r !== ref);
+    const prod = await db.from('products').select('images').eq('id', id).eq('merchant_id', mid).maybeSingle();
+    const current = (prod.data?.images as string[] | null) ?? [];
+    // Only a ref this product actually holds — never an arbitrary (e.g. another tenant's) storage path.
+    if (!current.includes(ref)) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'image not found' } });
+    const images = current.filter((r) => r !== ref);
     await db.from('products').update({ images }).eq('id', id).eq('merchant_id', mid);
-    if (!/^https?:\/\//i.test(ref)) {
-      const cfg2 = loadConfig();
-      await db.storage.from(cfg2.STORAGE_BUCKET_PRODUCT_IMAGES).remove([ref]); // best-effort
-    }
+    // Our uploads are keyed "<merchantId>/…"; Shopify URLs are just unlinked. Best-effort.
+    if (ref.startsWith(`${mid}/`)) await db.storage.from(loadConfig().STORAGE_BUCKET_PRODUCT_IMAGES).remove([ref]);
     return reply.send({ ok: true, images });
   });
 
   // Draft a Roman-Urdu description from the product's first photo (Gemini vision).
   app.post('/api/v1/admin/products/:id/describe', async (req, reply) => {
+    if (!isManager(req.merchantCtx!)) return forbid(reply);
     const mid = req.merchantCtx!.merchantId;
     const { id } = req.params as { id: string };
     const prod = await db.from('products').select('id, name, images').eq('id', id).eq('merchant_id', mid).maybeSingle();
@@ -300,10 +287,16 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const cfg2 = loadConfig();
     const url = productImageUrl(cfg2.SUPABASE_URL, (prod.data.images as string[] | null)?.[0]);
     if (!url) return reply.code(400).send({ error: { code: 'NO_IMAGE', message: 'upload a photo first' } });
+    if (!isTrustedImageUrl(url, cfg2.SUPABASE_URL)) {
+      return reply.code(400).send({ error: { code: 'IMAGE_HOST', message: 'AI description needs a photo uploaded here or hosted on Shopify' } });
+    }
     try {
-      const res = await fetch(url);
-      if (!res.ok) return reply.code(502).send({ error: { code: 'FETCH', message: 'could not read image' } });
+      const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+      if (!res.ok || Number(res.headers.get('content-length')) > MAX_IMAGE_BYTES) {
+        return reply.code(502).send({ error: { code: 'FETCH', message: 'could not read image' } });
+      }
       const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length > MAX_IMAGE_BYTES) return reply.code(502).send({ error: { code: 'FETCH', message: 'image too large' } });
       const mime = res.headers.get('content-type') ?? 'image/jpeg';
       const description = await getLlmClient().describeImage(buf, mime, prod.data.name as string);
       if (!description) return reply.code(503).send({ error: { code: 'LLM', message: 'AI unavailable — try again' } });
@@ -314,26 +307,32 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/api/v1/admin/products', async (req, reply) => {
+    if (!isManager(req.merchantCtx!)) return forbid(reply);
     const mid = req.merchantCtx!.merchantId;
-    const b = req.body as Record<string, unknown>;
-    const { data, error } = await db.from('products').insert({ merchant_id: mid, name: b.name, description: b.description ?? null, price: b.price ?? 0, cost: b.cost ?? null, stock: b.stock ?? null, track_stock: b.track_stock ?? false, is_active: b.is_active ?? true, negotiable: b.negotiable ?? false, max_discount_pct: b.max_discount_pct ?? null, min_price: b.min_price ?? null, sku: b.sku ?? null }).select('id').single();
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const bad = invalidProductField({ name: undefined, price: undefined, ...b }); // name + price required
+    if (bad) return reply.code(400).send(badField(bad));
+    const { data, error } = await db.from('products').insert({ merchant_id: mid, name: b.name, description: b.description ?? null, price: b.price, cost: b.cost ?? null, stock: b.stock ?? null, track_stock: b.track_stock ?? false, is_active: b.is_active ?? true, negotiable: b.negotiable ?? false, max_discount_pct: b.max_discount_pct ?? null, min_price: b.min_price ?? null, sku: b.sku ?? null }).select('id').single();
     if (error) return reply.code(400).send({ error: { code: 'DB', message: error.message } });
     return reply.send({ id: data.id });
   });
 
   app.patch('/api/v1/admin/products/:id', async (req, reply) => {
+    if (!isManager(req.merchantCtx!)) return forbid(reply);
     const mid = req.merchantCtx!.merchantId;
     const { id } = req.params as { id: string };
-    const b = req.body as Record<string, unknown>;
+    const b = (req.body ?? {}) as Record<string, unknown>;
     const allowed = ['name', 'description', 'price', 'cost', 'stock', 'track_stock', 'is_active', 'negotiable', 'max_discount_pct', 'min_price', 'sku', 'attributes'];
-    const patch: Record<string, unknown> = {};
-    for (const k of allowed) if (k in b) patch[k] = b[k];
+    const patch = Object.fromEntries(allowed.filter((k) => k in b).map((k) => [k, b[k]]));
+    const bad = invalidProductField(patch);
+    if (bad) return reply.code(400).send(badField(bad));
     const { error } = await db.from('products').update(patch).eq('id', id).eq('merchant_id', mid);
     if (error) return reply.code(400).send({ error: { code: 'DB', message: error.message } });
     return reply.send({ ok: true });
   });
 
   app.post('/api/v1/admin/products/import', { bodyLimit: 16 * 1024 * 1024 }, async (req, reply) => {
+    if (!isManager(req.merchantCtx!)) return forbid(reply);
     const mid = req.merchantCtx!.merchantId;
     const csv = (req.body as { csv?: string })?.csv;
     if (!csv) return reply.code(400).send({ error: { code: 'BAD', message: 'csv required' } });
@@ -352,7 +351,6 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
           price: p.price,
           stock: p.stock,
           track_stock: p.stock != null,
-          negotiable: false,
           sku: p.sku,
           images: p.images,
           attributes: p.attributes,
@@ -369,14 +367,22 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
     const errors: string[] = [];
     let imported = 0;
-    const truthy = (v: string) => ['1', 'true', 'yes', 'y', 'haan'].includes((v ?? '').toLowerCase());
-    const rupees = (v: string) => (v && !Number.isNaN(Number(v)) ? Math.round(Number(v) * 100) : null);
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i]!;
+    const truthy = (v: string) => ['1', 'true', 'yes', 'y', 'haan'].includes(v.toLowerCase());
+    for (const [i, r] of rows.entries()) {
       const name = r.name || r.product || r.title;
-      const price = rupees(r.price || '');
-      if (!name || price == null) { errors.push(`Row ${i + 2}: name and numeric price required`); continue; }
-      const row = { merchant_id: mid, name, description: r.description || null, price, stock: r.stock && !Number.isNaN(Number(r.stock)) ? Math.round(Number(r.stock)) : null, track_stock: !!(r.stock && r.stock.trim()), negotiable: 'negotiable' in r ? truthy(r.negotiable) : false, max_discount_pct: r.max_discount_pct && !Number.isNaN(Number(r.max_discount_pct)) ? Number(r.max_discount_pct) : null, min_price: rupees(r.min_price || ''), sku: r.sku || null, is_active: true };
+      const price = parsePaisa(r.price);
+      if (!name || price == null) { errors.push(`Row ${i + 2}: name and a price above 0 are required`); continue; }
+      // Only columns present in the file are written, so re-importing a price list never
+      // wipes floors, stock or the negotiable flag that were set in the portal.
+      const row: Record<string, unknown> = { merchant_id: mid, name, price, is_active: true };
+      if ('description' in r) row.description = r.description || null;
+      if ('stock' in r) Object.assign(row, { stock: r.stock ? Number(r.stock) : null, track_stock: !!r.stock });
+      if ('negotiable' in r) row.negotiable = truthy(r.negotiable!);
+      if ('max_discount_pct' in r) row.max_discount_pct = r.max_discount_pct ? Number(r.max_discount_pct) : null;
+      if ('min_price' in r) row.min_price = r.min_price ? parsePaisa(r.min_price) ?? Number.NaN : null; // unreadable → rejected below
+      if ('sku' in r) row.sku = r.sku || null;
+      const bad = invalidProductField(row);
+      if (bad) { errors.push(`Row ${i + 2}: ${bad} is invalid`); continue; }
       const { error } = row.sku ? await db.from('products').upsert(row, { onConflict: 'merchant_id,sku' }) : await db.from('products').insert(row);
       if (error) errors.push(`Row ${i + 2}: ${error.message}`); else imported++;
     }
@@ -384,27 +390,33 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/api/v1/admin/products/catalog-sync', async (req, reply) => {
+    if (!isManager(req.merchantCtx!)) return forbid(reply);
     const cfg = loadConfig();
     const mid = req.merchantCtx!.merchantId;
     const token = cfg.META_SYSTEM_USER_TOKEN;
     const wabaRow = await db.from('whatsapp_numbers').select('waba_id').eq('merchant_id', mid).limit(1).maybeSingle();
     const waba = wabaRow.data?.waba_id;
     if (!token || !waba) return reply.code(400).send({ error: { code: 'NO_WABA', message: 'WhatsApp/WABA not connected' } });
-    const v = cfg.META_GRAPH_API_VERSION;
+    // Token in a header, never the URL (URLs end up in proxy and error logs).
+    const graph = async <T>(path: string): Promise<T> =>
+      (await fetch(`https://graph.facebook.com/${cfg.META_GRAPH_API_VERSION}/${path}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) })).json() as Promise<T>;
     try {
-      const cats = (await fetch(`https://graph.facebook.com/${v}/${waba}/product_catalogs?access_token=${token}`).then((r) => r.json())) as { data?: { id: string }[]; error?: { message: string } };
+      const cats = await graph<{ data?: { id: string }[]; error?: { message: string } }>(`${waba}/product_catalogs`);
       const catalogId = cats.data?.[0]?.id;
       if (!catalogId) return reply.send({ synced: 0, message: cats.error?.message || 'No Meta catalog connected to this WhatsApp account.' });
-      const prods = (await fetch(`https://graph.facebook.com/${v}/${catalogId}/products?fields=retailer_id,name,price,description&limit=200&access_token=${token}`).then((r) => r.json())) as { data?: { retailer_id: string; name: string; price?: string; description?: string }[] };
+      const prods = await graph<{ data?: { retailer_id: string; name: string; price?: string; description?: string }[] }>(`${catalogId}/products?fields=retailer_id,name,price,description&limit=200`);
       let synced = 0;
+      let skipped = 0;
       for (const p of prods.data ?? []) {
-        const num = p.price ? parseInt(String(p.price).replace(/[^0-9]/g, ''), 10) : NaN;
-        const { error } = await db.from('products').upsert({ merchant_id: mid, external_ref: p.retailer_id, name: p.name, description: p.description ?? null, price: Number.isFinite(num) ? num * 100 : 0, is_active: true }, { onConflict: 'merchant_id,external_ref' });
+        // Meta formats prices ("Rs1,500.00"); an unreadable one is skipped, never sold as Rs 0.
+        const price = parsePaisa(p.price);
+        if (price == null) { skipped++; continue; }
+        const { error } = await db.from('products').upsert({ merchant_id: mid, external_ref: p.retailer_id, name: p.name, description: p.description ?? null, price, is_active: true }, { onConflict: 'merchant_id,external_ref' });
         if (!error) synced++;
       }
       const s = (await db.from('merchants').select('settings').eq('id', mid).single()).data?.settings;
       await db.from('merchants').update({ settings: { ...s, metaCatalog: { catalogId, connected: true, lastSyncedAt: new Date().toISOString() } } }).eq('id', mid);
-      return reply.send({ synced, catalogId });
+      return reply.send({ synced, skipped, catalogId });
     } catch (e) {
       return reply.code(502).send({ error: { code: 'META', message: (e as Error).message } });
     }
@@ -420,8 +432,11 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.patch('/api/v1/admin/settings', async (req, reply) => {
+    if (!isManager(req.merchantCtx!)) return forbid(reply);
     const mid = req.merchantCtx!.merchantId;
-    const b = req.body as { businessName?: string; negotiationDefaults?: Record<string, unknown>; settings?: Record<string, unknown>; botPersona?: Record<string, unknown> };
+    const b = (req.body ?? {}) as { businessName?: string; negotiationDefaults?: Record<string, unknown>; settings?: Record<string, unknown>; botPersona?: Record<string, unknown> };
+    const bad = (b.negotiationDefaults && invalidNegotiationField(b.negotiationDefaults)) || (b.settings && invalidSettingsField(b.settings));
+    if (bad) return reply.code(400).send(badField(bad));
     const cur = await db.from('merchants').select('negotiation_defaults, settings, bot_persona').eq('id', mid).single();
     const patch: Record<string, unknown> = {};
     if (b.businessName) patch.business_name = b.businessName;
@@ -435,7 +450,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   // ── Bank accounts (owner/manager only) ──
   app.post('/api/v1/admin/bank-accounts', async (req, reply) => {
-    if (!canManagePayments(req.merchantCtx!)) return forbid(reply);
+    if (!isManager(req.merchantCtx!)) return forbid(reply);
     const mid = req.merchantCtx!.merchantId;
     const b = req.body as Record<string, unknown>;
     const { data, error } = await db.from('bank_accounts').insert({ merchant_id: mid, bank_name: b.bank_name, account_title: b.account_title, account_number: b.account_number, iban: b.iban ?? null, is_default: b.is_default ?? false, is_active: true }).select('id').single();
@@ -443,7 +458,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ id: data.id });
   });
   app.delete('/api/v1/admin/bank-accounts/:id', async (req, reply) => {
-    if (!canManagePayments(req.merchantCtx!)) return forbid(reply);
+    if (!isManager(req.merchantCtx!)) return forbid(reply);
     const mid = req.merchantCtx!.merchantId;
     await db.from('bank_accounts').delete().eq('id', (req.params as { id: string }).id).eq('merchant_id', mid);
     return reply.send({ ok: true });
