@@ -2,8 +2,8 @@
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
-import { BarChart3, LayoutDashboard, LogOut, Menu, MessagesSquare, Package, Settings, ShoppingBag } from 'lucide-react';
-import { hasSession, signOut } from '../lib/api';
+import { BarChart3, Bell, LayoutDashboard, LogOut, Menu, MessagesSquare, Package, Settings, ShoppingBag } from 'lucide-react';
+import { apiJson, hasSession, signOut } from '../lib/api';
 import Wordmark from '../components/Wordmark';
 
 const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Sahulatcart';
@@ -11,6 +11,7 @@ const NAV = [
   { href: '/', label: 'Dashboard', Icon: LayoutDashboard },
   { href: '/inbox', label: 'Inbox', Icon: MessagesSquare },
   { href: '/orders', label: 'Orders', Icon: ShoppingBag },
+  { href: '/notifications', label: 'Notifications', Icon: Bell },
   { href: '/catalog', label: 'Catalog', Icon: Package },
   { href: '/analytics', label: 'Analytics', Icon: BarChart3 },
   { href: '/settings', label: 'Settings', Icon: Settings },
@@ -21,11 +22,21 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [ready, setReady] = useState(false);
   const [open, setOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
 
   useEffect(() => {
     hasSession().then((ok) => { if (!ok) router.replace('/login'); else setReady(true); });
   }, [router]);
   useEffect(() => { setOpen(false); }, [pathname]);
+  // Unread badge: cheap count poll, plus an instant refresh when a page marks them read.
+  useEffect(() => {
+    if (!ready) return;
+    const load = () => apiJson<{ unread: number }>('/api/v1/admin/notifications?count=1').then((r) => setUnread(r.unread)).catch(() => {});
+    load();
+    const t = setInterval(load, 30_000);
+    window.addEventListener('notifications', load);
+    return () => { clearInterval(t); window.removeEventListener('notifications', load); };
+  }, [ready]);
   if (!ready) return null;
 
   const logout = async () => { await signOut(); router.replace('/login'); };
@@ -44,6 +55,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             return (
               <Link key={href} href={href} className={`nav-link ${active ? 'active' : ''}`}>
                 <Icon /> {label}
+                {href === '/notifications' && unread > 0 && <span className="pill danger" style={{ marginLeft: 'auto' }}>{unread}</span>}
               </Link>
             );
           })}

@@ -45,11 +45,16 @@ async function transition(db: SupabaseClient, a: Actor, orderId: string, t: Tran
   return exists.data ? { ok: false, status: 409, message: t.conflict } : { ok: false, status: 404, message: 'Order not found' };
 }
 
-/** WhatsApp the buyer on the number their chat came in on (or the merchant's first number). */
+/**
+ * WhatsApp the buyer on the number their chat came in on (or the merchant's first number).
+ * WhatsApp refuses free-form messages more than 24h after the buyer's last one (that needs an
+ * approved template), so outside the window — or if the send fails — the merchant is told to
+ * reach the buyer another way instead of the message silently vanishing.
+ */
 async function notifyBuyer(db: SupabaseClient, order: OrderRow, text: string, slipKey?: string | null): Promise<void> {
   const [cust, conv] = await Promise.all([
     db.from('customers').select('wa_id').eq('id', order.customer_id).single(),
-    order.conversation_id ? db.from('conversations').select('whatsapp_number_id').eq('id', order.conversation_id).single() : null,
+    order.conversation_id ? db.from('conversations').select('whatsapp_number_id, window_expires_at').eq('id', order.conversation_id).single() : null,
   ]);
   const waId = cust.data?.wa_id as string | undefined;
   const numberQuery = db.from('whatsapp_numbers').select('phone_number_id');
@@ -57,11 +62,26 @@ async function notifyBuyer(db: SupabaseClient, order: OrderRow, text: string, sl
     ? await numberQuery.eq('id', conv.data.whatsapp_number_id).maybeSingle()
     : await numberQuery.eq('merchant_id', order.merchant_id).limit(1).maybeSingle();
   const phoneNumberId = num.data?.phone_number_id as string | undefined;
-  if (!waId || !phoneNumberId) return;
+  const windowOpen = !conv?.data?.window_expires_at || new Date(conv.data.window_expires_at).getTime() > Date.now();
 
-  const sent = await sendText(phoneNumberId, waId, text);
-  const url = slipKey ? await signedSlipUrl(db, slipKey) : null;
-  if (url) await sendDocument(phoneNumberId, waId, url, `Order-${order.order_number ?? 'slip'}.pdf`);
+  let sent: { waMessageId: string | null } = { waMessageId: null };
+  if (waId && phoneNumberId && windowOpen) {
+    sent = await sendText(phoneNumberId, waId, text);
+    const url = sent.waMessageId && slipKey ? await signedSlipUrl(db, slipKey) : null;
+    if (url) await sendDocument(phoneNumberId, waId, url, `Order-${order.order_number ?? 'slip'}.pdf`);
+  }
+  if (!sent.waMessageId) {
+    const why = windowOpen ? 'The WhatsApp message could not be sent.' : 'The buyer last messaged over 24 hours ago, so WhatsApp blocks this message.';
+    await db.from('notifications').insert({
+      merchant_id: order.merchant_id,
+      type: 'system',
+      title: `Could not message the buyer — order ${order.order_number ?? ''}`.trim(),
+      body: `${why} Please contact ${waId ?? 'the buyer'} and tell them: "${text}"`,
+      data: { orderId: order.id },
+      channel: 'portal',
+    });
+    return;
+  }
   if (order.conversation_id) {
     await db.from('messages').insert({
       conversation_id: order.conversation_id,
@@ -71,7 +91,7 @@ async function notifyBuyer(db: SupabaseClient, order: OrderRow, text: string, sl
       type: 'text',
       body: text,
       wa_message_id: sent.waMessageId,
-      status: sent.waMessageId ? 'sent' : 'queued',
+      status: 'sent',
     });
   }
 }
@@ -123,6 +143,34 @@ export async function rejectPayment(db: SupabaseClient, a: Actor, orderId: strin
   ]);
   await notifyBuyer(db, r.order, `Maazrat, payment verify nahi ho saka (${reason}). Baraye meharbani sahi screenshot dobara bhej dein.`);
   await setCheckoutState(db, r.order, 'awaiting_payment_proof'); // accept a new screenshot
+  return { ok: true };
+}
+
+const CANCELLABLE = ['draft', 'confirmed', 'awaiting_payment', 'preparing'];
+
+/**
+ * Merchant cancels an order that hasn't been paid for or dispatched: its stock comes back
+ * (0008) and the buyer is told. Compare-and-set on the status read just before, so the
+ * history row records the real previous status.
+ */
+export async function cancelOrder(db: SupabaseClient, a: Actor, orderId: string, reason: string): Promise<ActionResult> {
+  const cur = await db.from('orders').select('status').match({ id: orderId, merchant_id: a.merchantId }).maybeSingle();
+  const from = cur.data?.status as string | undefined;
+  if (!from) return { ok: false, status: 404, message: 'Order not found' };
+  if (!CANCELLABLE.includes(from)) return { ok: false, status: 409, message: 'Only an order that is not yet paid or dispatched can be cancelled' };
+  const r = await transition(db, a, orderId, {
+    from: [from],
+    match: {},
+    set: { status: 'cancelled', cancelled_reason: reason },
+    conflict: 'The order changed meanwhile — reload and try again',
+  });
+  if (!('order' in r)) return r;
+  await Promise.all([
+    db.rpc('release_stock', { p_order: orderId }),
+    db.from('order_status_history').insert({ order_id: orderId, from_status: from, to_status: 'cancelled', changed_by: 'agent', user_id: a.memberId ?? null, note: reason }),
+  ]);
+  await notifyBuyer(db, r.order, `Maazrat, aapka order ${r.order.order_number ?? ''} cancel kar diya gaya hai (${reason}). Koi sawal ho to yahan message karein.`);
+  await setCheckoutState(db, r.order, 'completed');
   return { ok: true };
 }
 

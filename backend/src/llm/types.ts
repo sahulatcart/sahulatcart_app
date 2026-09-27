@@ -24,7 +24,9 @@ export type ReplySpec =
   | { kind: 'accept'; productName: string; priceRupees: number; quantity?: number; totalRupees?: number }
   | { kind: 'hold'; productName: string; priceRupees: number; quantity?: number; totalRupees?: number }
   | { kind: 'not_found'; query: string }
+  | { kind: 'choose_product'; options: string[] } // the mention matched several products — ask which
   | { kind: 'out_of_stock'; productName: string }
+  | { kind: 'limited_stock'; productName: string; available: number } // asked for more than is in stock
   | { kind: 'order_ack'; productName: string; priceRupees: number }
   | { kind: 'ask_delivery' } // after accept — ask name/address/area
   | { kind: 'ask_delivery_missing'; missing: string }
@@ -38,6 +40,19 @@ export type ReplySpec =
   | { kind: 'upsell'; productName: string; priceRupees: number } // post-order add-on suggestion
   | { kind: 'product_answer'; productName: string; question: string; facts: string } // answer ONLY from facts
   | { kind: 'kb_answer'; question: string; kb: string }; // answer ONLY from the shop knowledgebase
+
+/**
+ * Procedural replies that always use the fixed Roman-Urdu template (orchestrator `fallbackText`).
+ * They say the same thing every time, so an LLM call adds cost and latency but nothing else.
+ */
+export const TEMPLATE_ONLY_KINDS = [
+  'ask_delivery', 'ask_delivery_missing', 'bank_await', 'payment_received', 'handoff',
+  'clarify', 'not_found', 'choose_product', 'out_of_stock', 'limited_stock',
+] as const;
+/** The reply kinds that actually go to the LLM. */
+export type ComposedSpec = Exclude<ReplySpec, { kind: (typeof TEMPLATE_ONLY_KINDS)[number] }>;
+export const isTemplateOnly = (s: ReplySpec): s is Exclude<ReplySpec, ComposedSpec> =>
+  (TEMPLATE_ONLY_KINDS as readonly string[]).includes(s.kind);
 
 /** Merchant-selected bargaining personality — maps to concession presets + reply tone. */
 export type BotStyle = 'narm' | 'standard' | 'sakht';
@@ -61,7 +76,7 @@ export class LlmUnavailableError extends Error {}
 
 export interface LlmClient {
   classify(text: string, ctx: ClassifyContext): Promise<Classification>;
-  compose(spec: ReplySpec, ctx: ComposeContext): Promise<string>;
+  compose(spec: ComposedSpec, ctx: ComposeContext): Promise<string>;
   extractDelivery(text: string): Promise<DeliveryDetails>;
   /** Transcribe a WhatsApp voice note to Roman Urdu text. Null when unintelligible/unavailable. */
   transcribeAudio(data: Buffer, mimeType: string): Promise<string | null>;

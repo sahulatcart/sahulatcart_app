@@ -3,7 +3,7 @@ import type { BotState } from '@app/shared';
 import { logger } from '../lib/logger';
 import { decide } from '../negotiation';
 import type { NegotiationDefaults, ProductPricing } from '../negotiation/types';
-import { getLlmClient, LlmUnavailableError, type ComposeContext, type DeliveryDetails, type ReplySpec } from '../llm';
+import { getLlmClient, isTemplateOnly, LlmUnavailableError, type ComposeContext, type DeliveryDetails, type ReplySpec } from '../llm';
 import { sendDocument, sendImage, sendText } from '../whatsapp/client';
 import { productImageUrl } from '../lib/images';
 import { loadConfig } from '../config';
@@ -13,7 +13,7 @@ import type { NormalizedMessage } from '../whatsapp/types';
 import { resolveProduct, type CatalogItem } from './resolve';
 import { pickUpsell, type UpsellCandidate } from './upsell';
 import { priceGuardOk, sanctionedNumbers } from './guard';
-import { confirmBankOrder, confirmCodOrder, createDraftOrder, switchBankOrderToCod, type DeliveryInfo } from './order-service';
+import { confirmBankOrder, confirmCodOrder, createDraftOrder, OUT_OF_STOCK, switchBankOrderToCod, type DeliveryInfo } from './order-service';
 
 export interface OrchestratorCtx {
   merchantId: string;
@@ -24,7 +24,11 @@ export interface OrchestratorCtx {
 }
 
 const rupees = (paisa: number): number => Math.round(paisa / 100);
-const HOLD_MSG = 'Ek minute, abhi check kar ke bata deta hoon...';
+/** Above this, an order for an item whose stock isn't tracked goes to the merchant as a bulk request. */
+const MAX_UNTRACKED_QTY = 100;
+const SOLD_OUT_MSG = 'Maazrat, order ke dauran ye item stock mein khatam ho gaya, is liye order cancel kar diya hai. Kuch aur dikhaoon?';
+/** What a customer can cancel from chat (checkout stages). Merchants can also cancel 'preparing'. */
+const CUSTOMER_CANCELLABLE = ['draft', 'confirmed', 'awaiting_payment'];
 
 const DEFAULT_NEGOTIATION: NegotiationDefaults = {
   maxDiscountPct: 0,
@@ -61,7 +65,9 @@ function fallbackText(spec: ReplySpec): string {
     case 'accept': return `Theek hai, ${spec.productName} Rs ${spec.priceRupees} final${qtySuffix(spec)}. Shukriya!`;
     case 'hold': return `Is se kam mushkil hai, ${spec.productName} Rs ${spec.priceRupees} hi best hai${qtySuffix(spec)}.`;
     case 'not_found': return `Maazrat, "${spec.query}" abhi available nahi. Kuch aur dikhaoon?`;
+    case 'choose_product': return `Kaunsa chahiye: ${spec.options.join(', ')}?`;
     case 'out_of_stock': return `Maazrat, ${spec.productName} abhi stock mein nahi.`;
+    case 'limited_stock': return `Maazrat, ${spec.productName} abhi sirf ${spec.available} available hain. Kitne bhej doon?`;
     case 'order_ack': return `Bohat khoob! ${spec.productName} Rs ${spec.priceRupees}. Ab order details leta hoon.`;
     case 'ask_delivery': return 'Bohat khoob! Order ke liye apna poora naam, address aur area/shehar bhej dein.';
     case 'ask_delivery_missing': return `Aapka ${spec.missing} bhi bata dein taake delivery ho sake.`;
@@ -114,6 +120,7 @@ function kbText(settings: unknown): string {
 
 /** Compose via LLM; enforce the price-match guard on EVERY reply; fall back to a safe template. */
 async function safeCompose(spec: ReplySpec, cc: ComposeContext): Promise<string> {
+  if (isTemplateOnly(spec)) return fallbackText(spec); // procedural line — no LLM call
   const expected = 'priceRupees' in spec ? spec.priceRupees : null;
   try {
     const text = await getLlmClient().compose(spec, cc);
@@ -213,7 +220,8 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
     .select('id, name, price, cost, currency, negotiable, max_discount_pct, min_price, stock, track_stock, description, attributes, images')
     .eq('merchant_id', ctx.merchantId)
     .eq('is_active', true)
-    .gt('price', 0); // an unpriced product must never be quoted as "Rs 0"
+    .gt('price', 0) // an unpriced product must never be quoted as "Rs 0"
+    .order('created_at');
   const catalog: CatalogItem[] = (catRes.data ?? []).map((r) => ({
     id: r.id,
     name: r.name,
@@ -251,8 +259,8 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
   try {
     cls = await getLlmClient().classify(text, { productNames: catalog.map((c) => c.name) });
   } catch {
-    // classification unavailable → hold & retry-next-message
-    await reply(db, ctx, HOLD_MSG, 'greeting', context);
+    // The AI is down (quota/outage). Hand the chat to a person rather than promise a reply that never comes.
+    await handoff(db, ctx, cc, context, state, 'The AI is unavailable (quota or outage), so the bot handed this chat to you.');
     return;
   }
 
@@ -261,7 +269,14 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
   // silent fallback to the previous product.
   const activeId = context.activeProductId as string | undefined;
   const mentioned = !!(cls.productQuery && cls.productQuery.trim());
-  const product = resolveProduct(cls.productQuery, catalog) ?? (mentioned ? null : catalog.find((c) => c.id === activeId) ?? null);
+  const hit = resolveProduct(cls.productQuery, catalog);
+  // Several matches ("shirt" → T-Shirt, Dress Shirt): stay on the active product if it is one
+  // of them, otherwise ask which one. Never pick arbitrarily.
+  const candidates = Array.isArray(hit) ? hit : null;
+  const single = Array.isArray(hit) ? null : hit;
+  const product = candidates
+    ? candidates.find((c) => c.id === activeId) ?? null
+    : single ?? (mentioned ? null : catalog.find((c) => c.id === activeId) ?? null);
 
   // ── Intent routing ──
   if (cls.intent === 'stop') {
@@ -305,6 +320,11 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
   }
 
   if (!product) {
+    if (candidates) {
+      const spec: ReplySpec = { kind: 'choose_product', options: candidates.slice(0, 5).map((c) => c.name) };
+      await reply(db, ctx, await safeCompose(spec, cc), 'browsing', context);
+      return;
+    }
     // wants a product/price but we couldn't resolve it
     if (['ask_product', 'ask_price', 'make_offer', 'add_to_order'].includes(cls.intent)) {
       const q = (cls.productQuery ?? text).trim();
@@ -352,6 +372,16 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
   const quantity = qtyMentioned ?? ((neg?.quantity as number | null) ?? 1);
   // upsell flag lives exactly one turn (the reply to the suggestion), then clears.
   const newContext = { ...context, upsell: undefined, activeProductId: product.id, activeNegotiationId: neg?.id };
+
+  // Never quote or agree to more than can be delivered.
+  if (product.trackStock && product.stock != null && quantity > product.stock) {
+    await reply(db, ctx, await safeCompose({ kind: 'limited_stock', productName: product.name, available: product.stock }, cc), 'product_qa', newContext);
+    return;
+  }
+  if (!product.trackStock && quantity > MAX_UNTRACKED_QTY) {
+    await handoff(db, ctx, cc, newContext, state, `Bulk request: ${quantity} × ${product.name}.`);
+    return;
+  }
 
   // Engine prices are per-unit; for "3 kitnay ki?" the reply also states the line total.
   const withQty = (unitPaisa: number) =>
@@ -468,7 +498,14 @@ async function saveNeg(db: SupabaseClient, id: string | undefined, patch: Record
   await db.from('negotiations').update(patch).eq('id', id);
 }
 
-async function handoff(db: SupabaseClient, ctx: OrchestratorCtx, cc: ComposeContext, context: Record<string, unknown>, resumeFrom: BotState | undefined): Promise<void> {
+async function handoff(
+  db: SupabaseClient,
+  ctx: OrchestratorCtx,
+  cc: ComposeContext,
+  context: Record<string, unknown>,
+  resumeFrom: BotState | undefined,
+  note = 'A conversation was handed off to a human.'
+): Promise<void> {
   await db
     .from('conversations')
     .update({ status: 'human_takeover', current_state: 'handoff', context: { ...context, resume_state: resumeFrom ?? 'greeting' } })
@@ -477,7 +514,7 @@ async function handoff(db: SupabaseClient, ctx: OrchestratorCtx, cc: ComposeCont
     merchant_id: ctx.merchantId,
     type: 'takeover_request',
     title: 'Bot needs help',
-    body: 'A conversation was handed off to a human.',
+    body: note,
     data: { conversationId: ctx.conversationId },
     channel: 'portal',
   });
@@ -638,8 +675,9 @@ async function handleEscape(
     const orderId = context.pendingOrderId as string | undefined;
     if (orderId) {
       const o = await db.from('orders').select('status').eq('id', orderId).eq('merchant_id', ctx.merchantId).maybeSingle();
-      if (o.data && ['draft', 'confirmed', 'awaiting_payment'].includes(o.data.status as string)) {
-        await db.from('orders').update({ status: 'cancelled' }).eq('id', orderId);
+      if (o.data && CUSTOMER_CANCELLABLE.includes(o.data.status as string)) {
+        await db.from('orders').update({ status: 'cancelled' }).eq('id', orderId).eq('status', o.data.status);
+        await db.rpc('release_stock', { p_order: orderId }); // no-op if nothing was reserved
         await db.from('order_status_history').insert({ order_id: orderId, from_status: o.data.status, to_status: 'cancelled', changed_by: 'customer' });
         await db.from('notifications').insert({
           merchant_id: ctx.merchantId,
@@ -681,11 +719,13 @@ function bankDetailsText(bank: { bank_name: string; account_title: string; accou
 
 async function handleDelivery(db: SupabaseClient, ctx: OrchestratorCtx, cc: ComposeContext, context: Record<string, unknown>, settings: unknown, message: NormalizedMessage): Promise<void> {
   if (await handleEscape(db, ctx, cc, context, message, 'collecting_delivery')) return;
-  let ex: DeliveryDetails = { name: null, address: null, area: null, city: null, phone: null };
+  let ex: DeliveryDetails;
   try {
     ex = await getLlmClient().extractDelivery(message.text ?? '');
   } catch {
-    /* keep empty → will ask again */
+    // Re-asking would loop forever ("naam bata dein") while the AI can't read the reply.
+    await handoff(db, ctx, cc, context, 'collecting_delivery', 'The AI is unavailable, so the bot could not read the delivery details.');
+    return;
   }
   const prev = (context.delivery ?? {}) as Partial<DeliveryInfo>;
   const delivery: DeliveryInfo = {
@@ -733,7 +773,9 @@ async function handlePayment(db: SupabaseClient, ctx: OrchestratorCtx, cc: Compo
   if (wantsCod) {
     const res = await confirmCodOrder(db, { merchantId: ctx.merchantId }, orderId, cc.businessName);
     const done = { ...context, pendingOrderId: undefined };
-    if (res) {
+    if (res === OUT_OF_STOCK) {
+      await reply(db, ctx, SOLD_OUT_MSG, 'browsing', {});
+    } else if (res) {
       await sendCodConfirmed(db, ctx, cc, orderId, res, done);
     } else {
       await reply(db, ctx, await safeCompose({ kind: 'clarify' }, cc), 'browsing', done);
@@ -747,6 +789,10 @@ async function handlePayment(db: SupabaseClient, ctx: OrchestratorCtx, cc: Compo
       return;
     }
     const res = await confirmBankOrder(db, { merchantId: ctx.merchantId }, orderId, bank.data.id, cc.businessName);
+    if (res === OUT_OF_STOCK) {
+      await reply(db, ctx, SOLD_OUT_MSG, 'browsing', {});
+      return;
+    }
     if (!res) {
       await reply(db, ctx, await safeCompose({ kind: 'clarify' }, cc), 'browsing', context);
       return;

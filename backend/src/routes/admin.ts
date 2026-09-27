@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { loadConfig } from '../config';
 import { getServiceClient } from '../lib/supabase';
 import { forbid, isAdminToken, isManager, resolveCtx } from '../lib/auth';
-import { markCodCollected, rejectPayment, verifyPayment, type ActionResult, type Actor } from '../orchestrator/payment-service';
+import { cancelOrder, markCodCollected, rejectPayment, verifyPayment, type ActionResult, type Actor } from '../orchestrator/payment-service';
 import { signedScreenshotUrl } from '../whatsapp/media';
 import { sendText } from '../whatsapp/client';
 import { parseCsv } from '../lib/csv';
@@ -117,8 +117,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ url: await signedScreenshotUrl(db, key) });
   });
 
-  // Verify/reject are owner/manager only; staff may mark COD collected (docs/spec/09 §2.3).
-  const paymentRoute =
+  // Verify/reject are owner/manager only; staff may mark COD collected and cancel unpaid orders (docs/spec/09 §2.3).
+  const orderAction =
     (managersOnly: boolean, act: (a: Actor, id: string, body: { reason?: string }) => Promise<ActionResult>) =>
     async (req: FastifyRequest, reply: FastifyReply) => {
       const c = req.merchantCtx!;
@@ -127,9 +127,11 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       if (r.ok) return reply.send(r);
       return reply.code(r.status).send({ error: { code: r.status === 404 ? 'NOT_FOUND' : 'CONFLICT', message: r.message } });
     };
-  app.post('/api/v1/admin/orders/:id/payment/verify', paymentRoute(true, (a, id) => verifyPayment(db, a, id)));
-  app.post('/api/v1/admin/orders/:id/payment/reject', paymentRoute(true, (a, id, b) => rejectPayment(db, a, id, b.reason?.trim().slice(0, 200) || 'not verified')));
-  app.post('/api/v1/admin/orders/:id/payment/cod-collected', paymentRoute(false, (a, id) => markCodCollected(db, a, id)));
+  const reason = (b: { reason?: string }, fallback: string) => b.reason?.trim().slice(0, 200) || fallback; // sent to the buyer
+  app.post('/api/v1/admin/orders/:id/payment/verify', orderAction(true, (a, id) => verifyPayment(db, a, id)));
+  app.post('/api/v1/admin/orders/:id/payment/reject', orderAction(true, (a, id, b) => rejectPayment(db, a, id, reason(b, 'not verified'))));
+  app.post('/api/v1/admin/orders/:id/payment/cod-collected', orderAction(false, (a, id) => markCodCollected(db, a, id)));
+  app.post('/api/v1/admin/orders/:id/cancel', orderAction(false, (a, id, b) => cancelOrder(db, a, id, reason(b, 'shop ne cancel kiya'))));
 
   // ── Inbox / Conversations ──
   app.get('/api/v1/admin/conversations', async (req, reply) => {
@@ -141,7 +143,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/admin/conversations/:id', async (req, reply) => {
     const mid = req.merchantCtx!.merchantId;
     const { id } = req.params as { id: string };
-    const convo = await db.from('conversations').select('id, status, current_state, customers(name, wa_id)').eq('id', id).eq('merchant_id', mid).maybeSingle();
+    const convo = await db.from('conversations').select('id, status, current_state, window_expires_at, customers(name, wa_id)').eq('id', id).eq('merchant_id', mid).maybeSingle();
     if (!convo.data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'conversation not found' } });
     const messages = await db.from('messages').select('direction, sender, type, body, status, created_at').eq('conversation_id', id).order('created_at', { ascending: true }).limit(200);
     await db.from('conversations').update({ unread_count: 0 }).eq('id', id);
@@ -174,8 +176,12 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const { id } = req.params as { id: string };
     const text = (req.body as { text?: string })?.text?.trim();
     if (!text) return reply.code(400).send({ error: { code: 'BAD', message: 'text required' } });
-    const convo = await db.from('conversations').select('whatsapp_number_id, merchant_id, customers(wa_id)').eq('id', id).single();
+    const convo = await db.from('conversations').select('whatsapp_number_id, merchant_id, window_expires_at, customers(wa_id)').eq('id', id).single();
     if (convo.data?.merchant_id !== mid) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'not found' } });
+    // WhatsApp refuses free-form messages 24h after the buyer's last one — say so instead of failing silently.
+    if (convo.data.window_expires_at && new Date(convo.data.window_expires_at).getTime() <= Date.now()) {
+      return reply.code(409).send({ error: { code: 'WINDOW_CLOSED', message: 'The buyer last messaged over 24 hours ago, so WhatsApp blocks replies until they message again. Call them instead.' } });
+    }
     const waId = (convo.data?.customers as { wa_id?: string } | null)?.wa_id;
     const num = convo.data?.whatsapp_number_id ? await db.from('whatsapp_numbers').select('phone_number_id').eq('id', convo.data.whatsapp_number_id).single() : { data: null };
     const phoneNumberId = num.data?.phone_number_id ?? (await db.from('whatsapp_numbers').select('phone_number_id').eq('merchant_id', mid).limit(1).maybeSingle()).data?.phone_number_id;
@@ -184,6 +190,19 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     await db.from('messages').insert({ conversation_id: id, merchant_id: mid, direction: 'outbound', sender: 'agent', type: 'text', body: text, wa_message_id: sent.waMessageId, status: sent.waMessageId ? 'sent' : 'queued' });
     await db.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', id);
     return reply.send({ ok: true, delivered: !!sent.waMessageId });
+  });
+
+  // ── Notifications (new orders, payment claims, handoffs, failed buyer messages) ──
+  app.get('/api/v1/admin/notifications', async (req, reply) => {
+    const mid = req.merchantCtx!.merchantId;
+    const unread = await db.from('notifications').select('id', { count: 'exact', head: true }).eq('merchant_id', mid).is('read_at', null);
+    if ((req.query as { count?: string }).count) return reply.send({ unread: unread.count ?? 0 }); // cheap poll for the nav badge
+    const { data } = await db.from('notifications').select('id, type, title, body, data, read_at, created_at').eq('merchant_id', mid).order('created_at', { ascending: false }).limit(50);
+    return reply.send({ unread: unread.count ?? 0, notifications: data ?? [] });
+  });
+  app.post('/api/v1/admin/notifications/read', async (req, reply) => {
+    await db.from('notifications').update({ read_at: new Date().toISOString() }).eq('merchant_id', req.merchantCtx!.merchantId).is('read_at', null);
+    return reply.send({ ok: true });
   });
 
   // ── Analytics ──
