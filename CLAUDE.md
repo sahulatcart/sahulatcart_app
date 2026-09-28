@@ -440,8 +440,9 @@ DNS TXT is the only verification method those support, so there is no backup met
 
 ## Known gotchas
 
-- **Node 22+ required at runtime.** `supabase-js` needs native WebSocket, absent in Node 20, despite
-  `engines.node: >=20` in package.json.
+- **Node 22+ required at runtime.** `supabase-js` needs native WebSocket, absent in Node 20. The root
+  `engines.node` says `>=22`, and it matters: Railpack chooses its Node version from it (it said `>=20`
+  until 2026-09-28).
 - **Next.js `next.config` rewrites bake at build time** and cannot be used for `BACKEND_URL`. That is why
   the API proxy is a dynamic route handler.
 - **Railway run image needs the whole workspace `node_modules`** — npm hoists deps (e.g. `@fastify/helmet`)

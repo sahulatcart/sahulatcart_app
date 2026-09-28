@@ -18,7 +18,7 @@
     "lint": "echo \"(lint not configured yet)\""
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "devDependencies": {
     "pg": "^8.22.0"
