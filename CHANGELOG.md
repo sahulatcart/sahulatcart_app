@@ -7,6 +7,69 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-28 — SEO audit skill, and the first round of fixes it found
+
+**Outcome** — a project skill at `.claude/skills/seo-audit/` (kept local on the owner's machine, not
+committed; static audit script, read-only live
+checker, reference notes on Pakistani search behaviour and Urdu/hreflang), and the fixes from its first
+run: the high-severity issue is gone and medium issues went from 6 to 1.
+
+**`robots.txt` had been blocking `/assets/` since the SEO foundations work.** The line was meant to keep
+"no search value" files out of the index, but it also blocked the CSS, `site.js`, the favicon and
+`logo-1024.png` — the Organization schema's logo and every page's og:image. Google renders pages with
+their CSS and JS, and advises against blocking them. Removed.
+
+**The FAQPage JSON-LD described a FAQ that did not exist on the page.** Google's structured-data rules
+require marked-up Q&A to be visible; hidden markup counts as spammy structured data. Added a visible FAQ
+section to the homepage (reusing the existing `.faq` styles from pricing) with the exact same questions
+and answers, and a comment telling the next editor to change both together. Also worth knowing: since
+Aug 2023 Google only shows FAQ rich results for well-known government and health sites, so the earlier
+note that the FAQ was "eligible for rich results" no longer holds — the value now is the visible text.
+
+**Titles and description.** Home (73 chars, cut off in results) →
+"WhatsApp Sales Bot for Pakistani Shops | Sahulatcart". Features (66) shortened; About (19) and
+Support (21) given descriptive titles. Homepage description 181 → 146 chars. og titles unchanged.
+`sitemap.xml` lastmod bumped for the four changed pages.
+
+**Second round, approved by the owner the same day** — the audit is down to one medium issue (the
+`.tbc` address, owner-only) and one accepted low (demo.html is a short contact page):
+
+- **Search phrases in every hero H1.** The H1s are Roman Urdu slogans with no searchable words. A
+  `.kicker` line now sits *inside* each H1 ("WhatsApp business automation for Pakistani shops",
+  "WhatsApp chatbot pricing in Pakistan", …) so the slogan stays and the H1 carries the query. Styled
+  by `.hero h1 .kicker`; pricing's centred hero uses `.center-kicker`. Pricing and demo titles rewritten.
+- **New page `whatsapp-automation.html`** targeting "WhatsApp business automation": what's automated,
+  a WhatsApp Business app vs Sahulatcart table, who it's for, a visible FAQ mirrored in FAQPage
+  JSON-LD. Every claim is lifted from existing site copy; two drafted claims ("we set the API
+  connection up with you", "answers stock questions") were cut because nothing on the site or in the
+  spec backs them. Linked from the homepage and the footer of the four main pages — the legal pages
+  have a different footer and were left alone.
+- **"Sahulat Cart" (two words).** Owner reports Google doesn't show the site for it — that name was the
+  WooCommerce grocery shop that previously lived on this domain. Added it as `alternateName` on the
+  Organization, WebSite and SoftwareApplication nodes, and one sentence on about.html. Visible copy
+  keeps the brand spelling "Sahulatcart".
+- **Urdu homepage — built, then removed at the owner's request.** A `/ur/` page with hreflang was
+  drafted and verified, then deleted along with its hreflang tags, sitemap entry and RTL styles: the
+  owner does not want an Urdu-script version. `references/urdu-and-hreflang.md` in the seo-audit
+  skill still documents how to do it properly if that changes.
+- **Share image `assets/og-image.png` (1200×630)** replaces the square logo as og:image/twitter:image
+  on every page (the Organization schema logo stays square, which is what that field wants). Rendered
+  from an HTML card with headless Chrome — headless **Edge** exited without writing the file.
+- **Fonts:** measured every rendered element's family/weight across all pages in the browser.
+  JetBrains Mono and Kaisei Decol 400 were never used; dropped from the Google Fonts request.
+- **Local preview gotcha, again:** `python -m http.server` served a stale style.css, so a page
+  first looked like newly added CSS rules didn't exist. A `fetch(..., {cache: 'reload'})` then reload fixed it.
+
+Owner actions still open: Search Console "Request indexing" for every changed/new page plus resubmitting
+the sitemap, a Google Business Profile (it will also help "Sahulat Cart" searches), the real registered
+address/NTN, and the https apex fix (Cloudflare/DNS).
+
+**Dead end:** the skill's first test run (six parallel eval agents) hit the account's session usage
+limit and was abandoned; one failed agent left a `python -m http.server` running that held its sandbox
+folder open until it was killed. The skill has not yet been evaluated end to end.
+
+---
+
 ## 2026-09-28 — The backend hadn't deployed since 21 September
 
 **Outcome** — every backend deploy since the Railway config migration has failed, so the live backend

@@ -171,6 +171,14 @@ a { color: inherit; text-decoration: none; }
 .hero h1 .flip { color: var(--amber); display: inline-block; min-width: 5.2ch; }
 .hero h1 .flip .word { display: inline-block; animation: flipin .5s ease; }
 @keyframes flipin { from { opacity: 0; transform: translateY(60%) rotateX(70deg); } to { opacity: 1; transform: none; } }
+/* Search-term line inside each hero <h1>. The big headlines are Roman Urdu
+   slogans ("Aap so jao…") that contain no words anyone searches for; this line
+   puts the plain search phrase in the H1 without changing the slogan. */
+.hero h1 .kicker {
+  display: flex; width: fit-content; margin-bottom: 16px;
+  font-family: var(--font-body); line-height: 1.4; color: var(--amber);
+}
+.hero .center-kicker .kicker { margin-left: auto; margin-right: auto; }
 .hero p.lead { color: var(--muted-on-dark); font-size: 18.5px; max-width: 50ch; }
 .hero-ctas { display: flex; gap: 14px; margin-top: 34px; flex-wrap: wrap; }
 .hero-note { color: var(--muted-on-dark); font-size: 13px; margin-top: 16px; }
@@ -360,6 +368,16 @@ p.sub { color: var(--muted); font-size: 17px; max-width: 60ch; }
 .faq summary::after { content: '+'; font-size: 22px; color: var(--rose); transition: transform .25s; }
 .faq details[open] summary::after { transform: rotate(45deg); }
 .faq details p { color: var(--muted); font-size: 14.5px; margin-top: 12px; }
+
+/* Comparison table (whatsapp-automation.html) */
+.compare-wrap { overflow-x: auto; margin-top: 36px; background: var(--paper); border: 1px solid var(--line); border-radius: 18px; }
+.compare { width: 100%; border-collapse: collapse; font-size: 15px; min-width: 560px; }
+.compare th, .compare td { text-align: left; padding: 16px 20px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.compare thead th { font-family: var(--font-display); font-size: 16px; background: var(--cream-2); }
+.compare tbody tr:last-child td { border-bottom: 0; }
+.compare td:first-child { font-weight: 600; }
+.compare .yes { color: var(--emerald-deep); font-weight: 700; }
+.compare .no { color: var(--muted); }
 
 /* ── Demo page ─────────────────────────────────────────────── */
 .demo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; margin-top: 48px; }

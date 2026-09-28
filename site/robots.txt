@@ -4,7 +4,4 @@
 User-agent: *
 Allow: /
 
-# Nothing here is private, but these carry no search value.
-Disallow: /assets/
-
 Sitemap: https://www.sahulatcart.com/sitemap.xml
