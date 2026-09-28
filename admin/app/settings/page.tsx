@@ -11,7 +11,7 @@ interface Kb {
 }
 interface Settings {
   business_name: string;
-  negotiation_defaults: { maxDiscountPct?: number; roundsMax?: number };
+  negotiation_defaults: { maxDiscountPct?: number; roundsMax?: number; stalemateAction?: 'handoff' | 'hold_and_close'; bulkTiers?: Tier[] };
   settings: { botEnabled?: boolean; defaultDeliveryCharge?: number; upsellEnabled?: boolean; kb?: Kb };
   bot_persona: { name?: string; style?: string } | null;
   bankAccounts: { id: string; bank_name: string; account_title: string; account_number: string; is_default: boolean }[];
@@ -24,6 +24,8 @@ const STYLES: Record<string, { label: string; hint: string; concessionSteps: num
   standard: { label: 'Standard', hint: 'Balanced haggling — concedes steadily over 3 rounds.', concessionSteps: [0.5, 0.8, 1.0], roundsMax: 3 },
   sakht: { label: 'Sakht 😤', hint: 'Tough negotiator — small concessions over 4 rounds. Protects margin.', concessionSteps: [0.25, 0.5, 0.75, 1.0], roundsMax: 4 },
 };
+
+interface Tier { minQty: number; extraDiscountPct: number }
 
 export default function SettingsPage() {
   const toast = useToast();
@@ -89,6 +91,9 @@ export default function SettingsPage() {
 
   if (!s) return <AppShell><PageHead title="Settings" /><div className="card pad"><div className="skeleton" style={{ height: 60 }} /></div></AppShell>;
   const nd = s.negotiation_defaults;
+  const setNd = (patch: Partial<typeof nd>) => setS({ ...s, negotiation_defaults: { ...nd, ...patch } });
+  const tiers = nd.bulkTiers ?? [];
+  const setTier = (i: number, patch: Partial<Tier>) => setNd({ bulkTiers: tiers.map((t, j) => (j === i ? { ...t, ...patch } : t)) });
 
   return (
     <AppShell>
@@ -129,10 +134,27 @@ export default function SettingsPage() {
       <div className="card pad">
         <h2>Negotiation</h2>
         <div className="row" style={{ alignItems: 'flex-end' }}>
-          <div className="field" style={{ margin: 0 }}><label>Max discount %</label><input type="number" value={nd.maxDiscountPct ?? 0} onChange={(e) => setS({ ...s, negotiation_defaults: { ...nd, maxDiscountPct: Number(e.target.value) } })} className="mini" /></div>
-          <div className="field" style={{ margin: 0 }}><label>Haggle rounds</label><input type="number" value={nd.roundsMax ?? 3} onChange={(e) => setS({ ...s, negotiation_defaults: { ...nd, roundsMax: Number(e.target.value) } })} className="mini" /></div>
+          <div className="field" style={{ margin: 0 }}><label>Max discount %</label><input type="number" value={nd.maxDiscountPct ?? 0} onChange={(e) => setNd({ maxDiscountPct: Number(e.target.value) })} className="mini" /></div>
+          <div className="field" style={{ margin: 0 }}><label>Haggle rounds</label><input type="number" value={nd.roundsMax ?? 3} onChange={(e) => setNd({ roundsMax: Number(e.target.value) })} className="mini" /></div>
+          <div className="field" style={{ margin: 0 }}><label>When haggling stalls</label>
+            <select value={nd.stalemateAction ?? 'handoff'} onChange={(e) => setNd({ stalemateAction: e.target.value as 'handoff' | 'hold_and_close' })} style={{ width: 'auto' }}>
+              <option value="handoff">Hand the chat to me</option>
+              <option value="hold_and_close">Bot holds at its last price</option>
+            </select>
+          </div>
           <div className="field" style={{ margin: 0 }}><label>Default delivery (Rs)</label><input type="number" value={Math.round((s.settings.defaultDeliveryCharge ?? 0) / 100)} onChange={(e) => setS({ ...s, settings: { ...s.settings, defaultDeliveryCharge: Math.round(Number(e.target.value)) * 100 } })} className="mini" style={{ width: 110 }} /></div>
           <button className="btn" onClick={saveNeg}>Save</button>
+        </div>
+        <div style={{ marginTop: 16 }}>
+          <div className="hint" style={{ marginBottom: 6 }}>Bulk discounts — extra % off, on top of the max discount, when a buyer takes at least this many pieces. Min price still applies.</div>
+          {tiers.map((t, i) => (
+            <div className="row" key={i} style={{ marginBottom: 6 }}>
+              <input type="number" className="mini" value={t.minQty} onChange={(e) => setTier(i, { minQty: Number(e.target.value) })} /> pieces or more →
+              <input type="number" className="mini" value={t.extraDiscountPct} onChange={(e) => setTier(i, { extraDiscountPct: Number(e.target.value) })} /> % extra
+              <button className="btn ghost sm" onClick={() => setNd({ bulkTiers: tiers.filter((_, j) => j !== i) })}>Remove</button>
+            </div>
+          ))}
+          <button className="btn ghost sm" onClick={() => setNd({ bulkTiers: [...tiers, { minQty: 10, extraDiscountPct: 5 }] })}>+ Add bulk tier</button>
         </div>
       </div>
 

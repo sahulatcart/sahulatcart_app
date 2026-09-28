@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../lib/logger';
 import { rs } from '../lib/money';
-import { formatPkt, generateSlipPdf, uploadSlip, type SlipData } from './slip';
+import { formatPkt, generateSlipPdf, isPdfSafe, uploadSlip, type SlipData } from './slip';
 
 export interface DeliveryInfo {
   name: string | null;
@@ -257,9 +257,9 @@ async function finalizeSlip(db: SupabaseClient, merchantId: string, orderId: str
     delivery: { name: order.delivery_name, address: order.delivery_address, area: order.delivery_area, city: order.delivery_city, phone: order.delivery_phone },
     paymentLabel,
   };
-  let key: string | null = null;
+  let key: string | null = null; // no PDF → callers send the text slip
   try {
-    key = await uploadSlip(db, merchantId, orderId, await generateSlipPdf(sd));
+    if (isPdfSafe(sd)) key = await uploadSlip(db, merchantId, orderId, await generateSlipPdf(sd));
     if (key) await db.from('orders').update({ slip_url: key }).eq('id', orderId);
   } catch (e) {
     logger.error({ err: (e as Error).message }, 'slip pdf failed');

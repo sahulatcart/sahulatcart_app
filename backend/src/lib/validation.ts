@@ -28,6 +28,10 @@ export const invalidNegotiationField = firstInvalid({
   roundsMax: (v) => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 10,
   concessionSteps: (v) => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'number' && x > 0 && x <= 1),
   autoAcceptAtFloor: bool,
+  openingStance: optional((v) => v === 'list_price' || v === 'small_goodwill'),
+  stalemateAction: optional((v) => v === 'handoff' || v === 'hold_and_close'),
+  bulkTiers: optional((v) => Array.isArray(v) && v.every((t: { minQty?: unknown; extraDiscountPct?: unknown }) =>
+    Number.isInteger(t?.minQty) && (t.minQty as number) >= 2 && pct(t?.extraDiscountPct))),
 });
 
 /** merchants.settings — only the money/switch fields; free text (kb, persona) is not constrained. */

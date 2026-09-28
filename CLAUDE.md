@@ -92,12 +92,16 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **11 files, 94 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **12 files, 99 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
 Run tests via the npm script, not bare `npx vitest`: without `node_modules` installed, `npx` silently
 fetches a different major version than the pinned `^2.1.1`.
+
+[backend/vitest.config.ts](backend/vitest.config.ts) gives every test a dummy environment. `config.ts`
+validates env the moment the logger is imported, so without it only pure modules were testable. The
+values are fake on purpose — a test must never reach the real database, WhatsApp or Gemini.
 
 ### Database
 
@@ -205,6 +209,12 @@ ignores any model-suggested price and recomputes from product + rules.
 
 Bargaining personality (narm/standard/sakht) is **pure config** — concession-curve presets fed into the
 engine, not engine logic. Keep it that way.
+
+**Bulk tiers** come from the product, else the merchant's `negotiation_defaults.bulkTiers` (set in
+Settings). They add extra % off *on top of* the max discount, still floored by `min_price` and the
+margin guard. **Stalemate** (`stalemateAction`): `handoff` (default) hands the chat to the merchant;
+`hold_and_close` makes the bot hold at its final price and keeps the negotiation open, so a later
+"theek hai" closes at that price.
 
 ### LLM layer
 
@@ -336,7 +346,8 @@ through a pointless extra hop.
 - **Shared enums mirror the DB.** `shared/src/enums.ts` must stay in lockstep with the Postgres enums in
   `db/migrations/0001_core.sql`.
 - Prefer dependency-free implementations where practical — the CSV parser, the marketing site, and PDF
-  slips (pdfkit rather than a headless browser) all follow this.
+  slips (pdfkit rather than a headless browser) all follow this. pdfkit's built-in fonts are Latin-only,
+  so a slip with Urdu script or emoji skips the PDF and the buyer gets the text slip (`isPdfSafe()`).
 
 ## Branding — current state
 

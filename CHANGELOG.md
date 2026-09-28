@@ -7,6 +7,44 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-27 — Settings that did nothing, and Urdu slips (section C)
+
+**Outcome** — two negotiation settings that were stored but ignored now work and can be set in the
+portal, and buyers with Urdu-script names no longer get garbled PDF slips. No migration needed.
+Sections A and B were merged and deployed first (PRs #1 and #2), and checked live: `/readyz` 200,
+CORS headers gone, `/notifications` 200.
+
+**What was fixed**
+- **Bulk-discount tiers never applied (#17).** The canonical schema (doc 02) keeps `bulkTiers` in
+  `merchants.negotiation_defaults`. The engine only read `product.bulkTiers`, which no column or code
+  path ever sets, and there was no UI to set them either. The engine now falls back to the merchant's
+  tiers, as spec 06 §3.5 says, and Settings has a "Bulk discounts" editor. Two engine tests cover the
+  fallback and the product override; the §10 scenario table is unchanged and still at 100%.
+- **`stalemateAction` was read but ignored (#18).** Every stalled haggle handed off. Settings now has
+  "When haggling stalls". `hold_and_close` holds at the final price, and the negotiation stays open so
+  a later "theek hai" closes there. It isn't marked `rejected`, which would have started a fresh
+  negotiation at list price. The handoff notification now says which product stalled.
+- **Urdu-script names garbled the PDF slip (#19).** pdfkit's built-in fonts are Latin-1, and when a
+  PDF exists the buyer gets only the PDF, not the text slip. Now `isPdfSafe()` skips the PDF for
+  non-Latin text, and the existing fallback sends the WhatsApp text slip, which renders any script.
+  Embedding an Urdu font was ruled out: pdfkit does no right-to-left layout, so Urdu would still print
+  in reverse order.
+- **Validation** for the new settings: `stalemateAction` and `openingStance` are enums; each bulk tier
+  needs `minQty` ≥ 2 and an extra % from 0 to 100.
+
+**Trap found: tests could only import pure modules.** The logger validates the environment at import
+time, so the first test to touch `slip.ts` died with `process.exit(1)`. `backend/vitest.config.ts` now
+gives every test a dummy environment (`NODE_ENV` has to be overridden too; Vitest sets `test`, which
+`config.ts` rejects). This also unblocks the orchestrator tests planned for section D.
+
+**How it was verified**
+- Backend: 99/99 tests across 12 files: 2 engine, 1 validation, 2 slip. Root and admin typechecks exit 0.
+- The Settings page compiles in the dev server with no errors.
+- The new controls weren't clicked through: the portal needs a real login, and there are no test
+  credentials.
+
+---
+
 ## 2026-09-27 — Reliability fixes from the codebase review (section B)
 
 **Outcome** — seven fixes to how the bot handles messages, AI outages, stock and the 24-hour window.

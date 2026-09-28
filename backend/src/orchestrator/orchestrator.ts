@@ -479,8 +479,16 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
       Object.assign(negPatch, { last_bot_offer: decision.price });
       break;
     case 'REJECT':
+      // Stalemate (§4.5). 'hold_and_close': stay firm at the final price and keep the deal open,
+      // so a later "theek hai" closes at that price. Default 'handoff': a person takes over.
+      if (defaults.stalemateAction === 'hold_and_close') {
+        const last = decision.audit.floor;
+        spec = { kind: 'hold', productName: product.name, priceRupees: rupees(last), ...withQty(last) };
+        Object.assign(negPatch, { last_bot_offer: last });
+        break;
+      }
       await saveNeg(db, neg?.id, { ...negPatch, status: 'rejected' });
-      await handoff(db, ctx, cc, newContext, 'negotiating');
+      await handoff(db, ctx, cc, newContext, 'negotiating', `Haggling stalled on ${product.name}: the customer won't meet the lowest price.`);
       return;
     case 'ASK':
       spec = { kind: 'clarify' };

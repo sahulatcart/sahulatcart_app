@@ -35,6 +35,15 @@ export interface SlipData {
   paymentLabel: string;
 }
 
+/**
+ * True when every text field fits pdfkit's built-in (Latin-1) fonts. Urdu script, emoji and the like
+ * would print as garbage, so such orders get the WhatsApp text slip instead — WhatsApp renders any script.
+ */
+export function isPdfSafe(d: SlipData): boolean {
+  const fields = [d.businessName, d.paymentLabel, ...d.items.map((i) => i.name), ...Object.values(d.delivery)];
+  return fields.every((f) => !f || /^[\x00-\xFF]*$/.test(f));
+}
+
 /** Render an order slip as a PDF buffer (pdfkit — no headless browser needed). */
 export function generateSlipPdf(d: SlipData): Promise<Buffer> {
   return new Promise((resolve, reject) => {

@@ -28,8 +28,12 @@ function acceptBand(listPrice: Paisa): Paisa {
   return Math.min(roundToRupee(listPrice * 0.01), ACCEPT_BAND_MAX);
 }
 
-function highestBulkPct(product: ProductPricing, quantity: number): number {
-  const tiers = product.bulkTiers ?? [];
+/** Bulk tiers: the product's own, else the merchant-wide default (§3.5). */
+function bulkTiersOf(product: ProductPricing, defaults: NegotiationDefaults): NonNullable<ProductPricing['bulkTiers']> {
+  return product.bulkTiers ?? defaults.bulkTiers ?? [];
+}
+
+function highestBulkPct(tiers: NonNullable<ProductPricing['bulkTiers']>, quantity: number): number {
   let pct = 0;
   for (const t of tiers) if (quantity >= t.minQty && t.extraDiscountPct > pct) pct = t.extraDiscountPct;
   return pct;
@@ -50,7 +54,7 @@ export function computeFloor(
   if (!product.negotiable) return list;
 
   const effPct = effectiveMaxDiscountPct(product, defaults);
-  const effectivePct = Math.min(effPct + highestBulkPct(product, quantity), 100);
+  const effectivePct = Math.min(effPct + highestBulkPct(bulkTiersOf(product, defaults), quantity), 100);
 
   // min_price is absolute and wins over the pct path (§3.1).
   let base = product.minPrice != null ? product.minPrice : Math.round(list * (1 - effectivePct / 100));
@@ -117,7 +121,7 @@ export function decide(input: NegotiationInput): NegotiationDecision {
   }
 
   // Bulk needs a quantity we don't have yet.
-  if ((product.bulkTiers?.length ?? 0) > 0 && input.quantity == null) {
+  if (bulkTiersOf(product, defaults).length > 0 && input.quantity == null) {
     return decision('ASK', undefined, mkAudit(history.rounds), { question: 'confirm_quantity' });
   }
 
