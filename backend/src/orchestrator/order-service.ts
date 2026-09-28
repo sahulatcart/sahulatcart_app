@@ -242,14 +242,14 @@ async function placed(db: SupabaseClient, merchantId: string, orderId: string, b
   return { orderNumber: order.order_number, total: order.total, slip: text, slipKey: key };
 }
 
-/** Build the text + PDF slip for an order, store the PDF, save order.slip_url. */
-async function finalizeSlip(db: SupabaseClient, merchantId: string, orderId: string, businessName: string, order: OrderRow, paymentLabel: string): Promise<{ text: string; key: string | null }> {
-  const itemsRes = await db.from('order_items').select('name_snapshot, quantity, line_total').eq('order_id', orderId);
-  const sd: SlipData = {
+type ItemRow = { name_snapshot: string; quantity: number; line_total: number };
+
+function slipData(order: OrderRow, businessName: string, items: ItemRow[], paymentLabel: string): SlipData {
+  return {
     orderNumber: order.order_number,
     placedAt: order.placed_at ?? order.created_at,
     businessName,
-    items: (itemsRes.data ?? []).map((i) => ({ name: i.name_snapshot, qty: i.quantity, lineTotal: i.line_total })),
+    items: items.map((i) => ({ name: i.name_snapshot, qty: i.quantity, lineTotal: i.line_total })),
     subtotal: order.subtotal,
     discount: order.discount_total,
     deliveryCharge: order.delivery_charge,
@@ -257,6 +257,23 @@ async function finalizeSlip(db: SupabaseClient, merchantId: string, orderId: str
     delivery: { name: order.delivery_name, address: order.delivery_address, area: order.delivery_area, city: order.delivery_city, phone: order.delivery_phone },
     paymentLabel,
   };
+}
+
+/** The WhatsApp text slip of a placed order — for buyers who got no PDF (e.g. an Urdu-script name). */
+export async function orderSlipText(db: SupabaseClient, orderId: string, paymentLabel: string): Promise<string | null> {
+  const [o, items] = await Promise.all([
+    db.from('orders').select('*, merchants(business_name)').eq('id', orderId).maybeSingle(),
+    db.from('order_items').select('name_snapshot, quantity, line_total').eq('order_id', orderId),
+  ]);
+  const order = o.data as (OrderRow & { merchants?: { business_name?: string } | null }) | null;
+  if (!order?.order_number) return null;
+  return buildSlipText(slipData(order, order.merchants?.business_name ?? 'Shop', (items.data ?? []) as ItemRow[], paymentLabel));
+}
+
+/** Build the text + PDF slip for an order, store the PDF, save order.slip_url. */
+async function finalizeSlip(db: SupabaseClient, merchantId: string, orderId: string, businessName: string, order: OrderRow, paymentLabel: string): Promise<{ text: string; key: string | null }> {
+  const itemsRes = await db.from('order_items').select('name_snapshot, quantity, line_total').eq('order_id', orderId);
+  const sd = slipData(order, businessName, (itemsRes.data ?? []) as ItemRow[], paymentLabel);
   let key: string | null = null; // no PDF → callers send the text slip
   try {
     if (isPdfSafe(sd)) key = await uploadSlip(db, merchantId, orderId, await generateSlipPdf(sd));

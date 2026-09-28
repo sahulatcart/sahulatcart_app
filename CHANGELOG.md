@@ -7,6 +7,57 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-28 — Order-flow tests, and the smaller bugs found along the way (sections D + E)
+
+**Outcome** — the conversation code that caused most of the review's bugs now has tests: 13 whole
+conversations covering COD, bank transfer, cancellation, sold-out, unserved areas, the 24-hour window,
+AI outages, ambiguous products and both stalemate settings. Six smaller bugs noticed during A–C are
+fixed. Branch `fix/review-section-d`, stacked on C. No migration.
+
+**Bugs fixed**
+- **Delivery charge lookup.** The customer's area went into a SQL `ilike` pattern, so a `%` or `_`
+  matched any zone. Matching was also one-way ("DHA Phase 5, Lahore" never matched zone "DHA Phase 5").
+  And an area the merchant had marked **not serviceable** silently got the default charge. Zones are
+  now matched in code by whole words, most specific first (`delivery.ts`). An unserved area gets
+  "Maazrat, X mein abhi delivery nahi hoti" and the bot takes another address.
+- **Orders page listed never-placed drafts.** Every abandoned checkout showed up. It's now filtered
+  to orders with a number, like the dashboard already was.
+- **Meta catalog sync** read only the first 200 products and re-activated any product the merchant had
+  switched off (`is_active: true` on every upsert). It now pages through up to 10,000 products, and
+  `is_active` is left alone: new rows default to active, and one switched off stays off.
+- **Staff could read full bank account numbers** in Settings. Spec 09 gives staff no bank-account
+  access, so they now get an empty list.
+- **Bank-transfer buyers with an Urdu-script name got no slip at all.** No PDF (see C), and the
+  payment-verified message didn't carry the text slip. `orderSlipText()` now adds it whenever there's
+  no PDF.
+- **`webhook_events` kept every raw customer message forever**, but the privacy policy (§10) says 90
+  days for technical logs. The stored copy is now dropped once processed, and the sweeper deletes
+  rows older than 90 days, once an hour.
+
+**Tests (section D).** `test-support/fake-db.ts` is an in-memory stand-in for the Supabase query
+builder, about 140 lines, covering only the calls the flow makes, including JSON-path filters and
+many-to-one embeds. `orchestrator.flow.test.ts` scripts the AI's intents, switches its phrasing off
+(so replies are the deterministic templates), and records WhatsApp sends.
+
+**Checking the tests themselves.** All 13 passed on the first run, which is suspicious, so four
+fixes were reverted one at a time: the sold-out check, the unserved-area refusal, the state filter on
+verify, and the stalemate setting. Each made exactly one test fail. Files were restored from copies,
+and the suite passed again.
+
+**Deliberately not done**
+- **Opt-out ("bandh karo")** is saved and still never read. Nothing proactive is sent today, so there's
+  nothing to suppress yet. It belongs with the WhatsApp templates work: any template send must check it.
+- **Payment screenshots are never deleted.** The privacy policy promises 12 months. That needs a storage
+  cleanup job, which is a separate piece of work.
+
+**How it was verified**
+- 116/116 tests across 14 files. Root and admin typechecks exit 0.
+- Locally against the live database, read-only: the orders list returns 200 with no drafts, settings
+  returns 200 with the expected keys, and there were no errors in the log. Catalog sync wasn't run
+  locally, because it writes products.
+
+---
+
 ## 2026-09-27 — Settings that did nothing, and Urdu slips (section C)
 
 **Outcome** — two negotiation settings that were stored but ignored now work and can be set in the

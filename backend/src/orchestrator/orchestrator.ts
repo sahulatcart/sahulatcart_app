@@ -13,6 +13,7 @@ import type { NormalizedMessage } from '../whatsapp/types';
 import { resolveProduct, type CatalogItem } from './resolve';
 import { pickUpsell, type UpsellCandidate } from './upsell';
 import { priceGuardOk, sanctionedNumbers } from './guard';
+import { matchZone, type Zone } from './delivery';
 import { confirmBankOrder, confirmCodOrder, createDraftOrder, OUT_OF_STOCK, switchBankOrderToCod, type DeliveryInfo } from './order-service';
 
 export interface OrchestratorCtx {
@@ -29,6 +30,7 @@ const MAX_UNTRACKED_QTY = 100;
 const SOLD_OUT_MSG = 'Maazrat, order ke dauran ye item stock mein khatam ho gaya, is liye order cancel kar diya hai. Kuch aur dikhaoon?';
 /** What a customer can cancel from chat (checkout stages). Merchants can also cancel 'preparing'. */
 const CUSTOMER_CANCELLABLE = ['draft', 'confirmed', 'awaiting_payment'];
+const notServedMsg = (area: string) => `Maazrat, ${area} mein abhi delivery nahi hoti. Kisi aur area ka address bhej dein, ya "cancel" likh dein.`;
 
 const DEFAULT_NEGOTIATION: NegotiationDefaults = {
   maxDiscountPct: 0,
@@ -452,7 +454,7 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
         phone: prev.phone ?? ctx.customerWaId ?? null,
       };
       const charge = await getDeliveryCharge(db, ctx.merchantId, delivery.area, merchant.settings);
-      const order = await createDraftOrder(db, ctx, delivery, charge);
+      const order = charge === null ? null : await createDraftOrder(db, ctx, delivery, charge); // unserved → ask again below
       if (order) {
         const dctx = { ...newContext, delivery, pendingOrderId: order.orderId };
         await reply(db, ctx, await safeCompose({ kind: 'accept', productName: product.name, priceRupees: rupees(decision.price!), ...withQty(decision.price!) }, cc), 'selecting_payment', dctx, false);
@@ -705,10 +707,12 @@ async function handleEscape(
   return false;
 }
 
-async function getDeliveryCharge(db: SupabaseClient, merchantId: string, area: string | null, settings: unknown): Promise<number> {
+/** Delivery charge for an area (paisa), or null when the merchant marked that area as not served. */
+async function getDeliveryCharge(db: SupabaseClient, merchantId: string, area: string | null, settings: unknown): Promise<number | null> {
   if (area) {
-    const z = await db.from('delivery_zones').select('charge').eq('merchant_id', merchantId).ilike('area_name', `%${area}%`).eq('is_serviceable', true).limit(1).maybeSingle();
-    if (z.data) return z.data.charge as number;
+    const zones = await db.from('delivery_zones').select('area_name, charge, is_serviceable').eq('merchant_id', merchantId);
+    const zone = matchZone(area, (zones.data ?? []) as Zone[]);
+    if (zone) return zone.is_serviceable ? zone.charge : null;
   }
   const s = (settings ?? {}) as { defaultDeliveryCharge?: number };
   return typeof s.defaultDeliveryCharge === 'number' ? s.defaultDeliveryCharge : 0;
@@ -751,6 +755,11 @@ async function handleDelivery(db: SupabaseClient, ctx: OrchestratorCtx, cc: Comp
     return;
   }
   const charge = await getDeliveryCharge(db, ctx.merchantId, delivery.area, settings);
+  if (charge === null) {
+    // Area not served: say so and take another address — never charge the default for it.
+    await reply(db, ctx, notServedMsg(delivery.area!), 'collecting_delivery', { ...newCtx, delivery: { ...delivery, address: null, area: null, city: null } });
+    return;
+  }
   const order = await createDraftOrder(db, ctx, delivery, charge);
   if (!order) {
     await reply(db, ctx, await safeCompose({ kind: 'clarify' }, cc), 'browsing', newCtx);

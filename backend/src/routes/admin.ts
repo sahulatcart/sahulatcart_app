@@ -89,7 +89,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/admin/orders', async (req, reply) => {
     const mid = req.merchantCtx!.merchantId;
     const { status, payment } = req.query as { status?: string; payment?: string };
-    let q = db.from('orders').select('id, order_number, status, payment_method, payment_status, total, delivery_name, delivery_area, created_at').eq('merchant_id', mid).order('created_at', { ascending: false }).limit(100);
+    let q = db.from('orders').select('id, order_number, status, payment_method, payment_status, total, delivery_name, delivery_area, created_at').eq('merchant_id', mid).not('order_number', 'is', null).order('created_at', { ascending: false }).limit(100); // drafts were never placed
     if (status) q = q.eq('status', status);
     if (payment) q = q.eq('payment_status', payment);
     const { data, error } = await q;
@@ -423,14 +423,25 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       const cats = await graph<{ data?: { id: string }[]; error?: { message: string } }>(`${waba}/product_catalogs`);
       const catalogId = cats.data?.[0]?.id;
       if (!catalogId) return reply.send({ synced: 0, message: cats.error?.message || 'No Meta catalog connected to this WhatsApp account.' });
-      const prods = await graph<{ data?: { retailer_id: string; name: string; price?: string; description?: string }[] }>(`${catalogId}/products?fields=retailer_id,name,price,description&limit=200`);
+      type MetaProduct = { retailer_id: string; name: string; price?: string; description?: string };
+      const prods: MetaProduct[] = [];
+      let after = '';
+      for (let page = 0; page < 50; page++) { // up to 10,000 products
+        const res = await graph<{ data?: MetaProduct[]; paging?: { next?: string; cursors?: { after?: string } } }>(
+          `${catalogId}/products?fields=retailer_id,name,price,description&limit=200${after ? `&after=${encodeURIComponent(after)}` : ''}`
+        );
+        prods.push(...(res.data ?? []));
+        after = res.paging?.next ? res.paging.cursors?.after ?? '' : '';
+        if (!after) break;
+      }
       let synced = 0;
       let skipped = 0;
-      for (const p of prods.data ?? []) {
+      for (const p of prods) {
         // Meta formats prices ("Rs1,500.00"); an unreadable one is skipped, never sold as Rs 0.
         const price = parsePaisa(p.price);
         if (price == null) { skipped++; continue; }
-        const { error } = await db.from('products').upsert({ merchant_id: mid, external_ref: p.retailer_id, name: p.name, description: p.description ?? null, price, is_active: true }, { onConflict: 'merchant_id,external_ref' });
+        // No is_active here: new rows default to active, and one the merchant switched off stays off.
+        const { error } = await db.from('products').upsert({ merchant_id: mid, external_ref: p.retailer_id, name: p.name, description: p.description ?? null, price }, { onConflict: 'merchant_id,external_ref' });
         if (!error) synced++;
       }
       const s = (await db.from('merchants').select('settings').eq('id', mid).single()).data?.settings;
@@ -445,9 +456,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/admin/settings', async (req, reply) => {
     const mid = req.merchantCtx!.merchantId;
     const m = await db.from('merchants').select('business_name, negotiation_defaults, settings, bot_persona').eq('id', mid).single();
-    const banks = await db.from('bank_accounts').select('id, bank_name, account_title, account_number, iban, is_default, is_active').eq('merchant_id', mid);
+    // Staff get no bank-account access at all, not even to read (docs/spec/09 §2.3).
+    const banks = isManager(req.merchantCtx!) ? await db.from('bank_accounts').select('id, bank_name, account_title, account_number, iban, is_default, is_active').eq('merchant_id', mid) : null;
     const zones = await db.from('delivery_zones').select('id, area_name, city, charge, is_serviceable').eq('merchant_id', mid);
-    return reply.send({ ...m.data, bankAccounts: banks.data ?? [], deliveryZones: zones.data ?? [] });
+    return reply.send({ ...m.data, bankAccounts: banks?.data ?? [], deliveryZones: zones.data ?? [] });
   });
 
   app.patch('/api/v1/admin/settings', async (req, reply) => {

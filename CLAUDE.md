@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **12 files, 99 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **14 files, 116 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -102,6 +102,13 @@ fetches a different major version than the pinned `^2.1.1`.
 [backend/vitest.config.ts](backend/vitest.config.ts) gives every test a dummy environment. `config.ts`
 validates env the moment the logger is imported, so without it only pure modules were testable. The
 values are fake on purpose — a test must never reach the real database, WhatsApp or Gemini.
+
+**Whole conversations are tested** in
+[orchestrator/orchestrator.flow.test.ts](backend/src/orchestrator/orchestrator.flow.test.ts): scripted
+intents in, replies and DB rows out, over [test-support/fake-db.ts](backend/src/test-support/fake-db.ts),
+an in-memory stand-in for the Supabase query builder. The fake implements only the builder calls the
+order flow uses — a new call (`.or()`, `.range()`, …) needs adding there — and its RPCs are JS twins
+of the SQL in migrations 0006/0008. Change one, change the other; the SQL itself is tested in Postgres.
 
 ### Database
 
@@ -152,6 +159,8 @@ Meta has its 200 before any work happens, so nothing may be lost after the ACK:
   a local backend shares the live DB and WhatsApp token via `.env` and must never answer real customers.
   A replay can repeat a reply that was already sent — a duplicate beats silence.
 - **Shutdown** stops taking webhooks, then waits up to 25 s for queued messages (`drainWebhooks`).
+- **Retention.** The stored copy of a message is dropped once it's processed, and rows older than 90 days
+  are deleted hourly by the sweeper — the privacy policy's limit for technical logs (§10).
 
 Tenant routing: one backend, one webhook endpoint; inbound is routed to a merchant by looking up
 `phone_number_id` in `whatsapp_numbers`. Unknown numbers are logged and ignored.
@@ -193,7 +202,11 @@ in that are easy to break accidentally:
   product. An explicit mention that doesn't resolve is "not found" — never a silent fallback to the
   previous item.
 
-Composed from independently tested modules: `resolve.ts` (product matching), `upsell.ts` (add-on picker),
+- **Delivery zones** are matched in code by whole words (`delivery.ts` `matchZone()`), never as a SQL
+  pattern built from the customer's text. An area the merchant marked not serviceable is refused — the
+  bot asks for another address — instead of silently getting the default charge.
+
+Composed from independently tested modules: `resolve.ts` (product matching), `upsell.ts` (add-on picker), `delivery.ts` (zones),
 `order-service.ts` (draft/confirm orders), `payment-service.ts`, `slip.ts` (PDF slips), `guard.ts`.
 
 ### Negotiation engine
