@@ -320,6 +320,15 @@ Infrastructure is declared in [.railway/railway.ts](.railway/railway.ts) and app
 `railway config plan` / `railway config apply`. **Always re-run `railway config plan` after an apply**
 — if a field is still listed, it did not persist.
 
+**The backend's `build` script compiles `@app/shared` first** (`tsc -p ../shared/tsconfig.json && …`).
+Railway runs `npm run build --workspace=@app/backend`, and `@app/shared` resolves to `shared/dist`,
+which doesn't exist in a clean checkout. Without this, every backend deploy fails while Railway keeps
+serving the old container. That happened from 2026-09-21 to 2026-09-28 and looked healthy the whole time.
+
+**To check what's actually deployed**, don't trust a 200. Look at `/healthz` `uptime` (it resets on
+deploy), or probe a route that only the new code has. A CORS preflight is *not* a test: the old code
+answered unknown origins with no header too.
+
 The admin's `buildCommand` is deliberately `echo docker-build` — a harmless no-op. It is **not**
 leftover junk: Railway previously held a *start* command in that slot, which failed every deploy, and
 setting the field to `null` silently would not persist. Do not "tidy" it away.

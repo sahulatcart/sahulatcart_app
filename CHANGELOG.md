@@ -7,6 +7,53 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-28 — The backend hadn't deployed since 21 September
+
+**Outcome** — every backend deploy since the Railway config migration has failed, so the live backend
+still ran 21 September's code. Sections A, B and C reached **only the admin portal**. The cause was
+reproduced and fixed in `backend/package.json`; Railway's own build log still needs confirming by
+someone with access.
+
+**The misleading symptom.** After A merged, the backend was declared live because a CORS preflight
+from `evil.example` got no `Access-Control-Allow-Origin` header. That test proved nothing: the old
+code only echoes its configured `ADMIN_ORIGIN`, so an unknown origin gets no header from old *or*
+new code. Every URL also returned 200, because Railway keeps serving the last good container when a
+build fails.
+
+**What gave it away.** `/healthz` reported `uptime` 579,558 s (6.7 days) on 2026-09-28. And
+`GET /api/v1/admin/notifications` with no login returned **404, route not found**; the new code
+returns 401. The portal had deployed (its `/notifications` page returned 200), which is why it looked
+fine.
+
+**Cause, reproduced in a clean checkout** (`git archive` + `npm ci`, as Railway does).
+`.railway/railway.ts` builds the backend with `npm run build --workspace=@app/backend`, which runs
+only `tsc` for the backend. `@app/shared` resolves to `shared/dist`, which doesn't exist in a clean
+checkout, so the build fails with `Cannot find module '@app/shared'` (exit 2, 7 errors). This also
+fails on `7db3588`, from before any review work, so it's older than sections A–D. `backend/Dockerfile`
+builds `shared` first and works, which suggests the service built that way before the migration
+switched it to Railpack.
+
+**Fix.** The backend's own `build` script now compiles `shared` first. That works however Railway
+calls it, with no Railway settings touched. Verified from a clean checkout:
+- Railway's exact command exits 0;
+- the Dockerfile steps and root `npm run build` also exit 0;
+- the built `backend/dist/index.js` boots with a fake environment, answers `/healthz`, and serves
+  the new routes (401 on `/notifications`).
+
+**Not yet confirmed.** Railway's build log for the failed deploys hasn't been read; nobody on this
+work has Railway access. PITFALLS says read it before changing anything. The reproduction is strong
+evidence, but the owner should open the backend service → Deployments → latest failed build and
+check it ends with `Cannot find module '@app/shared'`. `backend/railway.json`, which describes a
+Dockerfile build with a `/healthz` health check, doesn't match the IaC and was left alone.
+
+**When it deploys**, sections A–D reach the backend in one go. Checks afterwards:
+- `/healthz` uptime should be small;
+- unauthenticated `/api/v1/admin/notifications` should return 401, not 404.
+
+Migrations 0006–0008 still aren't applied; the code's fallbacks cover that, and it's tested.
+
+---
+
 ## 2026-09-28 — Order-flow tests, and the smaller bugs found along the way (sections D + E)
 
 **Outcome** — the conversation code that caused most of the review's bugs now has tests: 13 whole
