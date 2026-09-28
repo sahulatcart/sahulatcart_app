@@ -23,6 +23,8 @@ const WINDOW_MS = 24 * 60 * 60 * 1000;
 const REPLAY_MIN_AGE_MS = 5 * 60_000;
 const REPLAY_MAX_AGE_MS = 60 * 60_000;
 const MAX_REPLAYS = 3;
+// Privacy policy §10: technical logs are kept 90 days. The message itself lives on in `messages`.
+const EVENT_RETENTION_MS = 90 * 24 * 60 * 60_000;
 
 interface Tenant { id: string; merchant_id: string; phone_number_id: string; business_name: string }
 /** What a message's webhook_events row stores, so it can be replayed without the original payload. */
@@ -67,7 +69,8 @@ function dispatch(db: SupabaseClient, t: Tenant, msg: NormalizedMessage): Promis
   const mark = async (patch: Record<string, unknown>) => { await db.from('webhook_events').update(patch).eq('event_id', id); };
   const done = serialize(`${t.merchant_id}:${msg.from}`, () => handleInboundMessage(db, t, msg))
     .then(
-      () => mark({ status: 'processed', processed_at: new Date().toISOString() }),
+      // The stored copy of the message was only needed for a replay — drop it once processed.
+      () => mark({ status: 'processed', processed_at: new Date().toISOString(), payload: null }),
       (e: unknown) => {
         const err = e instanceof Error ? e.message : String(e);
         logger.error({ err, eventId: id }, 'inbound message failed');
@@ -247,10 +250,19 @@ export async function replayStuckMessages(db = getServiceClient()): Promise<void
 }
 
 let sweeper: NodeJS.Timeout | undefined;
+let lastPurge = 0;
 
-/** Check for stuck messages at boot and every minute. Production only — see CLAUDE.md. */
+/** Delete webhook_events past the retention period — at most once an hour. */
+async function purgeOldEvents(db = getServiceClient()): Promise<void> {
+  if (Date.now() - lastPurge < 60 * 60_000) return;
+  lastPurge = Date.now();
+  const { error } = await db.from('webhook_events').delete().lt('received_at', new Date(Date.now() - EVENT_RETENTION_MS).toISOString());
+  if (error) logger.error({ err: error.message }, 'webhook_events purge failed');
+}
+
+/** Check for stuck messages at boot and every minute, and purge old events. Production only — see CLAUDE.md. */
 export function startReplaySweeper(): void {
-  const run = () => void replayStuckMessages().catch((e: unknown) => logger.error({ err: String(e) }, 'replay sweep failed'));
+  const run = () => void replayStuckMessages().then(() => purgeOldEvents()).catch((e: unknown) => logger.error({ err: String(e) }, 'replay sweep failed'));
   run();
   sweeper = setInterval(run, 60_000);
   sweeper.unref();

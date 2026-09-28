@@ -3,6 +3,7 @@ import type { BotState } from '@app/shared';
 import { logger } from '../lib/logger';
 import { sendDocument, sendText } from '../whatsapp/client';
 import { signedSlipUrl } from './slip';
+import { orderSlipText } from './order-service';
 
 /** Who is acting: the merchant is always server-derived; memberId (merchant_users.id) feeds the audit columns. */
 export interface Actor {
@@ -121,7 +122,10 @@ export async function verifyPayment(db: SupabaseClient, a: Actor, orderId: strin
     db.from('payment_claims').update({ status: 'verified', decided_at: now, decided_by_user_id: by }).eq('order_id', orderId).eq('status', 'claimed'),
     db.from('order_status_history').insert({ order_id: orderId, from_status: 'awaiting_payment', to_status: 'paid', changed_by: 'agent', user_id: by }),
   ]);
-  await notifyBuyer(db, r.order, `Payment mil gaya! ✅ Aapka order ${r.order.order_number ?? ''} confirm ho gaya. Jald deliver karenge, shukriya!`, r.order.slip_url);
+  // No PDF (e.g. an Urdu-script name) → put the text slip in the message, or the buyer gets none.
+  const slip = r.order.slip_url ? null : await orderSlipText(db, orderId, 'Bank Transfer');
+  const text = `Payment mil gaya! ✅ Aapka order ${r.order.order_number ?? ''} confirm ho gaya. Jald deliver karenge, shukriya!`;
+  await notifyBuyer(db, r.order, slip ? `${text}\n\n${slip}` : text, r.order.slip_url);
   await setCheckoutState(db, r.order, 'completed');
   logger.info({ orderId }, 'payment verified');
   return { ok: true };
