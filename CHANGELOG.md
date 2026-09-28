@@ -60,6 +60,24 @@ Support (21) given descriptive titles. Homepage description 181 → 146 chars. o
 - **Local preview gotcha, again:** `python -m http.server` served a stale style.css, so a page
   first looked like newly added CSS rules didn't exist. A `fetch(..., {cache: 'reload'})` then reload fixed it.
 
+**After the push — two things the owner saw in Google:**
+
+- **No logo in results (grey globe).** Almost certainly the `robots.txt` `/assets/` block again: the
+  favicon is `assets/favicon.svg`, and Google's favicon crawler obeys robots.txt, so it could never
+  fetch it. Unblocked by the first push. As insurance, added `assets/favicon-192.png` (192 = 4×48;
+  Google wants a multiple of 48 px) with a `<link rel="icon">` on every page, and a root `favicon.ico`
+  (48/32/16) because some crawlers ask for `/favicon.ico` regardless of the markup — it was a 404.
+  Rendered from favicon.svg with headless Chrome (`--default-background-color=00000000` for
+  transparency), then packed with Pillow. Google only refreshes favicons on recrawl: days to weeks.
+- **"sahulatcart" (one word) doesn't find the site; "sahulat cart" does.** Google treats the one-word
+  form as a misspelling of "sahulat card" and fills the page with Sehat Sahulat Card results — it
+  doesn't know the brand as an entity yet. Put the brand first in the homepage title
+  ("Sahulatcart — WhatsApp Sales Bot for Pakistani Shops"). The real fix is off-site: a Google Business
+  Profile and social profiles all named "Sahulatcart" and linking to the site, then `sameAs` links to
+  them in the Organization schema. The result the owner screenshotted still showed the *old* meta
+  description, i.e. Google hadn't recrawled yet — changes 15 minutes old can't show there.
+- Also fixed `aria-label="SahulatCart"` in `logo.svg` and `favicon.svg` — the brand is "Sahulatcart".
+
 Owner actions still open: Search Console "Request indexing" for every changed/new page plus resubmitting
 the sitemap, a Google Business Profile (it will also help "Sahulat Cart" searches), the real registered
 address/NTN, and the https apex fix (Cloudflare/DNS).
