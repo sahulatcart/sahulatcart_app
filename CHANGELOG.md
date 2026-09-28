@@ -77,6 +77,16 @@ Support (21) given descriptive titles. Homepage description 181 → 146 chars. o
   them in the Organization schema. The result the owner screenshotted still showed the *old* meta
   description, i.e. Google hadn't recrawled yet — changes 15 minutes old can't show there.
 - Also fixed `aria-label="SahulatCart"` in `logo.svg` and `favicon.svg` — the brand is "Sahulatcart".
+- **That push's site deploy failed, and it had nothing to do with the change.** Build log:
+  `failed to resolve source metadata for docker.io/library/nginx:alpine … dial tcp …:443: i/o timeout` —
+  Railway's builder couldn't reach Docker Hub to pull the base image. The live site kept serving the
+  previous build. A plain Redeploy from the dashboard succeeded. How it was spotted without the Railway
+  CLI (not installed on this machine): the public GitHub commit-status API shows Railway's per-service
+  result — `curl https://api.github.com/repos/sahulatcart/sahulatcart_app/commits/<sha>/status`.
+- **Organization `sameAs`** now lists the Facebook and Instagram profiles, so Google can tie the brand
+  name to them. Use the canonical profile URLs, not what the owner copies from the app: the Instagram
+  link carried a `?stkn=` tracking parameter, and the Facebook one was a `/share/…` redirect that
+  resolves (canonical tag) to `https://www.facebook.com/p/sahulatcart-61593379073165/`.
 
 Owner actions still open: Search Console "Request indexing" for every changed/new page plus resubmitting
 the sitemap, a Google Business Profile (it will also help "Sahulat Cart" searches), the real registered
