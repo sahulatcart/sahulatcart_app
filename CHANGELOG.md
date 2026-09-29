@@ -7,6 +7,40 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-29 — Payment screenshots and logs are now actually deleted
+
+**Outcome** — `backend/src/lib/retention.ts` runs hourly in production. It deletes payment screenshots
+90 days after their claim is decided (verified or rejected), and clears the references. It also
+deletes `webhook_events` rows and clears `messages.raw` after 30 days. Each purge writes an
+`audit_log` row. Before this, nothing ever deleted a screenshot.
+
+**The rules disagreed, and the user chose.** The privacy policy (§10) promised screenshots "12
+months, then deleted" and technical logs "90 days". Spec 09 §8.2 (CD-41, marked SPECIFIED) says 90
+days after completion for screenshots and 30 days for `webhook_events` and `messages.raw`, each purge
+audited. The shorter periods satisfy the policy, since it only sets maximums. The user picked the
+spec. Section D's 90-day `webhook_events` purge in `webhook.ts` was replaced by this job. The
+policy's wording was left alone; stating the shorter periods there is the owner's call.
+
+**Design choices**
+- **The clock starts at `decided_at`,** when the merchant settles the payment, not at upload. A
+  screenshot is kept as long as verification needs it.
+- **`status = 'claimed'` protects a screenshot outright.** Dates don't matter.
+- **`media:` references** are Meta media ids we never stored. They are cleared but not sent to storage.
+- **If the storage delete fails, the DB references stay,** so the next run retries. We never lose track
+  of a file that still exists.
+- **At most 100 screenshots per run.** The job is production-only, for the same reason as the replay
+  sweeper: a local `.env` points at the live data.
+
+**A weak test caught by breaking the code.** With the "awaiting review" filter removed, all the tests
+still passed. The unreviewed claim in the test had no `decided_at`, so the date filter hid the
+missing status filter. The test now gives that claim an old date too. Without the filter, 3 tests
+fail; with it, all pass.
+
+**Verified:** 120/120 tests across 15 files (4 new). Root and admin typechecks exit 0. Nothing was
+run against live data: the job only starts when `NODE_ENV=production`.
+
+---
+
 ## 2026-09-29 — LinkedIn added to the homepage's Organization schema
 
 **Outcome** — `sameAs` in `site/index.html` now lists the LinkedIn company page

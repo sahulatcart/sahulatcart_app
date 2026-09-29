@@ -2,6 +2,7 @@ import { loadConfig } from './config';
 import { logger } from './lib/logger';
 import { buildServer } from './server';
 import { drainWebhooks, startReplaySweeper } from './whatsapp/webhook';
+import { startRetentionJob } from './lib/retention';
 
 async function main(): Promise<void> {
   const cfg = loadConfig(); // fail-fast env validation
@@ -15,9 +16,12 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // Only production replays stuck messages: a local backend shares the live database and
-  // WhatsApp token through .env, and must never answer real customers.
-  if (cfg.NODE_ENV === 'production') startReplaySweeper();
+  // Background jobs run only in production: a local backend shares the live database and WhatsApp
+  // token through .env, and must never answer real customers or delete real data.
+  if (cfg.NODE_ENV === 'production') {
+    startReplaySweeper();
+    startRetentionJob();
+  }
 
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     process.once(sig, async () => {
