@@ -137,6 +137,13 @@ evidence, but the owner should open the backend service → Deployments → late
 check it ends with `Cannot find module '@app/shared'`. `backend/railway.json`, which describes a
 Dockerfile build with a `/healthz` health check, doesn't match the IaC and was left alone.
 
+**Confirmed by timing (2026-09-29).** PR #3, carrying this fix, was merged at 06:47:46 UTC on 09-28,
+and the backend restarted at 06:48:34, its first restart in 7 days. C had been merged at 06:33 with
+no restart. `/api/v1/admin/notifications` now answers 401. For about an hour it was wrongly believed
+that C had deployed without the fix: #3's merge time was assumed from when the merge was reported in
+chat, not read from GitHub. **Read merge times from GitHub, not from when someone mentions them.**
+Railway's build log for the failed A–C deploys still hasn't been read.
+
 **When it deploys**, sections A–D reach the backend in one go. Checks afterwards:
 - `/healthz` uptime should be small;
 - unauthenticated `/api/v1/admin/notifications` should return 401, not 404.
