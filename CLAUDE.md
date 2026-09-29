@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **14 files, 116 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **15 files, 120 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -159,8 +159,12 @@ Meta has its 200 before any work happens, so nothing may be lost after the ACK:
   a local backend shares the live DB and WhatsApp token via `.env` and must never answer real customers.
   A replay can repeat a reply that was already sent — a duplicate beats silence.
 - **Shutdown** stops taking webhooks, then waits up to 25 s for queued messages (`drainWebhooks`).
-- **Retention.** The stored copy of a message is dropped once it's processed, and rows older than 90 days
-  are deleted hourly by the sweeper — the privacy policy's limit for technical logs (§10).
+- **Retention** ([lib/retention.ts](backend/src/lib/retention.ts), spec 09 §8.2): a message's stored copy
+  is dropped once it's processed. Hourly, in production only, `webhook_events` rows and `messages.raw`
+  are purged after **30 days**, and payment screenshots **90 days after the claim is decided**. A claim
+  still awaiting review is never touched, whatever its dates. Each purge writes an `audit_log` row. Both
+  periods are shorter than the privacy policy's maximums (§10: 90 days for logs, 12 months for
+  screenshots), which is allowed. The policy wording hasn't been changed.
 
 Tenant routing: one backend, one webhook endpoint; inbound is routed to a merchant by looking up
 `phone_number_id` in `whatsapp_numbers`. Unknown numbers are logged and ignored.

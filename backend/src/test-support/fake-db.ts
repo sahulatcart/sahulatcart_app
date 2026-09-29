@@ -116,10 +116,13 @@ export class FakeDb {
     },
   };
 
+  /** Storage keys deleted through the fake, in order. */
+  removed: string[] = [];
   storage = {
     from: () => ({
       upload: async () => ({ error: null }),
       createSignedUrl: async (key: string) => ({ data: { signedUrl: `https://storage.test/${key}` } }),
+      remove: async (keys: string[]) => { this.removed.push(...keys); return { data: keys.map((name) => ({ name })), error: null }; },
     }),
   };
 
