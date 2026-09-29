@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **15 files, 120 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **15 files, 121 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -120,7 +120,7 @@ Supabase **Custom Access Token Hook** must be enabled in the dashboard (Authenti
 Storage buckets: `product-images` (public-read), `payment-screenshots`, `inbound-media`, `order-slips`,
 `catalog-imports` (all private).
 
-**Browsers get no direct table access** (`0007_lock_direct_table_access.sql`). The portal uses Supabase
+**Browsers get no direct table access** (`0007_lock_direct_table_access.sql`, live since 2026-09-29). The portal uses Supabase
 only to sign in; all reads and writes go through the backend's service role, where roles are enforced.
 RLS stays on as defence in depth. Two rules follow for every new migration:
 - New tables are locked for `anon`/`authenticated` automatically (default privileges) — keep it that way.
@@ -128,15 +128,14 @@ RLS stays on as defence in depth. Two rules follow for every new migration:
   per schema. End every new function with `revoke execute on function … from public, anon, authenticated;`
   (see 0006) or anyone can call it through `/rest/v1/rpc`.
 
-**Order numbers** come from `next_order_number()` — an atomic per-merchant counter (0006). Until 0006
-is applied, `order-service.ts` falls back to the old racy `COUNT(*)` so checkout never stops; delete that
-fallback once 0006 is live.
+**Order numbers** come from `next_order_number()`, an atomic per-merchant counter (0006, live since
+2026-09-29). If it can't allocate a number, checkout stops rather than guessing one.
 
 **Stock** (0008): a placed order (COD confirmed, or bank transfer awaiting payment) reserves its items
 with `reserve_stock()` — all or nothing, so a sold-out item cancels the checkout instead of overselling.
 Any cancellation calls `release_stock()`. Both are idempotent via `orders.stock_reserved`. Only products
-with `track_stock` and a known count are touched. Before 0008 is applied the RPC errors, is logged, and
-the order goes through untracked, as before.
+with `track_stock` and a known count are touched. If the reservation call itself fails, it's logged and
+the order goes through untracked (0008 live since 2026-09-29).
 
 ## Architecture
 

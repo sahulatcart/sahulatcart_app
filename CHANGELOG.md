@@ -7,6 +7,30 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-29 — Migrations 0006–0008 applied to the live database; order-number fallback removed
+
+**Outcome** — the owner approved, and `npm run db:migrate` applied 0006 (order counter), 0007 (no
+direct table access from browsers) and 0008 (stock reservation). Each ran in its own transaction and
+reported `ok`. There were no placed orders yet, so the counter starts at SK-1001.
+
+**Verified straight after, read-only:**
+- `_migrations` lists all three; the new table, column and functions exist.
+- `service_role` can read tables and run the functions; `authenticated` and `anon` can do neither.
+- `supabase_auth_admin` can still run the login hook; `anon` can't.
+- The backend's API sees the new functions: a `reserve_stock` call with a random order id returned
+  `true` and changed nothing. `next_order_number` wasn't called, because that would have used up
+  SK-1001.
+- With the public anon key, reading `products` and calling the login hook both fail with `42501`.
+
+**Fallback removed.** The temporary `COUNT(*)` order-number fallback in `order-service.ts` is gone. If
+the counter fails, checkout now stops rather than guessing a number. Stock reservation failures are
+still only logged, so an order isn't lost over a stock-count error. The flow test that covered the
+fallback became two tests, one per behaviour: 121 tests.
+
+**Still to confirm:** the owner signs in to the admin portal once, to check login works under 0007.
+
+---
+
 ## 2026-09-29 — Payment screenshots and logs are now actually deleted
 
 **Outcome** — `backend/src/lib/retention.ts` runs hourly in production. It deletes payment screenshots

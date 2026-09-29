@@ -32,13 +32,8 @@ export const OUT_OF_STOCK = 'out_of_stock' as const;
 
 async function nextOrderNumber(db: SupabaseClient, merchantId: string): Promise<string | null> {
   const { data, error } = await db.rpc('next_order_number', { p_merchant: merchantId });
-  if (!error && data) return data as string;
-  logger.error({ err: error?.message, merchantId }, 'order number allocation failed');
-  if (error?.code !== 'PGRST202') return null;
-  // TEMPORARY until 0006 is applied (PGRST202 = function missing): the old racy count keeps
-  // checkout open instead of refusing every order. Delete this once 0006 is live.
-  const { count } = await db.from('orders').select('id', { count: 'exact', head: true }).eq('merchant_id', merchantId).not('order_number', 'is', null);
-  return `SK-${1001 + (count ?? 0)}`;
+  if (error || !data) logger.error({ err: error?.message, merchantId }, 'order number allocation failed');
+  return (data as string | null) ?? null;
 }
 
 /**

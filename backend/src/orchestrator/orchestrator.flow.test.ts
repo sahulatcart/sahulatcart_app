@@ -207,11 +207,18 @@ describe('guard rails', () => {
     expect(convo().status).toBe('human_takeover');
   });
 
-  it('checkout still works before migrations 0006/0008 are applied', async () => {
+  it('if no order number can be allocated, checkout stops instead of guessing one', async () => {
     delete db.rpcs.next_order_number;
+    await toPayment();
+    await say('cash on delivery');
+    expect(order().status).toBe('draft');
+    expect(db.rows('payments')).toHaveLength(0);
+  });
+
+  it('if stock reservation fails, the order still goes through (logged)', async () => {
     delete db.rpcs.reserve_stock;
     await toPayment();
-    expect(await say('cash on delivery')).toContain('SK-1001'); // COUNT(*) fallback
-    expect(stock()).toBe(3); // untracked, as before 0008
+    expect(await say('cash on delivery')).toContain('SK-1001');
+    expect(stock()).toBe(3);
   });
 });
