@@ -7,6 +7,22 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-29 — LinkedIn added to the homepage's Organization schema
+
+**Outcome** — `sameAs` in `site/index.html` now lists the LinkedIn company page
+(`https://www.linkedin.com/company/sahulatcart/`) next to Facebook and Instagram. This follows up the
+teammate's SEO pass (commits `8724355`, `c730422`, `6632c0a`), which listed LinkedIn as still to do.
+
+The URL shared was a logged-in admin view (`…/company/sahulatcart/posts/?viewAsMember=true`). The
+schema needs the public company URL, so the path and query were dropped. Both JSON-LD blocks were
+parsed as JSON after the edit, not just checked by eye.
+
+Also from the SEO follow-up, done outside the repo on 2026-09-29: the sitemap was submitted in Search
+Console, and indexing was requested for `whatsapp-automation.html`. The homepage, pricing and
+features pages were already indexed.
+
+---
+
 ## 2026-09-28 — SEO audit skill, and the first round of fixes it found
 
 **Outcome** — a project skill at `.claude/skills/seo-audit/` (kept local on the owner's machine, not
