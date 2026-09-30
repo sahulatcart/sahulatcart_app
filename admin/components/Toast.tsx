@@ -13,15 +13,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const push = useCallback((msg: string, kind: Kind = 'info') => {
     const id = ++seq;
     setItems((x) => [...x, { id, kind, msg }]);
-    setTimeout(() => setItems((x) => x.filter((t) => t.id !== id)), 3800);
+    // Errors stay a little longer — they usually need reading.
+    setTimeout(() => setItems((x) => x.filter((t) => t.id !== id)), kind === 'error' ? 6000 : 3800);
   }, []);
   return (
     <Ctx.Provider value={push}>
       {children}
-      <div className="toasts">
+      {/* Live region: screen readers announce each toast as it appears. */}
+      <div className="toasts" role="status" aria-live="polite">
         {items.map((t) => (
           <div key={t.id} className={`toast ${t.kind}`}>
-            {t.kind === 'success' ? <CheckCircle2 /> : t.kind === 'error' ? <XCircle /> : <Info />}
+            {t.kind === 'success' ? <CheckCircle2 aria-hidden /> : t.kind === 'error' ? <XCircle aria-hidden /> : <Info aria-hidden />}
             <span>{t.msg}</span>
           </div>
         ))}
