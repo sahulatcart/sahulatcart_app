@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { AlertCircle, ArrowLeft, ArrowRight, Eye, EyeOff, Loader2, MessagesSquare, ShieldCheck, Wallet } from 'lucide-react';
 import { signIn } from '../../lib/api';
 import Wordmark from '../../components/Wordmark';
+import ThemeToggle from '../../components/ThemeToggle';
 
 const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Sahulatcart';
 // Marketing site. Set NEXT_PUBLIC_SITE_URL per environment; the default is the
@@ -58,6 +59,7 @@ export default function LoginPage() {
       </section>
 
       <section className="auth-form">
+        <ThemeToggle className="auth-theme" />
         <div className="auth-card">
           <div className="card">
             <div className="row" style={{ gap: 10 }}>

@@ -279,6 +279,12 @@ discriminated union of ~20 reply kinds) and only phrases it.
   `aria-hidden`, never emoji; every input has a `<label>`, not just a placeholder; icon-only buttons get
   an `aria-label`; money cells use `td.num`, IDs and order numbers `.mono` (both never wrap). A
   `@media` override must come **after** the rule it overrides. One didn't, and silently did nothing.
+- **Dark mode** (since 2026-09-30): `:root[data-theme="dark"]` in globals.css re-points the semantic
+  tokens; the brand tokens never change. A new colour needs a token with a value in **both** blocks —
+  a raw hex in a rule is exactly what breaks one theme. `data-theme` is set before first paint by
+  `THEME_BOOT` in [components/ThemeToggle.tsx](admin/components/ThemeToggle.tsx) (inlined in
+  layout.tsx): saved choice (`localStorage` `sk_theme`), else the OS setting. On dark, the wordmark
+  uses the site's dark treatment (white "Sahulat", `--grad-glow` "cart"), never the light gradients.
 - **Checking the portal visually** needs a signed-in session, and the real backend shares the live
   database. The redesign was checked against a throwaway mock backend on :8080 serving fake JSON,
   plus a fake Supabase session in `localStorage` (`sk_auth`). Don't point a local portal at the real

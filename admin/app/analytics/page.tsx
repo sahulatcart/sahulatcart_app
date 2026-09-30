@@ -47,11 +47,11 @@ export default function Analytics() {
           <>
             <div className="bar" role="img" aria-label={`Cash on delivery ${pct(a.codVsBank.cod)} percent, bank transfer ${pct(a.codVsBank.bank)} percent`}>
               <span style={{ width: `${pct(a.codVsBank.cod)}%`, background: 'var(--brand)' }} />
-              <span style={{ width: `${pct(a.codVsBank.bank)}%`, background: 'var(--color-forest)' }} />
+              <span style={{ width: `${pct(a.codVsBank.bank)}%`, background: 'var(--chart-2)' }} />
             </div>
             <div className="legend num">
               <span><span className="sw" style={{ background: 'var(--brand)' }} />Cash on delivery — <strong>{a.codVsBank.cod}</strong> ({pct(a.codVsBank.cod)}%)</span>
-              <span><span className="sw" style={{ background: 'var(--color-forest)' }} />Bank transfer — <strong>{a.codVsBank.bank}</strong> ({pct(a.codVsBank.bank)}%)</span>
+              <span><span className="sw" style={{ background: 'var(--chart-2)' }} />Bank transfer — <strong>{a.codVsBank.bank}</strong> ({pct(a.codVsBank.bank)}%)</span>
             </div>
           </>
         )}
