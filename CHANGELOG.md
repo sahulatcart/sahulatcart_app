@@ -7,6 +7,19 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-30 — Inbox: stronger chat borders
+
+The owner found the inbox lines too faint on the live portal. The card outline, the divider between
+the list and the chat, the chat header, the composer and the customer bubbles now use
+`--border-strong` instead of `--border`. The bot's tinted bubbles also got a matching border. This is
+scoped to the inbox (`.card.inbox`); other cards keep the lighter line.
+
+Also fixed: "Hand back  to bot" showed a double space. The hidden-on-phones `to bot` span was its own
+flex item, so the button's gap was added on top of the space. Deleting the space would have made
+screen readers say "Hand backto bot". Both words are now wrapped in one span.
+
+---
+
 ## 2026-09-30 — Admin portal redesign (every page, login through settings)
 
 **Outcome** — the merchant portal was redesigned with the `ui-ux-pro-max` guidance ("Minimalism &

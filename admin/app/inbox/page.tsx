@@ -90,7 +90,7 @@ export default function Inbox() {
                   </div>
                 </div>
                 {shown && (takenOver
-                  ? <button className="btn ghost sm" onClick={() => act('release')} disabled={busy}><Undo2 aria-hidden /> Hand back<span className="hide-sm"> to bot</span></button>
+                  ? <button className="btn ghost sm" onClick={() => act('release')} disabled={busy}><Undo2 aria-hidden /><span>Hand back<span className="hide-sm"> to bot</span></span></button>
                   : <button className="btn sm" onClick={() => act('takeover')} disabled={busy}><Hand aria-hidden /> Take over</button>)}
               </div>
 
