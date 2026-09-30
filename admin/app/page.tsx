@@ -1,8 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, MessageSquare, ShoppingBag, Wallet, Clock } from 'lucide-react';
-import AppShell, { PageHead, PaymentPill } from '../components/AppShell';
+import { ArrowRight, Clock, MessageSquare, ShoppingBag, Sparkles, Wallet } from 'lucide-react';
+import AppShell, { EmptyState, PageHead, PaymentPill, StatusPill } from '../components/AppShell';
 import { apiJson, rs } from '../lib/api';
 
 interface Dash {
@@ -19,45 +19,61 @@ export default function Dashboard() {
       .then((r) => setNeedsSetup(!r.merchant?.settings?.onboardingCompletedAt)).catch(() => {});
   }, []);
 
+  const stat = (k: string, v: React.ReactNode, Icon: typeof ShoppingBag, warn = false) => (
+    <div className={`stat ${warn ? 'warn' : ''}`}>
+      <div className="ico"><Icon aria-hidden /></div>
+      <div className="k">{k}</div>
+      <div className="v">{d ? v : <span className="skeleton" style={{ display: 'block', height: 32, width: 90 }} />}</div>
+    </div>
+  );
+
   return (
     <AppShell>
-      <PageHead title="Dashboard" sub="Your shop at a glance" />
+      <PageHead title="Dashboard" sub="Your shop at a glance — today, in Pakistan time" />
 
       {needsSetup && (
-        <div className="card pad" style={{ marginBottom: 16, background: 'linear-gradient(100deg, var(--brand-tint), var(--surface))', borderColor: 'var(--brand-tint-2)' }}>
-          <div className="row between">
-            <div><strong>👋 Finish setting up your shop</strong><div className="hint">Business info, negotiation rules, bank account — then go live.</div></div>
-            <Link href="/onboarding" className="btn">Complete setup <ArrowRight /></Link>
+        <div className="callout">
+          <div className="row" style={{ flexWrap: 'nowrap' }}>
+            <div className="ico"><Sparkles aria-hidden /></div>
+            <div><div className="strong">Finish setting up your shop</div><div className="hint">Business info, negotiation rules, bank account — then go live.</div></div>
           </div>
+          <Link href="/onboarding" className="btn">Complete setup <ArrowRight aria-hidden /></Link>
         </div>
       )}
 
       <div className="stats">
-        <div className="stat"><div className="ico"><ShoppingBag /></div><div className="k">Today&apos;s orders</div><div className="v">{d?.ordersToday ?? '—'}</div></div>
-        <div className="stat"><div className="ico"><Wallet /></div><div className="k">Today&apos;s revenue</div><div className="v">{d ? rs(d.revenueToday) : '—'}</div></div>
-        <div className={`stat ${d?.pendingPayments ? 'warn' : ''}`}><div className="ico"><Clock /></div><div className="k">Pending payments</div><div className="v">{d?.pendingPayments ?? '—'}</div></div>
-        <div className="stat"><div className="ico"><MessageSquare /></div><div className="k">Active chats</div><div className="v">{d?.activeChats ?? '—'}</div></div>
+        {stat("Today's orders", d?.ordersToday, ShoppingBag)}
+        {stat("Today's revenue", d && rs(d.revenueToday), Wallet)}
+        {stat('Payments to verify', d?.pendingPayments, Clock, !!d?.pendingPayments)}
+        {stat('Active chats', d?.activeChats, MessageSquare)}
       </div>
 
-      <div className="card" style={{ marginTop: 22 }}>
-        <div className="card-head"><h2 style={{ margin: 0 }}>Recent orders</h2><Link href="/orders" className="hint">View all →</Link></div>
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Status</th><th>Payment</th></tr></thead>
-            <tbody>
-              {(d?.recentOrders ?? []).map((o) => (
-                <tr key={o.id}>
-                  <td><Link href={`/orders/${o.id}`} className="strong" style={{ color: 'var(--brand-ink)' }}>{o.order_number}</Link></td>
-                  <td>{o.delivery_name || '—'}</td>
-                  <td className="strong">{rs(o.total)}</td>
-                  <td><span className="pill neutral">{o.status}</span></td>
-                  <td><PaymentPill status={o.payment_status} /></td>
-                </tr>
-              ))}
-              {d && d.recentOrders.length === 0 && <tr><td colSpan={5} className="empty">No orders yet — share your WhatsApp number to get started.</td></tr>}
-            </tbody>
-          </table>
+      <div className="card" style={{ marginTop: 24 }}>
+        <div className="card-head">
+          <div><h2>Recent orders</h2><div className="desc">The latest orders placed through the bot</div></div>
+          <Link href="/orders" className="btn ghost sm">View all <ArrowRight aria-hidden /></Link>
         </div>
+        {d && d.recentOrders.length === 0 ? (
+          <EmptyState icon={ShoppingBag} title="No orders yet" hint="Share your WhatsApp number with customers to get started." />
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Order</th><th>Customer</th><th>Status</th><th>Payment</th><th className="num">Total</th></tr></thead>
+              <tbody>
+                {(d?.recentOrders ?? []).map((o) => (
+                  <tr key={o.id}>
+                    <td><Link href={`/orders/${o.id}`} className="link mono">{o.order_number}</Link></td>
+                    <td>{o.delivery_name || '—'}</td>
+                    <td><StatusPill status={o.status} /></td>
+                    <td><PaymentPill status={o.payment_status} /></td>
+                    <td className="num strong">{rs(o.total)}</td>
+                  </tr>
+                ))}
+                {!d && [0, 1, 2].map((i) => <tr key={i}><td colSpan={5}><div className="skeleton" style={{ height: 18 }} /></td></tr>)}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </AppShell>
   );

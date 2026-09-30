@@ -7,6 +7,45 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-30 — Admin portal redesign (every page, login through settings)
+
+**Outcome** — the merchant portal was redesigned with the `ui-ux-pro-max` guidance ("Minimalism &
+Swiss Style", data-dense dashboard): a grouped sidebar (Operate / Manage), a split login page, stat
+cards, clearer tables, and one set of shared pieces in `components/AppShell.tsx` (`PageHead`,
+`BackLink`, `EmptyState`, `Pill`, `StatusPill`, `PaymentPill`, `humanize`). Every API call and
+handler is unchanged. The marketing site (`site/`) was not touched. Brand tokens are unchanged;
+JetBrains Mono (the brand's mono) was added for order and account numbers.
+
+**Accessibility fixes that came with it:** emoji used as icons replaced with lucide icons; every
+input has a real label (placeholders were the only label on several forms); icon-only buttons have
+names; a visible focus ring everywhere; file pickers are keyboard-reachable (the input was
+`display:none`); toasts are announced to screen readers; 44px touch targets on phones; tables scroll
+inside their card instead of the page.
+
+**Small behaviour fixes found on the way:**
+- Catalog table price edits rounded to whole rupees (Rs 99.99 became 100). They now keep paisa, like
+  the add form.
+- The inbox now says when the bot is silent because you've taken over. Forgetting to hand a chat
+  back looked exactly like "the bot stopped replying".
+
+**How it was checked.** The portal can't sign in locally without the real backend, which shares the
+live database. So a throwaway mock backend served fake data on :8080, and a fake session was put in
+`localStorage`. Every page was screenshotted at 375px, ~820px and 1280px. That found problems the
+typecheck couldn't: order numbers and money wrapping mid-value, "SK-" and "1024" on two lines; a
+3-then-1 stat grid; the inbox a few pixels taller than the window, so the page scrolled; a mobile
+stat rule written *before* the rule it overrode, so it never applied; a button focus rule
+(`:focus-within`) that left a ring on every clicked button; hover colours on disabled buttons.
+
+**Misleading symptoms, for next time:** in the sandbox, `next/font` couldn't reach Google Fonts, so
+pages rendered in the fallback font. This is a dev network problem, not the code; the Docker build
+downloads fonts at build time. And a screenshot taken during a window resize showed the mobile
+drawer open. It was just mid-animation; the DOM said closed.
+
+**Also:** Kaisei Decol (empty-state headlines only) and the mono font are no longer preloaded on
+every page. That had been about 15 font files per page load.
+
+---
+
 ## 2026-09-30 — Backend switched to production mode; the build-failure cause confirmed from Railway's log
 
 **Outcome** — the live backend had been running with `NODE_ENV=development`, so the replay sweeper

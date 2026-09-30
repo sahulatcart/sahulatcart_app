@@ -271,6 +271,18 @@ discriminated union of ~20 reply kinds) and only phrases it.
   redirects to `/login` on 401, and holds the formatters `rs()` (paisa → `Rs N`) and `dt()` (timestamps
   in `Asia/Karachi`). `apiJson()` **rejects** on an error status; for `api()` calls, show failures with
   `toast(await apiError(r), 'error')` — never toast "Saved" without checking `r.ok`.
+- **Portal UI** is plain CSS in [admin/app/globals.css](admin/app/globals.css): semantic tokens
+  (`--ink`, `--muted`, `--brand`, `--success`…) mapped onto the brand tokens, so components never use
+  raw hex. Shared pieces live in [components/AppShell.tsx](admin/components/AppShell.tsx): `PageHead`,
+  `BackLink`, `EmptyState`, `StatusPill`/`PaymentPill`, and `humanize()` (`cod_pending` →
+  "COD pending"). Reuse them instead of new one-off markup. House rules: lucide icons with
+  `aria-hidden`, never emoji; every input has a `<label>`, not just a placeholder; icon-only buttons get
+  an `aria-label`; money cells use `td.num`, IDs and order numbers `.mono` (both never wrap). A
+  `@media` override must come **after** the rule it overrides. One didn't, and silently did nothing.
+- **Checking the portal visually** needs a signed-in session, and the real backend shares the live
+  database. The redesign was checked against a throwaway mock backend on :8080 serving fake JSON,
+  plus a fake Supabase session in `localStorage` (`sk_auth`). Don't point a local portal at the real
+  backend to take screenshots.
 - The backend registers **no CORS** on purpose: nothing calls it from a browser on another origin.
 - **Notifications** (new orders, payment claims, handoffs, failed buyer messages) are listed at
   `/notifications`, with an unread badge in the nav. Before this the backend wrote them and nothing ever

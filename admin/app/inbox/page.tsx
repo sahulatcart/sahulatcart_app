@@ -1,8 +1,8 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { MessagesSquare, Send, User, Undo2 } from 'lucide-react';
-import AppShell, { PageHead } from '../../components/AppShell';
-import { api, apiError, apiJson } from '../../lib/api';
+import { AlertTriangle, ArrowLeft, Bot, Hand, MessagesSquare, Send, Undo2, UserRound } from 'lucide-react';
+import AppShell, { EmptyState, PageHead, humanize } from '../../components/AppShell';
+import { api, apiError, apiJson, dt } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 
 interface Convo { id: string; status: string; current_state: string; last_message_at: string; unread_count: number; customers: { name: string | null; wa_id: string } | null }
@@ -13,7 +13,7 @@ const initials = (s: string) => (s || '?').trim().slice(0, 1).toUpperCase();
 
 export default function Inbox() {
   const toast = useToast();
-  const [convos, setConvos] = useState<Convo[]>([]);
+  const [convos, setConvos] = useState<Convo[] | null>(null);
   const [sel, setSel] = useState<string | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [text, setText] = useState('');
@@ -36,61 +36,93 @@ export default function Inbox() {
     return r.ok;
   }
   async function send() { if (!text.trim()) return; const t = text; setText(''); if (!(await act('send', { text: t }))) setText(t); }
-  const takenOver = detail?.conversation.status === 'human_takeover';
+  const open = (id: string) => { setDetail(null); setSel(id); };
+  const shown = detail && detail.conversation.id === sel ? detail : null;
+  const takenOver = shown?.conversation.status === 'human_takeover';
   // WhatsApp refuses free-form replies 24h after the buyer's last message.
-  const expires = detail?.conversation.window_expires_at;
+  const expires = shown?.conversation.window_expires_at;
   const windowClosed = !!expires && new Date(expires).getTime() <= Date.now();
   const canType = takenOver && !windowClosed;
+  const name = shown?.conversation.customers?.name || shown?.conversation.customers?.wa_id || '';
 
   return (
     <AppShell>
-      <PageHead title="Inbox" sub="Take over any chat — the bot pauses while you reply" />
-      <div className="card" style={{ display: 'grid', gridTemplateColumns: '290px 1fr', height: '70vh', overflow: 'hidden' }}>
-        {/* conversation list */}
-        <div style={{ borderRight: '1px solid var(--border)', overflowY: 'auto', minHeight: 0 }}>
-          {convos.map((c) => {
+      <PageHead title="Inbox" sub="Every WhatsApp chat. Take over any of them — the bot pauses while you reply." />
+      <div className={`card inbox ${sel ? 'has-sel' : ''}`}>
+        {/* Conversation list */}
+        <div className="convo-list" role="list" aria-label="Conversations">
+          {(convos ?? []).map((c) => {
             const nm = c.customers?.name || c.customers?.wa_id || '?';
+            const human = c.status === 'human_takeover';
             return (
-              <div key={c.id} onClick={() => setSel(c.id)} style={{ display: 'flex', gap: 11, padding: '12px 14px', borderBottom: '1px solid var(--border)', cursor: 'pointer', background: sel === c.id ? 'var(--brand-tint)' : undefined }}>
-                <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--surface-2)', color: 'var(--muted)', display: 'grid', placeItems: 'center', fontWeight: 700, flexShrink: 0 }}>{initials(nm)}</div>
+              <button key={c.id} role="listitem" className="convo" aria-current={sel === c.id} onClick={() => open(c.id)}>
+                <div className="avatar" aria-hidden>{initials(nm)}</div>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div className="row between"><span className="strong" style={{ fontSize: 13.5 }}>{nm}</span>{c.unread_count > 0 && <span className="pill danger">{c.unread_count}</span>}</div>
-                  <div className="hint" style={{ marginTop: 2 }}>{c.status === 'human_takeover' ? '🙋 you' : '🤖 bot'} · {c.current_state}</div>
+                  <div className="row between" style={{ flexWrap: 'nowrap', gap: 8 }}>
+                    <span className="who">{nm}</span>
+                    {c.unread_count > 0 && <span className="pill danger" aria-label={`${c.unread_count} unread`}>{c.unread_count}</span>}
+                  </div>
+                  <div className="meta">
+                    {human ? <><Hand aria-hidden /> You</> : <><Bot aria-hidden /> Bot</>}
+                    <span aria-hidden>·</span><span>{humanize(c.current_state)}</span>
+                  </div>
                 </div>
-              </div>
+              </button>
             );
           })}
-          {convos.length === 0 && <div className="empty"><MessagesSquare /><div>No conversations yet.</div></div>}
+          {convos && convos.length === 0 && <EmptyState icon={MessagesSquare} title="No chats yet" hint="Conversations appear here when customers message your WhatsApp number." />}
+          {!convos && [0, 1, 2, 3].map((i) => <div key={i} style={{ padding: '14px 16px' }}><div className="skeleton" style={{ height: 36 }} /></div>)}
         </div>
 
-        {/* chat pane */}
-        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
-          {!detail ? (
-            <div className="empty" style={{ margin: 'auto' }}><MessagesSquare /><div>Select a conversation</div></div>
+        {/* Chat pane */}
+        <div className="chat">
+          {!sel ? (
+            <div style={{ margin: 'auto' }}><EmptyState icon={MessagesSquare} title="Pick a conversation" hint="Choose a chat on the left to read it or reply." /></div>
           ) : (
             <>
-              <div className="row between" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-                <div className="row" style={{ gap: 9 }}><div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--surface-2)', color: 'var(--muted)', display: 'grid', placeItems: 'center', fontWeight: 700 }}><User size={16} /></div><span className="strong">{detail.conversation.customers?.name || detail.conversation.customers?.wa_id}</span></div>
-                {takenOver
-                  ? <button className="btn ghost sm" onClick={() => act('release')} disabled={busy}><Undo2 /> Hand back to bot</button>
-                  : <button className="btn sm" onClick={() => act('takeover')} disabled={busy}>Take over</button>}
+              <div className="chat-head">
+                <div className="row" style={{ gap: 10, flexWrap: 'nowrap', minWidth: 0 }}>
+                  <button className="btn subtle icon-btn chat-back" onClick={() => setSel(null)} aria-label="Back to conversations"><ArrowLeft /></button>
+                  <div className="avatar" aria-hidden><UserRound size={18} /></div>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="strong" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name || '…'}</div>
+                    <div className="hint" style={{ whiteSpace: 'nowrap' }}>{takenOver ? 'You are replying' : 'Bot is replying'}</div>
+                  </div>
+                </div>
+                {shown && (takenOver
+                  ? <button className="btn ghost sm" onClick={() => act('release')} disabled={busy}><Undo2 aria-hidden /> Hand back<span className="hide-sm"> to bot</span></button>
+                  : <button className="btn sm" onClick={() => act('takeover')} disabled={busy}><Hand aria-hidden /> Take over</button>)}
               </div>
-              <div ref={msgRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 18, display: 'flex', flexDirection: 'column', gap: 8, background: '#fbfcfe' }}>
-                {detail.messages.map((m, i) => {
+
+              <div ref={msgRef} className="chat-body" aria-live="polite">
+                {(shown?.messages ?? []).map((m, i) => {
                   const inbound = m.direction === 'inbound';
                   const agent = m.sender === 'agent';
                   return (
-                    <div key={i} style={{ alignSelf: inbound ? 'flex-start' : 'flex-end', maxWidth: '74%' }}>
-                      <div style={{ background: inbound ? '#fff' : agent ? 'var(--brand)' : 'var(--brand-tint-2)', color: agent ? '#fff' : 'var(--ink)', border: inbound ? '1px solid var(--border)' : 'none', borderRadius: 14, borderBottomLeftRadius: inbound ? 4 : 14, borderBottomRightRadius: inbound ? 14 : 4, padding: '9px 13px', fontSize: 13.5, lineHeight: 1.45, boxShadow: 'var(--shadow-sm)' }}>{m.body}</div>
-                      <div className="hint" style={{ fontSize: 10.5, textAlign: inbound ? 'left' : 'right', marginTop: 3 }}>{agent ? 'you' : m.sender}{!inbound ? ` · ${m.status}` : ''}</div>
+                    <div key={i} className={`bubble-wrap ${inbound ? 'in' : 'out'} ${agent ? 'agent' : ''}`}>
+                      <div className="bubble">{m.body}</div>
+                      <div className="bubble-meta">{inbound ? 'Customer' : agent ? 'You' : m.sender === 'bot' ? 'Bot' : m.sender} · {dt(m.created_at)}{!inbound ? ` · ${m.status}` : ''}</div>
                     </div>
                   );
                 })}
+                {!shown && <div className="skeleton" style={{ height: 60, width: '60%' }} />}
               </div>
-              <div className="row" style={{ padding: 12, borderTop: '1px solid var(--border)', gap: 8 }}>
-                <input style={{ flex: 1 }} placeholder={windowClosed ? 'Buyer last wrote 24h+ ago — WhatsApp blocks replies until they message again' : takenOver ? 'Type a reply…' : 'Take over to reply as a human'} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} disabled={!canType} />
-                <button className="btn" onClick={send} disabled={!canType || !text.trim()}><Send /></button>
-              </div>
+
+              {takenOver && !windowClosed && (
+                <div className="notice" style={{ background: 'var(--brand-tint)', color: 'var(--brand-ink)', borderTopColor: 'var(--brand-tint-2)' }}>
+                  <Hand aria-hidden /> The bot stays silent in this chat until you click “Hand back”.
+                </div>
+              )}
+              {windowClosed && (
+                <div className="notice" role="note">
+                  <AlertTriangle aria-hidden /> The customer last wrote over 24 hours ago, so WhatsApp blocks replies until they message again. Call them instead.
+                </div>
+              )}
+              <form className="composer" onSubmit={(e) => { e.preventDefault(); send(); }}>
+                <label htmlFor="reply" className="sr-only">Reply</label>
+                <input id="reply" style={{ flex: 1 }} placeholder={canType ? 'Type a reply…' : windowClosed ? 'Replies are blocked for now' : 'Take over to reply yourself'} value={text} onChange={(e) => setText(e.target.value)} disabled={!canType} />
+                <button className="btn icon-btn" disabled={!canType || !text.trim() || busy} aria-label="Send"><Send /></button>
+              </form>
             </>
           )}
         </div>
