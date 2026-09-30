@@ -7,6 +7,36 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-30 — Admin dark mode
+
+A light/dark toggle now appears on every portal page: in the sidebar footer and the phone top bar,
+and at the top right of the login page. A saved choice wins. With nothing saved, the portal follows
+the device setting, and switches live if the device changes. A small inline script in `<head>` sets the
+theme before first paint, so a dark page never flashes white.
+
+**How:** every colour that was hard-coded in a rule became a semantic token (`--surface-hover`,
+`--warning-border`, `--primary-hover`, `--toast-bg`, `--agent-bubble`, `--chart-2`…). `:root[data-theme="dark"]`
+then re-points the tokens onto a navy base. Brand tokens are untouched.
+
+**Things that would have broken in dark if the colours had just been inverted:**
+- The **wordmark** gradients are drawn for light surfaces. "Sahulat" fades to navy and vanishes on
+  navy. The marketing site already had the brand's dark treatment (white "Sahulat", `--grad-glow`
+  "cart"), so the portal reuses it rather than inventing one.
+- **Primary button hover** went to forest, which sinks into a navy page. Dark hover is a deeper green.
+- **Toasts and the skip link** used `--ink` as their background. In dark, `--ink` is near-white, so
+  the white text would have disappeared.
+- The **unread badge**: dark-mode `--danger` is a light red for text, and white on it fails contrast.
+  Badges use `--danger-solid`, which stays dark red in both themes.
+- **Analytics' bank-transfer bar** was forest and turns mint in dark. Accent text (`--brand-ink`) is
+  forest in light and mint in dark for the same reason.
+- `.btn.danger` (filled) was unused. It was deleted rather than themed.
+
+**A false alarm while checking:** the browser console showed 216 "connection refused" errors. They
+were left over from stopping the local test server with the tab still open. Watching the network for
+35 s showed only the normal 30 s badge poll, returning 200.
+
+---
+
 ## 2026-09-30 — Inbox: stronger chat borders
 
 The owner found the inbox lines too faint on the live portal. The card outline, the divider between

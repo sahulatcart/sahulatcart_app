@@ -2,6 +2,7 @@ import './globals.css';
 import type { ReactNode } from 'react';
 import { JetBrains_Mono, Kaisei_Decol, Poppins } from 'next/font/google';
 import { ToastProvider } from '../components/Toast';
+import { THEME_BOOT } from '../components/ThemeToggle';
 
 // Brand typefaces (guidelines §17): Poppins for the product, Kaisei Decol for
 // editorial display. Both need explicit weights — neither is a variable font.
@@ -36,7 +37,11 @@ export const metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${poppins.variable} ${kaisei.variable} ${mono.variable}`}>
+    // suppressHydrationWarning: the boot script sets data-theme on <html> before React hydrates.
+    <html lang="en" className={`${poppins.variable} ${kaisei.variable} ${mono.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+      </head>
       <body>
         <ToastProvider>{children}</ToastProvider>
       </body>

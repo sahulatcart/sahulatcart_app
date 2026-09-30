@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { ArrowLeft, BarChart3, Bell, LayoutDashboard, LogOut, Menu, MessagesSquare, Package, Settings, ShoppingBag, X, type LucideIcon } from 'lucide-react';
 import { apiJson, hasSession, signOut } from '../lib/api';
 import Wordmark from '../components/Wordmark';
+import ThemeToggle from './ThemeToggle';
 
 const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Sahulatcart';
 // Two groups: daily operations first, shop setup second.
@@ -96,6 +97,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </nav>
         <div className="sidebar-foot">
           <button className="nav-link" onClick={logout}><LogOut aria-hidden /> Log out</button>
+          <ThemeToggle />
         </div>
       </aside>
 
@@ -107,8 +109,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.svg" alt="" width={26} height={22} />
           <span style={{ fontSize: 16 }}><Wordmark name={PRODUCT_NAME} /></span>
+          <ThemeToggle className="push-right" />
           {unread > 0 && (
-            <Link href="/notifications" className="btn subtle icon-btn" style={{ marginLeft: 'auto', position: 'relative' }} aria-label={`Notifications, ${unread} unread`}>
+            <Link href="/notifications" className="btn subtle icon-btn" style={{ position: 'relative' }} aria-label={`Notifications, ${unread} unread`}>
               <Bell />
               <span style={{ position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: '50%', background: 'var(--danger)' }} />
             </Link>
