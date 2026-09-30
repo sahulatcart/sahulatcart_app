@@ -7,6 +7,33 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-09-30 — Backend switched to production mode; the build-failure cause confirmed from Railway's log
+
+**Outcome** — the live backend had been running with `NODE_ENV=development`, so the replay sweeper
+and the retention job never started. It now runs with `NODE_ENV=production`, confirmed by the deploy
+log line `Sahulatcart backend listening on :8080 (production)` (deploy `03d68b49`, SUCCESS). It was
+done by Railway CLI (`@railway/cli` 5.63.1, installed to `~/.local`, owner logged in) instead of the
+dashboard.
+
+**The trap that was avoided.** Railway gives service variables to the build as well. With
+`NODE_ENV=production`, `npm ci` skips devDependencies, and TypeScript is one. Reproduced from a clean
+checkout: `tsc: command not found`, exit 127. So flipping `NODE_ENV` alone would have broken every
+backend deploy again, silently, with the old container still serving. Adding
+`NPM_CONFIG_INCLUDE=dev` fixes it: tested locally, and the built backend booted in production mode
+with a fake environment. Both variables were set in one command, so there was one deploy.
+`NPM_CONFIG_INCLUDE` was also declared in `.railway/railway.ts`. `railway config plan` showed that an
+apply deletes undeclared variables, so it would otherwise have been wiped.
+
+**The 2026-09-27/28 failures, confirmed.** `railway deployment list` shows FAILED deploys at A's,
+B's and C's merges. Build `c0f38563` ends with the same 8 `Cannot find module '@app/shared'` errors
+as the local reproduction, and the fix's deploy then succeeded. SKIPPED deploys are commits outside
+`backend/**`.
+
+**Noticed, not touched:** `railway config plan` wants to delete a variable `FIX` on `@app/admin`
+that isn't declared in the IaC file. Its purpose is unknown; ask before applying.
+
+---
+
 ## 2026-09-29 — Migrations 0006–0008 applied to the live database; order-number fallback removed
 
 **Outcome** — the owner approved, and `npm run db:migrate` applied 0006 (order counter), 0007 (no
