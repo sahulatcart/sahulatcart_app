@@ -286,9 +286,18 @@ discriminated union of ~20 reply kinds) and only phrases it.
   layout.tsx): saved choice (`localStorage` `sk_theme`), else the OS setting. On dark, the wordmark
   uses the site's dark treatment (white "Sahulat", `--grad-glow` "cart"), never the light gradients.
 - **Checking the portal visually** needs a signed-in session, and the real backend shares the live
-  database. The redesign was checked against a throwaway mock backend on :8080 serving fake JSON,
-  plus a fake Supabase session in `localStorage` (`sk_auth`). Don't point a local portal at the real
-  backend to take screenshots.
+  database. Don't point a local portal at the real backend to take screenshots. Use a mock on :8080
+  instead: the admin has no `.env`, so `BACKEND_URL` falls back to `localhost:8080`, and the mock
+  can't run alongside the real backend. **No mock is committed.** The one used on 2026-09-30 lived
+  in a session scratchpad and is gone. A replacement needs:
+  - `/api/v1/config`, returning a fake `supabaseUrl` that points back at the mock.
+  - `POST <supabaseUrl>/auth/v1/token` returning a session, plus `/auth/v1/logout`, so the real
+    login form works with any email and password.
+  - CORS headers and a 204 for `OPTIONS`, because the browser calls that fake Supabase URL
+    cross-origin.
+  - Fixture JSON for the `GET /api/v1/admin/*` routes, and `{ok:true}` for any write.
+
+  Or skip login by putting a session straight into `localStorage` `sk_auth`.
 - The backend registers **no CORS** on purpose: nothing calls it from a browser on another origin.
 - **Notifications** (new orders, payment claims, handoffs, failed buyer messages) are listed at
   `/notifications`, with an unread badge in the nav. Before this the backend wrote them and nothing ever
@@ -350,6 +359,15 @@ serving the old container. That happened from 2026-09-21 to 2026-09-28 and looke
 deploy), or probe a route that only the new code has. A CORS preflight is *not* a test: the old code
 answered unknown origins with no header too.
 
+For the admin, fetch `/login` and grep its stylesheets for a rule only the new code has.
+`railway deployment list --service <name>` shows each deploy's status:
+- **REMOVED** — a newer deploy replaced it. Normal, not a failure.
+- **SKIPPED** — the push didn't match that service's `watchPatterns` in `.railway/railway.ts`
+  (`/backend/**`, `/admin/**`, `/site/**`). An admin-only push skips the backend. **Trap:** a push
+  that changes only `shared/` or root files (`package.json`, the lockfile) matches none of them, so
+  nothing redeploys, although both apps build from them. Redeploy the affected services by hand.
+- **FAILED** — read the build log before changing anything.
+
 The admin's `buildCommand` is deliberately `echo docker-build` — a harmless no-op. It is **not**
 leftover junk: Railway previously held a *start* command in that slot, which failed every deploy, and
 setting the field to `null` silently would not persist. Do not "tidy" it away.
@@ -397,7 +415,8 @@ through a pointless extra hop.
 The **Sahulatcart** brand guidelines v1.0 are **implemented and live** across the marketing site and
 the admin portal (commit `55973c0`, deployed 2026-09-21). An earlier attempt was rolled back on
 09-18 and then re-applied; the changelog has that history. `backup/pre-rollback-2026-09-18` is a
-local-only branch preserving the pre-rollback tree.
+local-only branch preserving the pre-rollback tree. On 2026-09-30 the admin was redesigned on the
+same tokens and gained dark mode (PRs #10 and #11; see "Portal UI" and "Dark mode" above).
 
 - The name is **"Sahulatcart"** — one word, capital S, lowercase c. Explicitly *not* "SahulatCart".
 - The legal entity is **Nubrix Technologies (Pvt) Ltd**, Lahore. "Sahulatcart" is the trading name.

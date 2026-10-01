@@ -7,6 +7,23 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-01 — Deploy facts recorded; a redeploy trap found in the watch paths
+
+The three admin changes of 09-30 now each record how they shipped and what was checked live (see
+their **Live:** notes). CLAUDE.md gained the meaning of Railway's deploy statuses, a description of
+what a mock backend needs (the one used on 09-30 was never committed and is gone), and an updated
+branding date.
+
+**The trap.** While checking why the backend showed SKIPPED, `.railway/railway.ts` turned out to give
+each service a `watchPatterns` of only its own folder (`/backend/**`, `/admin/**`, `/site/**`). So a
+push that changes only `shared/`, the root `package.json` or the lockfile redeploys nothing, although
+both apps build from them. It hasn't bitten yet. It would look exactly like the 09-21 to 09-28
+episode: the old container keeps serving and everything looks healthy. Until the patterns include
+`/shared/**` and the root files, redeploy by hand after such a push. Changing the patterns is a
+`railway config apply`, so it was left for the owner's go-ahead.
+
+---
+
 ## 2026-09-30 — Admin dark mode
 
 A light/dark toggle now appears on every portal page: in the sidebar footer and the phone top bar,
@@ -35,6 +52,13 @@ then re-points the tokens onto a navy base. Brand tokens are untouched.
 were left over from stopping the local test server with the tab still open. Watching the network for
 35 s showed only the normal 30 s badge poll, returning 200.
 
+**Live:** PR #11 merged 16:03. Admin deploy `ae4af4b9` reported SUCCESS. Checked on the live portal
+on 2026-10-01: `/login` serves the theme script in `<head>` and the toggle, and the stylesheet carries
+the `[data-theme=dark]` rules. Signed-in pages weren't checked live, since that needs the owner's
+login. In `railway deployment list`, the two earlier admin deploys now show **REMOVED**. That only
+means a newer deploy replaced them, not that they failed. The backend shows **SKIPPED** for all three
+pushes, because none touched `backend/`.
+
 ---
 
 ## 2026-09-30 — Inbox: stronger chat borders
@@ -47,6 +71,10 @@ scoped to the inbox (`.card.inbox`); other cards keep the lighter line.
 Also fixed: "Hand back  to bot" showed a double space. The hidden-on-phones `to bot` span was its own
 flex item, so the button's gap was added on top of the space. Deleting the space would have made
 screen readers say "Hand backto bot". Both words are now wrapped in one span.
+
+**Live:** at the owner's request this went straight to `main` (`f36752d`) with no pull request. It was a
+fast-forward, since `main` hadn't moved. Admin deploy `057f3b3b` reported SUCCESS, and the live
+stylesheet was confirmed to have the new `--border-strong` rules.
 
 ---
 
@@ -86,6 +114,13 @@ drawer open. It was just mid-animation; the DOM said closed.
 
 **Also:** Kaisei Decol (empty-state headlines only) and the mono font are no longer preloaded on
 every page. That had been about 15 font files per page load.
+
+**Live:** PR #10 merged 15:40. Admin deploy `d3e4cc90` reported SUCCESS. The live `/login` serves the
+new markup and stylesheet, and Poppins loads in all four weights. That confirms the fallback font seen
+locally really was only the sandbox's network.
+
+**The mock backend is gone.** It lived in a session scratchpad folder, not in the repo, and was
+deleted with it. CLAUDE.md ("Checking the portal visually") says what a replacement needs.
 
 ---
 
