@@ -22,6 +22,16 @@ episode: the old container keeps serving and everything looks healthy. Until the
 `/shared/**` and the root files, redeploy by hand after such a push. Changing the patterns is a
 `railway config apply`, so it was left for the owner's go-ahead.
 
+**Fixed the same day.** The backend and admin now also watch `/shared/**`, `/package.json`,
+`/package-lock.json` and `/tsconfig.base.json`. The admin also watches `/.dockerignore`, because its
+Dockerfile copies the whole repo. The site is unchanged; it reads only `site/`. Docs-only pushes
+still skip everything.
+
+The first `railway config plan` showed again that an apply would **delete `@app/admin.FIX`**, an
+undeclared variable nobody can explain (nothing in the code reads it). Applying as-is would have
+deleted it as a side effect. It's now declared `preserve()`, so the reviewed plan was exactly two
+watch-path updates and 0 to destroy. Whether `FIX` should exist at all is still the owner's call.
+
 ---
 
 ## 2026-09-30 — Admin dark mode

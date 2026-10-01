@@ -2,6 +2,9 @@ import { defineRailway, github, preserve, project, service } from "railway/iac";
 
 export default defineRailway(() => {
   const sahulatcart_app = github("sahulatcart/sahulatcart_app", { checkSuites: false });
+  // Both apps build from shared/ and the root workspace files, not only their own folder. With just
+  // "/backend/**" a shared/-only or lockfile-only push redeployed nothing and the old build kept serving.
+  const workspace = ["/shared/**", "/package.json", "/package-lock.json", "/tsconfig.base.json"];
 
   const site = service("site", {
     source: sahulatcart_app,
@@ -11,7 +14,7 @@ export default defineRailway(() => {
   });
   const _appbackend = service("@app/backend", {
     source: sahulatcart_app,
-    build: { buildCommand: "npm run build --workspace=@app/backend", buildEnvironment: "V3", builder: "RAILPACK", watchPatterns: ["/backend/**"] },
+    build: { buildCommand: "npm run build --workspace=@app/backend", buildEnvironment: "V3", builder: "RAILPACK", watchPatterns: ["/backend/**", ...workspace] },
     start: "node backend/dist/index.js",
     replicas: { "sfo": 1 },
     networking: { privateNetworkEndpoint: "appbackend" },
@@ -21,11 +24,12 @@ export default defineRailway(() => {
   });
   const _appadmin = service("@app/admin", {
     source: sahulatcart_app,
-    build: { buildCommand: "echo docker-build", buildEnvironment: "V3", builder: "DOCKERFILE", dockerfilePath: "admin/Dockerfile", watchPatterns: ["/admin/**"] },
+    build: { buildCommand: "echo docker-build", buildEnvironment: "V3", builder: "DOCKERFILE", dockerfilePath: "admin/Dockerfile", watchPatterns: ["/admin/**", ...workspace, "/.dockerignore"] }, // the Dockerfile copies the whole repo
     start: "npm run start -w @app/admin",
     replicas: { "sfo": 1 },
     networking: { privateNetworkEndpoint: "appadmin" },
-    env: { BACKEND_URL: preserve(), NEXT_PUBLIC_PRODUCT_NAME: preserve() },
+    // FIX: purpose unknown (not in the code). Kept as-is until the owner decides; undeclared, an apply deletes it.
+    env: { BACKEND_URL: preserve(), FIX: preserve(), NEXT_PUBLIC_PRODUCT_NAME: preserve() },
   });
 
   return project("exemplary-charm", {

@@ -362,10 +362,11 @@ answered unknown origins with no header too.
 For the admin, fetch `/login` and grep its stylesheets for a rule only the new code has.
 `railway deployment list --service <name>` shows each deploy's status:
 - **REMOVED** — a newer deploy replaced it. Normal, not a failure.
-- **SKIPPED** — the push didn't match that service's `watchPatterns` in `.railway/railway.ts`
-  (`/backend/**`, `/admin/**`, `/site/**`). An admin-only push skips the backend. **Trap:** a push
-  that changes only `shared/` or root files (`package.json`, the lockfile) matches none of them, so
-  nothing redeploys, although both apps build from them. Redeploy the affected services by hand.
+- **SKIPPED** — the push didn't match that service's `watchPatterns` in `.railway/railway.ts`. The
+  backend and admin watch their own folder **plus** `shared/` and the root workspace files
+  (`package.json`, the lockfile, `tsconfig.base.json`), since both build from them; the site watches
+  only `site/`. A docs-only push (CHANGELOG, CLAUDE.md) skips all three. A new root file a build reads
+  needs adding to `workspace` there, or changing it alone won't redeploy.
 - **FAILED** — read the build log before changing anything.
 
 The admin's `buildCommand` is deliberately `echo docker-build` — a harmless no-op. It is **not**
