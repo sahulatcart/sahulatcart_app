@@ -31,6 +31,11 @@ test), App Review submitted at week 4, a fallback of Sahulatcart-owned numbers i
 decisions made so nobody waits, and about 14 weeks to paid-ready with one engineer. The eight old
 files moved to `docs/launch/archive/`.
 
+The owner found PLAN.md hard to follow, so `docs/launch/Sahulatcart-Plan.pdf` is the same plan in
+plain words: 10 pages, tables and boxes, a glossary, built by `docs/launch/build-plan-pdf.py`
+(reportlab). First build had two near-empty pages from hard page breaks after tables that spilled a
+row; conditional breaks fixed it. Checked page by page in the browser pane.
+
 Also found while checking the live state: the owner put Cloudflare in front of the domain at some
 point, so `https://sahulatcart.com` now works and mail runs through Cloudflare Email Routing. CLAUDE.md
 and the SEO memory said it still failed; both corrected. The `.tbc` placeholders for NTN and address

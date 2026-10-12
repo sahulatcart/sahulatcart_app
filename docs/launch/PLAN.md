@@ -4,6 +4,9 @@ Written 2026-10-12 from the code as it is today, the Meta Tech Provider roadmap 
 and the live services. This is the single plan. The eight documents it replaces are in
 [archive/](archive/) for reference only.
 
+**Plain-words version for reading and sharing:** [Sahulatcart-Plan.pdf](Sahulatcart-Plan.pdf)
+(rebuild with `python3 docs/launch/build-plan-pdf.py` after editing the script).
+
 ## The goal
 
 **Build the whole product now, against Meta's test setup, so that on the day Meta approves us the
