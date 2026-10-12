@@ -15,3 +15,6 @@ coverage/
 
 # build info
 *.tsbuildinfo
+
+# db/backup-schedule.sh writes this next to the copied script; never in the repo
+backup.env
