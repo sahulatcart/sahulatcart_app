@@ -13,7 +13,11 @@ The owner asked for the plan as a detailed SRS divided between two developers, t
 developer. `docs/launch/SRS-Fazal.md` and `docs/launch/SRS-Uzair.md` each carry the shared rules,
 team split and interface contracts (identical in both), that developer's features, the shared
 schedule, their rows of the acceptance matrix, and the appendices they need. The split is generated
-from one source by headings, so the shared parts cannot drift. The combined file was removed. The SRS
+from one source by headings, so the shared parts cannot drift. The combined file was removed.
+PDF versions (`SRS-Fazal.pdf`, `SRS-Uzair.pdf`) are built by `docs/launch/build-srs-pdf.py`: Markdown
+to styled HTML with the `markdown` package, then Google Chrome headless prints it to A4. Chosen over
+reportlab because the SRS is table-heavy and Chrome's layout handles page breaks inside long tables
+without hand-tuning. Rebuild after editing the Markdown. The SRS
 splits the work along the one line that keeps the two streams independent: everything that talks to
 Meta (per-merchant tokens, Embedded Signup, templates, quality webhooks, message meter, platform
 console, App Review) is Stream M for Fazal; the portal and shop operations (self-service signup,

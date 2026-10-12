@@ -6,7 +6,8 @@ and the live services. This is the single plan. The eight documents it replaces 
 
 **Plain-words version for reading and sharing:** [Sahulatcart-Plan.pdf](Sahulatcart-Plan.pdf)
 
-**Build spec for the two developers:** [SRS-Fazal.md](SRS-Fazal.md) and [SRS-Uzair.md](SRS-Uzair.md), which assign every feature to Fazal (Meta and
+**Build spec for the two developers:** [SRS-Fazal.md](SRS-Fazal.md) and [SRS-Uzair.md](SRS-Uzair.md) (PDF: [SRS-Fazal.pdf](SRS-Fazal.pdf),
+[SRS-Uzair.pdf](SRS-Uzair.pdf)), which assign every feature to Fazal (Meta and
 messaging) or Uzair (portal and operations), with requirements, tables, API contracts, tests and a
 week-by-week schedule.
 (rebuild with `python3 docs/launch/build-plan-pdf.py` after editing the script).
