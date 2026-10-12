@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **15 files, 121 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **16 files, 125 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -140,22 +140,27 @@ RLS stays on as defence in depth. Two rules follow for every new migration:
 **Stock** (0008): a placed order (COD confirmed, or bank transfer awaiting payment) reserves its items
 with `reserve_stock()` — all or nothing, so a sold-out item cancels the checkout instead of overselling.
 Any cancellation calls `release_stock()`. Both are idempotent via `orders.stock_reserved`. Only products
-with `track_stock` and a known count are touched. If the reservation call itself fails, it's logged and
-the order goes through untracked (0008 live since 2026-09-29).
+with `track_stock` and a known count are touched. If the reservation call itself fails, the order goes
+back to draft and checkout stops, as with a missing order number. Unknown stock never sells (since
+2026-10-12; before that the order went through untracked).
 
 ## Architecture
 
 ### Inbound message pipeline
 
 [backend/src/whatsapp/webhook.ts](backend/src/whatsapp/webhook.ts) verifies `X-Hub-Signature-256` over
-the exact raw bytes (a scoped content-type parser preserves `rawBody`), fast-ACKs within 5s, then
+the exact raw bytes (a scoped content-type parser preserves `rawBody`), records each message, ACKs, then
 processes out of band: dedupes by `wa_message_id` via a `webhook_events` insert (the unique-constraint
 violation *is* the idempotency check), transcribes voice notes, upserts customer + conversation,
 persists the message, and calls `runOrchestrator`.
 
-Meta has its 200 before any work happens, so nothing may be lost after the ACK:
-- **Claim first.** Every message in a payload is claimed (`webhook_events` row, storing
-  `{ phoneNumberId, msg }`) before any is processed, then marked `processed` or `error`.
+Nothing Meta was told we received may be lost:
+- **Claim before the 200.** `claimWebhookPayload()` records every message in a payload (`webhook_events`
+  row, storing `{ phoneNumberId, msg }`) *before* the route answers; `processClaimed()` runs them after.
+  Each row is then marked `processed` or `error`. If a row can't be written, or the tenant lookup fails,
+  the route answers **500** and Meta redelivers. Rows already written come back as duplicates, and the
+  unwritten message isn't processed now. Before 2026-10-12 the 200 went out first, so a DB blip at
+  that moment lost the message for good.
 - **One at a time per buyer.** [lib/keyed-queue.ts](backend/src/lib/keyed-queue.ts) `serialize()` keys on
   merchant + sender, so a burst ("hi", "ye kitne ka?") can't race over one conversation's state. It is
   in-process: correct while the backend runs as **one instance**; more replicas need a DB lock instead.

@@ -68,6 +68,31 @@ empty organization. Delete the organization only, never the project.
 
 ---
 
+## 2026-10-12 — No lost webhooks, no sales on unknown stock
+
+Two risks flagged in the 10-05 roadmap review, both fixed with tests (16 files, 125 tests).
+
+**Webhook.** The route sent Meta its 200 *before* writing the `webhook_events` row. The replay sweeper
+only covers recorded rows, so a DB blip or a crash in that gap lost the message silently, and Meta
+never retried because it had its 200. CLAUDE.md said "claim first", which was true only *after* the
+ACK. Now `claimWebhookPayload()` records every message before the route answers. Any failure (insert
+or tenant lookup) answers 500, so Meta redelivers. Rows already written dedupe as before, and the
+unwritten message waits for the redelivery instead of being processed now, which would reply twice.
+A failed tenant lookup used to look like "unknown number" (ignored, or dead-lettered by the replay
+sweeper as "not replayable"). It now throws, so it's retried rather than dropped. Statuses are still
+applied when their row can't be written; losing one is harmless.
+
+**Stock.** If the `reserve_stock` RPC errored, checkout logged it and confirmed the order without
+reserving, so the last unit could be sold twice. That was a fallback for before 0008 was applied,
+and 0008 has been live since 09-29. Now the order is put back to draft (number, `placed_at` and
+payment fields cleared, filtered on the status we just set) and checkout stops, matching the
+order-number failure. An attempt to also filter on `stock_reserved = false` failed in the test fake,
+which has no column defaults. It's unnecessary anyway: an errored RPC rolled back and reserved nothing.
+
+Not deployed by this change. The backend redeploys when the PR merges (it touches `backend/`).
+
+---
+
 ## 2026-10-06 — Implementation sequence for all 31 completion features
 
 Added `docs/launch/IMPLEMENTATION-PLAN.md` with work packages W00–W10, prerequisites, demonstrations,

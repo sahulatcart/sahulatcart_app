@@ -215,10 +215,13 @@ describe('guard rails', () => {
     expect(db.rows('payments')).toHaveLength(0);
   });
 
-  it('if stock reservation fails, the order still goes through (logged)', async () => {
+  it('if stock reservation fails, checkout stops and the order goes back to draft', async () => {
     delete db.rpcs.reserve_stock;
     await toPayment();
-    expect(await say('cash on delivery')).toContain('SK-1001');
+    expect(await say('cash on delivery')).not.toContain('SK-1001');
+    expect(order().status).toBe('draft');
+    expect(order().order_number).toBeNull();
+    expect(db.rows('payments')).toHaveLength(0);
     expect(stock()).toBe(3);
   });
 });
