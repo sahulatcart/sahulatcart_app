@@ -1,6 +1,6 @@
 # Development Plan — MVP
 
-> **Historical pilot development plan.** The [current market launch roadmap](launch/README.md)
+> **Historical pilot development plan.** The [current market launch roadmap](launch/PLAN.md)
 > supersedes this document's launch scope and sequencing. In particular, self-service merchant signup,
 > merchant-owned WhatsApp connection and production validation are required for the public release.
 

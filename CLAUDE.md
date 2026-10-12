@@ -353,12 +353,19 @@ is no `supabase/` folder. **The free plan has no automatic backups**, so never d
 Railway — the plan's custom-domain limit was already reached by `www`, so the apex could not be added
 as a second Railway domain.
 
-Consequence: `https://sahulatcart.com` (bare domain, https) **fails** — Namecheap's redirect server
-has no certificate. `http://sahulatcart.com` and `www` both work. Putting Cloudflare in front fixes
-it; that is unresolved and touches the MX/SPF records, so it needs the owner's go-ahead.
+**Cloudflare is now in front of the domain** (found 2026-10-12; done by the owner, undocumented until
+then): the nameservers are Cloudflare's, `https://sahulatcart.com` 301s to `www` correctly, and
+mail is on Cloudflare Email Routing (`route*.mx.cloudflare.net`), not Namecheap's forwarders. The
+SPF record still names Namecheap's forwarder; it only matters if mail is *sent* from
+`@sahulatcart.com`. The Search Console TXT survived. DNS-ROLLBACK.md's MX rows are now historical.
 
 The same limit blocks `app.sahulatcart.com` for the admin portal, which stays on its Railway URL. The
 site's 8 Login links point at it directly.
+
+**The plan for everything still to build is [docs/launch/PLAN.md](docs/launch/PLAN.md)** (2026-10-12):
+two tracks, Meta paperwork and product, built so that Meta approval day is a settings change and not a
+code change. Read it before planning any feature work; the older plans in `docs/launch/archive/` are
+superseded.
 
 Previous DNS values, and the MX/SPF rows that must not be touched, are in
 [DNS-ROLLBACK.md](DNS-ROLLBACK.md). The Google Search Console verification TXT also lives on `@` —

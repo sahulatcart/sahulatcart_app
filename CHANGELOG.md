@@ -7,6 +7,37 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-12 — One plan to replace eight, built so Meta approval is a settings change
+
+The owner wasn't satisfied with the 10-05/10-06 launch plans and wanted a product that is complete
+before Meta approval, so that approval only means "update the API". Two audits were run first, one
+of the plans and one of the code, plus the Meta Tech Provider roadmap PDF and the live services.
+
+What the audits found. The old plans used seven overlapping numbering schemes for the same work,
+scheduled Meta App Review behind weeks of internal refactoring, had no fallback if Meta stalled,
+and were already stale: four of their "current problems" were fixed earlier the same day. The code
+is more multi-tenant than the docs admit (inbound routing is per `phone_number_id`) and less than
+the schema suggests (`whatsapp_secrets`, `TOKEN_ENCRYPTION_KEY`, `platform_admins`, `codEnabled`,
+`merchants.plan`, `merchants.status`, the opt-out flag and the saved greeting all exist and nothing
+reads them). Every outbound message uses the one env token.
+
+The key realisation: Meta approval unlocks no new APIs, only who we may use them for. So every
+Meta-facing feature can be built and tested now with the test number and merchants added as app
+testers, and approval day is three dashboard settings plus `SIGNUP_OPEN=true`.
+
+`docs/launch/PLAN.md` is the result: Track A (Meta, 7 steps, owner-gated on the NTN/address/billing
+items that have been open since September) and Track B (7 milestones, each with one "done when"
+test), App Review submitted at week 4, a fallback of Sahulatcart-owned numbers if Meta stalls, ten
+decisions made so nobody waits, and about 14 weeks to paid-ready with one engineer. The eight old
+files moved to `docs/launch/archive/`.
+
+Also found while checking the live state: the owner put Cloudflare in front of the domain at some
+point, so `https://sahulatcart.com` now works and mail runs through Cloudflare Email Routing. CLAUDE.md
+and the SEO memory said it still failed; both corrected. The `.tbc` placeholders for NTN and address
+are still on the site.
+
+---
+
 ## 2026-10-12 — Daily database backups on the owner's Mac
 
 The Supabase project is on the free plan, which keeps no backups. Until now the live database was
