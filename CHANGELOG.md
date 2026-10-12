@@ -45,6 +45,17 @@ window the merchant opens by messaging their own shop number and keeps open by r
 window gets one Rs-1 "reply OK" nudge and nothing more. Sahulatcart pays Meta nothing under the
 Tech Provider model. PLAN.md B2/B4 and the PDF updated.
 
+Then the owner asked whether that accounted for Meta's October 2026 rates. It did not: the assistant's
+knowledge ended mid-2026. Checked Meta's pricing page and three explainers: from **1 October 2026**
+service messages (free-form replies inside the 24-hour window) are charged after **1,000 free per
+phone number per month**, utility templates inside the window are charged too, and Pakistan's
+utility rate rose from $0.010 to **$0.015 (about Rs 4)**. The earlier "about Rs 1" figure was wrong,
+and the "keep the merchant's window open for free alerts" trick is void because those count too.
+The plan's cost rule was rewritten: fewer messages per sale as a product requirement (combine
+messages, buttons instead of questions, one photo per ask), a per-shop message meter with 80%/100%
+warnings and a merchant choice after the free 1,000, merchant alerts by push and email only, and a
+billing check at connect time because Meta delivers nothing to a number with no payment method.
+
 Also found while checking the live state: the owner put Cloudflare in front of the domain at some
 point, so `https://sahulatcart.com` now works and mail runs through Cloudflare Email Routing. CLAUDE.md
 and the SEO memory said it still failed; both corrected. The `.tbc` placeholders for NTN and address

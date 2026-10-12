@@ -226,14 +226,22 @@ At connect time the backend creates three **utility** templates on the merchant'
 template only when the 24-hour window has closed. A **Templates** page lists them with status, and the
 merchant can resubmit a rejected one.
 
-**Cost rule.** Messages inside a buyer's 24-hour window are free; templates outside it are charged
-to the merchant (about Rs 1 each in Pakistan; check Meta's current rate card). So: everything that
-can be sent immediately is sent immediately (order confirmed, bank details, "we'll message you when
-it's verified"). The order confirmation tells the buyer to send *status* any time, which is free
-because the buyer starts it. A paid template is never sent automatically for dispatch: the order page
-shows "window closed, sending costs about Rs 1" with a button, and the merchant chooses. Payment
-verification normally happens within hours, inside the window, so it is free; only late
-verifications cost.
+**Cost rule (Meta's pricing since 1 October 2026).** Every message the bot sends is now charged
+after the first **1,000 per phone number per month** (no rollover), including free-form replies
+inside the 24-hour window and utility templates inside it. The rate is the country's utility rate:
+Pakistan is **US$0.015 per message, about Rs 4** (raised from $0.010 on the same date; check Meta's
+rate card, it changes). A 15-message sale past the free 1,000 costs about Rs 60. So the design goal
+is **fewer messages per sale**, not "stay inside the window":
+- One message where two were sent: bank details and "send the screenshot" become one; the order
+  confirmation and the slip become one; the greeting lists products in the same message.
+- Buttons and lists instead of questions: "COD or bank transfer?" as two buttons is one message and
+  removes the clarification round-trips that cost two or three more.
+- One product photo per product ask, not one per image.
+- Dispatch notices and late "payment verified" are a merchant button on the order page that shows
+  the price; never automatic.
+- Every send is counted per merchant (B5 meter). Merchants without a payment method on their
+  WhatsApp account get no deliveries at all, so the connect flow's test message (B1 step 7) doubles
+  as the billing check and the connection page says "add a payment method in Meta" when it fails.
 
 **Done when:** a template created from the portal shows *approved* in WhatsApp Manager, and a buyer
 notification sent 25 hours after their last message arrives. **Record the two App Review videos
@@ -263,16 +271,12 @@ setting up" card disappears exactly then.
 
 ### B4. What a real shop needs in week one (2 weeks)
 
-- **Alerts outside the portal, at no cost.** New order, payment claim, handoff and "bot needs help"
-  reach the merchant three ways, in this order: (1) **portal push notifications** (Web Push with a
-  service worker; works on Android and on iPhone when the portal is added to the home screen),
-  free and the default; (2) **WhatsApp to the merchant's personal number, inside a free window**: at
-  onboarding the merchant sends one message from their personal phone to their shop number, which
-  opens a 24-hour window, and every alert in it is free; replying to any alert restarts the window.
-  If the window has lapsed, one paid template (about Rs 1) goes out asking "reply OK to keep free
-  alerts on", and nothing more until they reply; (3) **email**, free, always. Paid WhatsApp alerts
-  are never sent repeatedly; the merchant can switch WhatsApp alerts off entirely. Today a merchant
-  only learns of an order while the portal tab is open.
+- **Alerts outside the portal, without paying Meta.** New order, payment claim, handoff and "bot
+  needs help" reach the merchant by **portal push notifications** (Web Push with a service worker;
+  works on Android and on iPhone when the portal is added to the home screen) and by **email**. Both
+  are free. WhatsApp alerts to the merchant's own phone are available but **off by default**: since
+  1 October 2026 they count as paid messages like any other, and a busy shop would pay for every
+  one. Today a merchant only learns of an order while the portal tab is open.
 - **Order stages.** Preparing → dispatched → delivered, from the order page, with the buyer told at
   dispatch (template if outside the window). The enum exists; the transitions do not.
 - **Unpaid bank orders expire.** After 24 hours without a screenshot: order cancelled, stock
@@ -295,6 +299,10 @@ minute; a bank order with no screenshot is cancelled at 24 hours with stock back
   never `?llm=1`) that emails the owner.
 - **Per-merchant LLM budget.** One Gemini key serves every shop. With billing on, add a daily cap per
   merchant so one busy shop cannot hand every other shop's chats to a human.
+- **Message meter per shop.** Count every outbound message per phone number per month; show
+  "N of 1,000 free used" on the dashboard; alert the merchant at 80% and at 100%; let the merchant
+  choose what happens after the free 1,000: keep going (paid, about Rs 4 each) or switch the bot to
+  handoff-only. Human replies from the inbox count too and are shown.
 - **Rate limits** on signup, login and the admin API. Fix the admin-token lockout so ten bad guesses
   from a stranger do not lock the owner out.
 - **Platform owner console.** One page, visible only to `platform_admins` (the table and JWT claim
@@ -365,9 +373,10 @@ Made so that nobody is waiting on them. Any can be reversed, but each has a reas
    Merchants record outside sales by editing stock.
 10. **Prohibited-goods and opt-in attestation at signup**, enforced by a checkbox and the suspension
     control, not by reviewing every catalog.
-11. **Nothing is sent as a paid template automatically, except the single "reply OK" nudge to the
-    merchant.** Free windows first (push, email, buyer-initiated "status"), paid messages only when
-    the merchant presses a button that shows the price. Sahulatcart pays Meta nothing under the Tech
+11. **Fewer messages per sale is a product requirement, and every shop sees its meter.** Since
+    Meta's 1 October 2026 pricing, each bot reply past 1,000 a month per number costs about Rs 4 in
+    Pakistan. Messages are combined, buttons replace questions, nothing paid is sent automatically
+    for dispatch, merchant alerts go by push and email. Sahulatcart pays Meta nothing under the Tech
     Provider model; our costs are hosting and the AI, so the cheapest Gemini model handles the
     intent step, which is most calls, and the per-merchant daily AI budget in B5 caps the rest.
 

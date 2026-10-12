@@ -260,10 +260,11 @@ story.append(milestone(
     "\"order confirmed\", \"payment verified\", \"payment rejected\". A page shows whether Meta has "
     "approved each one. The bot uses them whenever a buyer's last message is older than 24 hours.",
     "Without these, the bot cannot tell a buyer \"payment verified\" the next day. Today the merchant "
-    "gets a note asking them to do it by hand. <b>Cost rule:</b> messages inside a buyer's 24-hour "
-    "window are free, so everything that can be sent at once is sent at once. The confirmation tells "
-    "the buyer to send \"status\" any time (free, because the buyer starts it). A paid message is never "
-    "sent automatically: the order page shows \"window closed, sending costs about Rs 1\" with a button.",
+    "gets a note asking them to do it by hand. <b>Cost rule:</b> since 1 October 2026 every bot message "
+    "past 1,000 a month per number costs about Rs 4, so the bot is built to send fewer messages: one "
+    "message where two were sent, buttons instead of questions, one photo per product ask. A late "
+    "\"payment verified\" or a dispatch notice is a button on the order page that shows the price, never "
+    "automatic.",
     "A message created from the portal shows as approved in Meta's tools, and a buyer who last wrote "
     "25 hours ago still receives their confirmation. <b>Record the two review videos here.</b>",
 ))
@@ -281,10 +282,9 @@ story.append(milestone(
 story.append(milestone(
     "B4. What a real shop needs in its first week", "2 weeks",
     "Alerts for new orders, payment claims and hand-overs that cost nothing: phone notifications from "
-    "the portal itself (free, the default), WhatsApp to the merchant's personal number inside a free "
-    "24-hour window that the merchant opens by messaging their own shop number once and keeps open by "
-    "replying, and email. If the window lapses, one message of about Rs 1 asks \"reply OK to keep free "
-    "alerts on\" and nothing more is sent until they do. Order stages: packed, sent, delivered, with the buyer told at "
+    "the portal itself (free, the default) and email. WhatsApp alerts to the merchant's own phone are "
+    "available but off by default, because since 1 October 2026 they are charged like any other message. "
+    "Order stages: packed, sent, delivered, with the buyer told at "
     "dispatch. Unpaid bank orders cancel themselves after 24 hours and the stock comes back. "
     "A customer who says \"stop\" is never messaged again (today the bot records it and keeps "
     "replying). Small fixes: delete a product, rename the bot, show today's figures in Pakistan time.",
@@ -351,18 +351,22 @@ story.append(table(["Decision", "Reason"], [
     ["Unpaid bank orders expire after 24 hours", "Keeps stock honest."],
     ["Stock drops when an order is placed, returns on cancellation", "What the code does now; merchants edit stock for sales made elsewhere."],
     ["Prohibited-goods and opt-in tick boxes at sign-up", "Meta's rules; enforced by suspension, not by reading every catalog."],
-    ["No paid WhatsApp message is ever sent automatically", "Free channels first (portal notifications, email, the buyer asking). A paid message only when the merchant presses a button that shows the price."],
+    ["Fewer messages per sale, and every shop sees its meter", "Since October 2026 each bot reply past 1,000 a month costs about Rs 4. Messages are combined, buttons replace questions, alerts go by push and email, and nothing paid is sent automatically for dispatch."],
 ], [70 * mm, W - 70 * mm]))
 story.append(Spacer(1, 10))
-story.append(box("Keeping WhatsApp costs near zero", [
-    "<b>The rule WhatsApp uses.</b> When a buyer messages a shop, a 24-hour window opens. Anything the bot "
-    "sends inside it is free. After it closes, only pre-approved messages can be sent, and each costs "
-    "the merchant about Rs 1 (Meta's Pakistan utility rate; check the current rate card).",
+story.append(box("What WhatsApp messages cost since 1 October 2026", [
+    "<b>Meta's new rule.</b> Each business number gets <b>1,000 free messages a month</b>. After that, "
+    "every message the bot or the merchant sends is charged, including replies inside the 24-hour "
+    "window, which used to be free. In Pakistan the rate is US$0.015, about <b>Rs 4 per message</b>. "
+    "A 15-message sale past the free 1,000 costs about Rs 60. Meta changes rates; check the current card.",
     "",
-    "<b>So the product is built to stay inside free windows.</b> Buyer messages go out immediately. The "
-    "buyer is told to send \"status\" to check an order, which is free. Merchant alerts use the portal's "
-    "own phone notifications and email, and WhatsApp alerts ride on a window the merchant keeps open by "
-    "replying. A typical shop's WhatsApp bill should be a few rupees a month.",
+    "<b>So the product is built to send fewer messages.</b> One message where two were sent, buttons "
+    "instead of questions, one photo per product ask. The dashboard shows each shop \"N of 1,000 free "
+    "used\" and warns at 80%. The merchant chooses what happens after 1,000: keep going and pay, or "
+    "switch the bot to hand-over-only. Merchant alerts go by phone notification and email, which are free.",
+    "",
+    "<b>A shop must add a payment method to its WhatsApp account</b>, or Meta delivers nothing. The "
+    "test message at the end of Connect WhatsApp catches this.",
     "",
     "<b>Sahulatcart pays Meta nothing.</b> Under the Tech Provider model only merchants pay for messages. "
     "Our costs are hosting and the AI, which the cheapest Gemini model and a daily budget per shop keep small.",
