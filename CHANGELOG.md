@@ -56,6 +56,14 @@ messages, buttons instead of questions, one photo per ask), a per-shop message m
 warnings and a merchant choice after the free 1,000, merchant alerts by push and email only, and a
 billing check at connect time because Meta delivers nothing to a number with no payment method.
 
+The owner then pointed out that B2 still led with templates and that confirming payment inside the
+24-hour window avoids them. Checked: under the new pricing, free-form replies in the window draw on
+the 1,000 free allowance while templates are always charged, even in the window. B2 rewritten: never
+a template while the window is open; the portal shows "free to confirm until <time>" with a
+countdown so the merchant verifies inside it; after it closes nothing is sent without the merchant
+pressing a button that shows the Rs 4 price. Two templates (payment_update, order_sent) remain for
+those late cases and because App Review needs a template-creation recording.
+
 Also found while checking the live state: the owner put Cloudflare in front of the domain at some
 point, so `https://sahulatcart.com` now works and mail runs through Cloudflare Email Routing. CLAUDE.md
 and the SEO memory said it still failed; both corrected. The `.tbc` placeholders for NTN and address

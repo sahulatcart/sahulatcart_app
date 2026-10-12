@@ -255,18 +255,19 @@ story.append(milestone(
     "tester cannot see or use the first tester's number.",
 ))
 story.append(milestone(
-    "B2. Pre-approved messages (templates)", "1 week",
-    "When a shop connects, we automatically create three pre-approved messages on its account: "
-    "\"order confirmed\", \"payment verified\", \"payment rejected\". A page shows whether Meta has "
-    "approved each one. The bot uses them whenever a buyer's last message is older than 24 hours.",
-    "Without these, the bot cannot tell a buyer \"payment verified\" the next day. Today the merchant "
-    "gets a note asking them to do it by hand. <b>Cost rule:</b> since 1 October 2026 every bot message "
-    "past 1,000 a month per number costs about Rs 4, so the bot is built to send fewer messages: one "
-    "message where two were sent, buttons instead of questions, one photo per product ask. A late "
-    "\"payment verified\" or a dispatch notice is a button on the order page that shows the price, never "
-    "automatic.",
-    "A message created from the portal shows as approved in Meta's tools, and a buyer who last wrote "
-    "25 hours ago still receives their confirmation. <b>Record the two review videos here.</b>",
+    "B2. Confirm inside the window; pre-approved messages only as a rare fallback", "1 week",
+    "Since 1 October 2026 a normal reply inside the buyer's 24-hour window uses the shop's 1,000 free "
+    "messages a month; a pre-approved message is always charged, even inside the window. So the bot never "
+    "sends a pre-approved message while the window is open. Order confirmation and bank details go out at "
+    "once. For a bank transfer, the window runs 24 hours from the screenshot: the merchant gets a phone "
+    "alert immediately and the portal shows \"free to confirm until 3:40 pm tomorrow\" with a countdown. "
+    "Confirm before then and it is free. After the window closes nothing is sent on its own; the order "
+    "page shows \"sending costs about Rs 4\" with a button and the merchant decides. We still create two "
+    "pre-approved messages per shop (\"payment update\" and \"order sent\") for those late cases, and "
+    "because Meta's review needs to see one being created.",
+    "Doing the confirmation inside the window is the difference between free and Rs 4 per order.",
+    "A payment confirmed 20 hours after the screenshot goes out free; one confirmed 30 hours after waits "
+    "for the merchant to press the Rs 4 button. <b>Record the two review videos here.</b>",
 ))
 story.append(milestone(
     "B3. Onboarding that checks before going live", "2 weeks",
@@ -358,7 +359,9 @@ story.append(box("What WhatsApp messages cost since 1 October 2026", [
     "<b>Meta's new rule.</b> Each business number gets <b>1,000 free messages a month</b>. After that, "
     "every message the bot or the merchant sends is charged, including replies inside the 24-hour "
     "window, which used to be free. In Pakistan the rate is US$0.015, about <b>Rs 4 per message</b>. "
-    "A 15-message sale past the free 1,000 costs about Rs 60. Meta changes rates; check the current card.",
+    "A 15-message sale past the free 1,000 costs about Rs 60. Pre-approved messages are always charged, "
+    "so the bot only sends normal replies inside the window and never a pre-approved one there. Meta "
+    "changes rates; check the current card.",
     "",
     "<b>So the product is built to send fewer messages.</b> One message where two were sent, buttons "
     "instead of questions, one photo per product ask. The dashboard shows each shop \"N of 1,000 free "

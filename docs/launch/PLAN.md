@@ -215,37 +215,34 @@ half-written.
 bot reply, and the token appears nowhere in logs, the browser or the URL. A second tester cannot see
 or message through the first tester's number.
 
-### B2. Message templates (1 week)
+### B2. Confirm inside the window; templates only as the rare fallback (1 week)
 
-Without templates the bot cannot tell a buyer "payment verified" if they last wrote yesterday; today
-the merchant gets a notification asking them to do it by hand.
+**The rule.** Since 1 October 2026, a free-form message inside the buyer's 24-hour window uses the
+shop's 1,000 free messages a month (then about Rs 4); a template is **always** charged, even inside
+the window. So the bot never sends a template while the window is open, and the product is built to
+get everything done inside it:
 
-At connect time the backend creates three **utility** templates on the merchant's WABA in Roman Urdu:
-`order_confirmed`, `payment_verified`, `payment_rejected`. Their approval status comes in on the
-`message_template_status_update` webhook and shows on the connection page. `notifyBuyer()` uses the
-template only when the 24-hour window has closed. A **Templates** page lists them with status, and the
-merchant can resubmit a rejected one.
+- Order confirmation, bank details and "send the screenshot" go out immediately, free-form.
+- **Payment verification inside the window.** The window runs 24 hours from the buyer's last
+  message, which is usually the screenshot. The merchant gets a push alert at once (B4), and the
+  payment claim in the portal shows **"free to confirm until 3:40 pm tomorrow"** with a countdown.
+  Verify before then and the "payment verified" message is free-form and free. Most will be.
+- **After the window closes** nothing is sent automatically. The order page shows "window closed,
+  sending costs about Rs 4" with a button; the merchant decides. Same for dispatch notices, which
+  are usually days later. A buyer can also ask "status" at any time, which reopens a window.
 
-**Cost rule (Meta's pricing since 1 October 2026).** Every message the bot sends is now charged
-after the first **1,000 per phone number per month** (no rollover), including free-form replies
-inside the 24-hour window and utility templates inside it. The rate is the country's utility rate:
-Pakistan is **US$0.015 per message, about Rs 4** (raised from $0.010 on the same date; check Meta's
-rate card, it changes). A 15-message sale past the free 1,000 costs about Rs 60. So the design goal
-is **fewer messages per sale**, not "stay inside the window":
-- One message where two were sent: bank details and "send the screenshot" become one; the order
-  confirmation and the slip become one; the greeting lists products in the same message.
-- Buttons and lists instead of questions: "COD or bank transfer?" as two buttons is one message and
-  removes the clarification round-trips that cost two or three more.
-- One product photo per product ask, not one per image.
-- Dispatch notices and late "payment verified" are a merchant button on the order page that shows
-  the price; never automatic.
-- Every send is counted per merchant (B5 meter). Merchants without a payment method on their
-  WhatsApp account get no deliveries at all, so the connect flow's test message (B1 step 7) doubles
-  as the billing check and the connection page says "add a payment method in Meta" when it fails.
+**Templates still exist, for two reasons:** the late cases above need one, and Meta's App Review
+requires a recording of a template being created through our product. At connect time the backend
+creates two **utility** templates on the merchant's WABA: `payment_update` (verified or rejected,
+with the order number) and `order_sent`. Their approval status arrives on the
+`message_template_status_update` webhook and shows on the connection page, where a rejected one can
+be resubmitted. `notifyBuyer()` uses a template only when the window is closed **and** the merchant
+pressed the button.
 
-**Done when:** a template created from the portal shows *approved* in WhatsApp Manager, and a buyer
-notification sent 25 hours after their last message arrives. **Record the two App Review videos
-here and submit A6.**
+**Done when:** a template created from the portal shows *approved* in WhatsApp Manager; a payment
+verified 20 hours after the screenshot goes out free-form and is counted against the free 1,000;
+a verification 30 hours after is not sent until the merchant presses the Rs 4 button. **Record the
+two App Review videos here and submit A6.**
 
 ### B3. Onboarding that gates go-live (2 weeks)
 
