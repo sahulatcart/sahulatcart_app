@@ -1,6 +1,6 @@
 # Sahulatcart — Step-by-Step Execution Roadmap
 
-> **Historical single-merchant plan.** Use the [current Pakistan market launch roadmap](launch/README.md)
+> **Historical single-merchant plan.** Use the [current Pakistan market launch roadmap](launch/PLAN.md)
 > for public self-service launch scope, sequencing and readiness. Older dates, provider limits, costs
 > and business/verification assumptions below are not current launch requirements.
 

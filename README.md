@@ -9,12 +9,8 @@ The merchant configures and oversees everything from a web admin portal.
 > = change that variable. Buyer-facing text uses the merchant's own business name.
 
 ## Documentation
-- **Feature-only completion plan:** [docs/launch/FEATURE-PLAN.md](docs/launch/FEATURE-PLAN.md) —
-  the features to build or finish for market readiness, in delivery order.
-- **Implementation plan:** [docs/launch/IMPLEMENTATION-PLAN.md](docs/launch/IMPLEMENTATION-PLAN.md) —
-  ordered work packages, feature coverage, Meta dependencies and linked engineering changes.
-- **Current local-market launch roadmap:** [docs/launch/README.md](docs/launch/README.md) — detailed
-  self-service onboarding, sales, security, operations, pilot and public-launch gates.
+- **The plan:** [docs/launch/PLAN.md](docs/launch/PLAN.md) — what to build, in what order, and what
+  changes on the day Meta approves us. The single current plan; older plans are in `docs/launch/archive/`.
 - **Spec (source of truth):** [docs/spec/](docs/spec/) — 10 docs (architecture, data model, API, bot flows,
   negotiation engine, screens, payments, devops) + [audit report](docs/spec/10-audit-report.md).
 - **Development plan:** [docs/DEV-PLAN.md](docs/DEV-PLAN.md) — phased build sequence.
@@ -50,6 +46,6 @@ Railway URL (`/api/v1/webhook/whatsapp`, added in Phase 2). Custom domain + stag
 
 ## Status
 The core bot and merchant portal are implemented in part; complete self-service Facebook/WhatsApp
-onboarding and public-launch validation remain unfinished. See the [current launch roadmap](docs/launch/README.md)
-for the code baseline and remaining release gates. The older development plan describes the original
+onboarding and public-launch validation remain unfinished. See [docs/launch/PLAN.md](docs/launch/PLAN.md)
+for where the code stands and what is left. The older development plan describes the original
 single-merchant pilot and does not establish current production readiness.
