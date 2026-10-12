@@ -7,6 +7,33 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-12 — SRS: the plan split between Fazal and Uzair
+
+The owner asked for the plan as a detailed SRS divided between two developers. `docs/launch/SRS.md`
+splits the work along the one line that keeps the two streams independent: everything that talks to
+Meta (per-merchant tokens, Embedded Signup, templates, quality webhooks, message meter, platform
+console, App Review) is Stream M for Fazal; the portal and shop operations (self-service signup,
+onboarding gates, push and email alerts, order stages and unpaid expiry, opt-out, Sentry and rate
+limits and tests, billing) is Stream P for Uzair. Eight interface contracts (IC-1 to IC-8) are the
+only places the streams meet; the first cross-dependency is in week 3 and is a stub until then.
+Running in parallel, the calendar is about 9 weeks instead of 14.
+
+Each of the 14 features has: purpose, user story, numbered functional requirements, the migration
+SQL, API routes with request/response/error shapes, UI notes, the internal sequence, security
+notes, tests, and a "done when" test. Appendix A lists every Meta Graph API call with request and
+response fields; Appendix C fixes the migration numbers 0009–0017 per stream so they cannot collide.
+
+Facts checked against the code before writing: `message_templates` and `background_jobs` do not
+exist despite db/README.md listing them as planned, so the SRS adds them; `jwtCtx()` pins
+`isPlatformAdmin=false`; `codEnabled`, `bot_persona.greeting`, `business_hours`, `wa_opt_in_status`,
+`merchants.status` and `merchants.plan` are all unread today and each is given an owner. The
+dashboard's "today" is UTC. Opt-out is recorded and then ignored.
+
+Meta API shapes in Appendix A are from the assistant's knowledge of the Graph API (through mid-2026)
+and must be re-checked against the developer docs when M2 starts; the SRS says so.
+
+---
+
 ## 2026-10-12 — One plan to replace eight, built so Meta approval is a settings change
 
 The owner wasn't satisfied with the 10-05/10-06 launch plans and wanted a product that is complete
