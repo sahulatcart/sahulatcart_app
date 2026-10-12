@@ -7,6 +7,80 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-06 — Implementation sequence for all 31 completion features
+
+Added `docs/launch/IMPLEMENTATION-PLAN.md` with work packages W00–W10, prerequisites, demonstrations,
+Meta review checkpoints and complete F01–F31 coverage. Added a separate engineering appendix with
+existing code touchpoints, proposed persistence/API contracts, migration groups and targeted tests.
+The sequence fixes order/stock correctness and durable messaging before self-service signup, then
+brings the Meta connection flow forward for review while the remaining product work continues.
+
+The schema/auth review exposed two details that a generic signup plan would miss: current merchant
+defaults enable the bot, and the existing API auth resolver requires merchant membership before a
+brand-new authenticated user can provision a shop. The implementation plan explicitly handles both,
+preserves existing owners/data and distinguishes mock-tested integration from approved live access.
+
+Documentation only: no application feature, database migration, provider setting or deployment was
+changed. Existing local changes and the user's Meta roadmap PDF were preserved.
+
+---
+
+## 2026-10-06 — Feature-only market readiness plan
+
+Added `docs/launch/FEATURE-PLAN.md`, distilling the detailed launch roadmap into 31 product features
+grouped by merchant accounts, WhatsApp, shop setup, customer sales, orders/payments, the owner workspace,
+security/reliability and paid subscriptions. Each feature states the required behavior and whether it
+needs building or completion of existing code. The delivery sequence starts with order/stock correctness
+and message recovery; paid subscription features are separate from free-pilot requirements.
+
+Linked the shorter plan from the repository README and launch roadmap. This is documentation only;
+feature implementation and live-readiness status have not changed.
+
+---
+
+## 2026-10-05 — Detailed roadmap for the Pakistani market launch
+
+Added `docs/launch/README.md` and four separate work plans for merchant/Meta onboarding,
+customer sales, security/operations, and testing/pilot/commercial launch. Each task has an owner,
+release gate and completion condition. The plan records current code evidence, 15 founder decisions,
+40 acceptance scenarios, dependencies and provisional effort ranges. It preserves the owner's scope:
+no staff-management requirement, merchant-owned fulfillment, and manual bank-payment verification.
+
+The review found a mismatch between the old single-shop launch plans and the requested self-service
+release. It also confirmed two concrete code risks to fix before a real pilot: webhook success is sent
+before durable persistence, and checkout can continue after a stock-reservation RPC error. The new plan
+does not present proposed onboarding or passing unit tests as proof of live readiness. Current public
+Meta policy/partner/pricing and Supabase/Railway documentation informed the provider-dependent parts;
+the detailed Meta Tech Provider developer page could not be retrieved, so exact account-specific
+permissions and coexistence behavior remain explicit implementation-time checks.
+
+This change is documentation only. No credentials, database, deployed service or Meta account changed.
+Validation: all local links and task references in the five roadmap files resolve; the plan contains
+71 unique tasks and 410 checklist items; the tracked diff passes the whitespace check. Application tests
+were not rerun for this documentation change (the preceding code assessment recorded 121 passing tests).
+
+---
+
+## 2026-10-05 — Proposed post-verification onboarding and sales architecture
+
+Added separate merchant and customer target-flow diagrams. The merchant diagram separates Facebook
+portal login from Meta Embedded Signup, shows automatic shop creation at first login, and makes the
+merchant-owned WABA/number connection a readiness gate. The customer diagram shows one shared webhook
+with routing by phone-number ID, merchant-scoped credentials/data, durable event handling, code-enforced
+prices, stock reservation, and manual bank-transfer verification. These are design documents; the
+corresponding self-service onboarding and per-merchant token code have not been built.
+
+---
+
+## 2026-10-05 — Separate merchant and customer architecture diagrams
+
+The first combined diagram (`docs/CURRENT-ARCHITECTURE.md`) was too dense to read. Replaced it with
+`docs/MERCHANT-SIDE-ARCHITECTURE.md` and `docs/CUSTOMER-SIDE-ARCHITECTURE.md`, each showing only the
+main path and a short explanation. The diagrams describe current behavior: Supabase email/password
+login, Gemini-assisted messages, code-enforced pricing, and an invite-only merchant-creation API.
+
+---
+
 ## 2026-10-01 — Deploy facts recorded; a redeploy trap found in the watch paths
 
 The three admin changes of 09-30 now each record how they shipped and what was checked live (see
