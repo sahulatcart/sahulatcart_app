@@ -320,6 +320,7 @@ story.append(milestone(
 story.append(CondPageBreak(90 * mm))
 
 # ---------- Timeline & decisions ----------
+story.append(CondPageBreak(95 * mm))
 story.append(P("6. How long it takes", "h1"))
 story.append(P("With one full-time engineer. Weeks on the calendar, not working days."))
 story.append(table(["Milestone", "Weeks", "Finished by week"], [
