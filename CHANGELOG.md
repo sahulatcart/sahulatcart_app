@@ -7,6 +7,30 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-12 — Supabase project moved to the company account
+
+The Supabase project (ref `cfvwxwpmwqfghstwutdp`) sat in a different account from the one the owner
+first checked, and it had no record in the repo. It was found by elimination. The Railway CLI here is
+logged in as `sahulatcart2026@gmail.com`, and both services were set up together on 09-21. It was then
+moved with Supabase's **Transfer project** into an organization owned by `sahulatcart2026@gmail.com`.
+
+The first transfer attempt was refused: "Project is currently connected to GitHub". Supabase's GitHub
+integration had to be disconnected first. It was unused (no `supabase/` folder; migrations are run by
+hand), so the disconnect changed nothing else.
+
+The plan at one point was to "delete the project from the other email". That would have destroyed
+the live database, and the free plan has no backups. The transfer moves the project instead, keeping
+ref, URL, keys and data, so `.env` and Railway needed no change.
+
+Verified after the transfer: the live backend's `/readyz` reports `db: ok` without a restart (uptime
+~12 days). The admin's `/api/v1/config` returns 200. Locally, the service role reads `merchants`
+(1 row) and `webhook_events` (65), the 0008 column exists, and the anon key is still refused (`42501`).
+
+Left for the owner: remove the old email from the new organization's Team, then delete the old, now
+empty organization. Delete the organization only, never the project.
+
+---
+
 ## 2026-10-06 — Implementation sequence for all 31 completion features
 
 Added `docs/launch/IMPLEMENTATION-PLAN.md` with work packages W00–W10, prerequisites, demonstrations,
