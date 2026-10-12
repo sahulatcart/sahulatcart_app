@@ -120,6 +120,12 @@ Supabase **Custom Access Token Hook** must be enabled in the dashboard (Authenti
 Storage buckets: `product-images` (public-read), `payment-screenshots`, `inbound-media`, `order-slips`,
 `catalog-imports` (all private).
 
+**Backups** (since 2026-10-12): the project is on Supabase's free plan, which has **no automatic
+backups**. `db/backup.sh` dumps `public` (schema + data) and the portal logins to
+`~/Sahulatcart-Backups/` on the owner's Mac and keeps 30 days. `db/backup-schedule.sh install` runs it
+daily through a LaunchAgent. It only runs while that Mac is on, and Storage files are not included.
+Details and restore steps are in [db/README.md](db/README.md).
+
 **Browsers get no direct table access** (`0007_lock_direct_table_access.sql`, live since 2026-09-29). The portal uses Supabase
 only to sign in; all reads and writes go through the backend's service role, where roles are enforced.
 RLS stays on as defence in depth. Two rules follow for every new migration:

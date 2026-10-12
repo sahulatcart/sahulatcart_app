@@ -7,6 +7,43 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-12 — Daily database backups on the owner's Mac
+
+The Supabase project is on the free plan, which keeps no backups. Until now the live database was
+the only copy of every order, customer and login.
+
+Added `db/backup.sh`. It runs `pg_dump` (custom format) of the `public` schema plus data-only
+`auth.users` and `auth.identities`, writing to `~/Sahulatcart-Backups/<date_time>/`. Each run writes
+to a hidden folder and is renamed only after `pg_restore --list` can read both files. Backups are
+kept 30 days, and old ones are deleted only after a new backup succeeds, so a broken connection can
+never erase the history. `db/backup-schedule.sh` installs a LaunchAgent that checks hourly and backs
+up once a day. A Mac that was asleep or off at a fixed hour still gets its backup. A failure shows a
+macOS notification.
+
+What made it fiddly:
+- **No `pg_dump` here, and no Homebrew bottle.** `brew install libpq` on this Intel Mac (macOS 26)
+  built OpenSSL and libpq from source, which took about 20 minutes. It produced pg_dump 18.6. The
+  server is Postgres 17.6, and pg_dump must be the same major version or newer.
+- **macOS blocks background jobs from reading `~/Desktop`**, where the repo lives. A LaunchAgent
+  pointing at `db/backup.sh` or `.env` there fails with "Operation not permitted". So `install`
+  copies the script, plus the connection string as an owner-only `backup.env`, to
+  `~/Library/Application Support/Sahulatcart/`. It must be re-run after editing the script or
+  changing the DB password.
+- The first schedule test wrote to a scratch folder and was confirmed to produce a backup *from
+  launchd*, not only from a terminal, before the real install.
+
+Verified: first backup `2026-10-12_1446`, 132 KB in 54 s (mostly network to ap-south-1). It holds
+the same 23 tables as the live `public` schema, and both dumps convert fully back to SQL with
+`pg_restore`. The installed agent's first run exited 0, skipping because today's backup existed.
+**Not tested:** a restore into a real database. The steps in db/README.md need a spare Supabase
+project to prove.
+
+Gaps: Storage files (product images, payment screenshots, slips) are not backed up, and backups
+only happen while the Mac is on. A cloud schedule, such as a GitHub Action with an encrypted dump,
+would remove the second limit.
+
+---
+
 ## 2026-10-01 — Deploy facts recorded; a redeploy trap found in the watch paths
 
 The three admin changes of 09-30 now each record how they shipped and what was checked live (see
