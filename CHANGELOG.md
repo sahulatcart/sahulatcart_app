@@ -36,6 +36,15 @@ plain words: 10 pages, tables and boxes, a glossary, built by `docs/launch/build
 (reportlab). First build had two near-empty pages from hard page breaks after tables that spilled a
 row; conditional breaks fixed it. Checked page by page in the browser pane.
 
+The owner then asked whether templates cost money and said to save merchants' and our money
+wherever possible. The plan now has a cost rule (decision 11): nothing is sent as a paid template
+automatically. Buyer messages go out inside the free 24-hour window; the buyer is told to send
+"status" (buyer-initiated, free); dispatch notices are a merchant button that shows the price.
+Merchant alerts become portal push notifications and email first, with WhatsApp alerts riding on a
+window the merchant opens by messaging their own shop number and keeps open by replying; a lapsed
+window gets one Rs-1 "reply OK" nudge and nothing more. Sahulatcart pays Meta nothing under the
+Tech Provider model. PLAN.md B2/B4 and the PDF updated.
+
 Also found while checking the live state: the owner put Cloudflare in front of the domain at some
 point, so `https://sahulatcart.com` now works and mail runs through Cloudflare Email Routing. CLAUDE.md
 and the SEO memory said it still failed; both corrected. The `.tbc` placeholders for NTN and address
