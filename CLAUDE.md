@@ -330,6 +330,13 @@ boot locally.
 Three Railway services, all built from this repo, all in the owner's own Railway account (migrated
 off the previous owner's on 2026-09-21).
 
+**Accounts.** Railway and Supabase both belong to `sahulatcart2026@gmail.com`. The Supabase project
+(ref `cfvwxwpmwqfghstwutdp`, free plan) was transferred into that account on 2026-10-12. Ref, URL,
+keys and data were unchanged, so no env var moved. The transfer required disconnecting Supabase's
+GitHub integration. Nothing used it: migrations are applied by hand from `db/migrations`, and there
+is no `supabase/` folder. **The free plan has no automatic backups**, so never delete the project to
+"move" it. It holds the only copy of the live data.
+
 | Service | URL | Build |
 |---|---|---|
 | Marketing site | `site-production-d318.up.railway.app` | `site/Dockerfile` (nginx) |

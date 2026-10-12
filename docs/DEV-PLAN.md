@@ -1,5 +1,9 @@
 # Development Plan — MVP
 
+> **Historical pilot development plan.** The [current market launch roadmap](launch/README.md)
+> supersedes this document's launch scope and sequencing. In particular, self-service merchant signup,
+> merchant-owned WhatsApp connection and production validation are required for the public release.
+
 Engineering build plan (what I code, in what order). Distinct from [ROADMAP.md](ROADMAP.md) (business/founder steps).
 Source of truth for *what* to build = [docs/spec/](spec/). This doc is the *sequence*.
 
