@@ -1,5 +1,9 @@
 # Sahulatcart — What the Founder Must Provide
 
+> **Historical checklist.** Use the founder decision register and external-dependency list in the
+> [current launch roadmap](launch/README.md). Do not rely on the older legal-registration conclusions,
+> number-deletion advice, token terminology or price estimates below without current verification.
+
 Everything **you** (Farhan) need to supply or set up. I build all code. Payment flow = manual
 (bot shows merchant bank number → customer sends screenshot → merchant confirms in portal),
 so **no payment gateway and no fund custody** — that removes the hardest requirements.

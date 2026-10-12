@@ -24,35 +24,36 @@ const REPLAY_MIN_AGE_MS = 5 * 60_000;
 const REPLAY_MAX_AGE_MS = 60 * 60_000;
 const MAX_REPLAYS = 3;
 
-interface Tenant { id: string; merchant_id: string; phone_number_id: string; business_name: string }
+export interface Tenant { id: string; merchant_id: string; phone_number_id: string; business_name: string }
 /** What a message's webhook_events row stores, so it can be replayed without the original payload. */
 interface StoredMessage { phoneNumberId: string; msg: NormalizedMessage }
 
 /** Claimed messages that are queued or running in THIS process, by event id. */
 const inFlight = new Map<string, Promise<void>>();
 
-/** Idempotency: record one webhook_events row per inner item (CD-12). Returns false if a duplicate. */
+/** Idempotency: record one webhook_events row per inner item (CD-12). 'duplicate' if already seen. */
 async function claimEvent(
   db: SupabaseClient,
   eventId: string,
   itemType: 'message' | 'status',
   payload: unknown
-): Promise<boolean> {
+): Promise<'new' | 'duplicate' | 'failed'> {
   const { error } = await db
     .from('webhook_events')
     .insert({ event_id: eventId, item_type: itemType, status: 'received', payload });
-  if (error?.code === '23505') return false; // already seen → skip
-  // Any other failure: process anyway. A duplicate reply beats silently dropping a customer.
-  if (error) logger.error({ err: error.message, eventId }, 'webhook_events insert failed — processing anyway');
-  return true;
+  if (error?.code === '23505') return 'duplicate';
+  if (error) logger.error({ err: error.message, eventId }, 'webhook_events insert failed');
+  return error ? 'failed' : 'new';
 }
 
+/** null only for a number we don't serve; a failed lookup throws, so it isn't mistaken for one. */
 async function resolveTenant(db: SupabaseClient, phoneNumberId: string): Promise<Tenant | null> {
-  const { data } = await db
+  const { data, error } = await db
     .from('whatsapp_numbers')
     .select('id, merchant_id, phone_number_id, merchants(business_name)')
     .eq('phone_number_id', phoneNumberId)
     .maybeSingle();
+  if (error) throw new Error(`tenant lookup failed: ${error.message}`);
   if (!data) return null;
   const businessName = (data as { merchants?: { business_name?: string } }).merchants?.business_name ?? 'Shop';
   return { id: data.id, merchant_id: data.merchant_id, phone_number_id: data.phone_number_id, business_name: businessName };
@@ -194,26 +195,56 @@ async function handleInboundMessage(
 }
 
 async function handleStatus(db: SupabaseClient, st: NormalizedStatus): Promise<void> {
-  if (!(await claimEvent(db, `${st.waMessageId}:${st.status}`, 'status', st))) return;
+  // A status that can't be recorded is applied anyway; only a known duplicate is skipped.
+  if ((await claimEvent(db, `${st.waMessageId}:${st.status}`, 'status', st)) === 'duplicate') return;
   await db.from('messages').update({ status: st.status }).eq('wa_message_id', st.waMessageId);
 }
 
-/** Process a full webhook payload: route by phone_number_id → tenant, then persist + reply. */
-export async function processWebhookPayload(payload: WebhookPayload, db = getServiceClient()): Promise<void> {
+/** One change of a payload whose messages are durably recorded and ready to process. */
+export interface ClaimedChange { tenant: Tenant; messages: NormalizedMessage[]; statuses: NormalizedStatus[] }
+
+/**
+ * Before Meta gets its 200: record every message of the payload in webhook_events, so a crash
+ * or redeploy after the ACK leaves each one replayable. `complete` is false if any message (or a
+ * tenant lookup) couldn't be recorded — the route then answers 500 and Meta redelivers; messages
+ * already recorded come back as duplicates and are skipped.
+ */
+export async function claimWebhookPayload(
+  payload: WebhookPayload,
+  db = getServiceClient()
+): Promise<{ changes: ClaimedChange[]; complete: boolean }> {
+  const changes: ClaimedChange[] = [];
+  let complete = true;
   for (const change of parseWebhook(payload)) {
-    const t = await resolveTenant(db, change.phoneNumberId);
-    if (!t) {
+    let tenant: Tenant | null;
+    try {
+      tenant = await resolveTenant(db, change.phoneNumberId);
+    } catch (e) {
+      logger.error({ err: e instanceof Error ? e.message : String(e) }, 'webhook claim failed');
+      complete = false;
+      continue;
+    }
+    if (!tenant) {
       logger.warn({ phoneNumberId: change.phoneNumberId }, 'inbound for unknown phone_number_id — ignored');
       continue;
     }
-    // Claim every message first, so a crash mid-payload leaves each one replayable.
-    const claimed: NormalizedMessage[] = [];
+    const messages: NormalizedMessage[] = [];
     for (const msg of change.messages) {
       const stored: StoredMessage = { phoneNumberId: change.phoneNumberId, msg };
-      if (await claimEvent(db, msg.waMessageId, 'message', stored)) claimed.push(msg);
+      const claim = await claimEvent(db, msg.waMessageId, 'message', stored);
+      if (claim === 'new') messages.push(msg);
+      if (claim === 'failed') complete = false; // left for Meta's redelivery, not processed now
     }
-    await Promise.all(claimed.map((msg) => dispatch(db, t, msg)));
-    for (const st of change.statuses) await handleStatus(db, st);
+    changes.push({ tenant, messages, statuses: change.statuses });
+  }
+  return { changes, complete };
+}
+
+/** After the ACK: run the claimed messages (each in its buyer's queue) and apply statuses. */
+export async function processClaimed(changes: ClaimedChange[], db = getServiceClient()): Promise<void> {
+  for (const { tenant, messages, statuses } of changes) {
+    await Promise.all(messages.map((msg) => dispatch(db, tenant, msg)));
+    for (const st of statuses) await handleStatus(db, st);
   }
 }
 
@@ -296,9 +327,12 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(401).send('not configured');
     }
 
-    // Fast-ACK, then process out of band (docs/spec/04 §2.7).
-    reply.code(200).send('EVENT_RECEIVED');
-    void processWebhookPayload(req.body as WebhookPayload).catch((err) =>
+    // Record every message, then ACK and process out of band (docs/spec/04 §2.7). Recording
+    // first means nothing Meta was told we received can be lost; if it fails, a 500 makes Meta retry.
+    const db = getServiceClient();
+    const { changes, complete } = await claimWebhookPayload(req.body as WebhookPayload, db);
+    reply.code(complete ? 200 : 500).send(complete ? 'EVENT_RECEIVED' : 'retry');
+    void processClaimed(changes, db).catch((err) =>
       logger.error({ err: err instanceof Error ? err.message : String(err) }, 'webhook processing failed')
     );
   });

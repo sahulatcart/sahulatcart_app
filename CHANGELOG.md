@@ -7,6 +7,166 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-12 — Daily database backups on the owner's Mac
+
+The Supabase project is on the free plan, which keeps no backups. Until now the live database was
+the only copy of every order, customer and login.
+
+Added `db/backup.sh`. It runs `pg_dump` (custom format) of the `public` schema plus data-only
+`auth.users` and `auth.identities`, writing to `~/Sahulatcart-Backups/<date_time>/`. Each run writes
+to a hidden folder and is renamed only after `pg_restore --list` can read both files. Backups are
+kept 30 days, and old ones are deleted only after a new backup succeeds, so a broken connection can
+never erase the history. `db/backup-schedule.sh` installs a LaunchAgent that checks hourly and backs
+up once a day. A Mac that was asleep or off at a fixed hour still gets its backup. A failure shows a
+macOS notification.
+
+What made it fiddly:
+- **No `pg_dump` here, and no Homebrew bottle.** `brew install libpq` on this Intel Mac (macOS 26)
+  built OpenSSL and libpq from source, which took about 20 minutes. It produced pg_dump 18.6. The
+  server is Postgres 17.6, and pg_dump must be the same major version or newer.
+- **macOS blocks background jobs from reading `~/Desktop`**, where the repo lives. A LaunchAgent
+  pointing at `db/backup.sh` or `.env` there fails with "Operation not permitted". So `install`
+  copies the script, plus the connection string as an owner-only `backup.env`, to
+  `~/Library/Application Support/Sahulatcart/`. It must be re-run after editing the script or
+  changing the DB password.
+- The first schedule test wrote to a scratch folder and was confirmed to produce a backup *from
+  launchd*, not only from a terminal, before the real install.
+
+Verified: first backup `2026-10-12_1446`, 132 KB in 54 s (mostly network to ap-south-1). It holds
+the same 23 tables as the live `public` schema, and both dumps convert fully back to SQL with
+`pg_restore`. The installed agent's first run exited 0, skipping because today's backup existed.
+**Not tested:** a restore into a real database. The steps in db/README.md need a spare Supabase
+project to prove.
+
+Gaps: Storage files (product images, payment screenshots, slips) are not backed up, and backups
+only happen while the Mac is on. A cloud schedule, such as a GitHub Action with an encrypted dump,
+would remove the second limit.
+
+---
+
+## 2026-10-12 — Supabase project moved to the company account
+
+The Supabase project (ref `cfvwxwpmwqfghstwutdp`) sat in a different account from the one the owner
+first checked, and it had no record in the repo. It was found by elimination. The Railway CLI here is
+logged in as `sahulatcart2026@gmail.com`, and both services were set up together on 09-21. It was then
+moved with Supabase's **Transfer project** into an organization owned by `sahulatcart2026@gmail.com`.
+
+The first transfer attempt was refused: "Project is currently connected to GitHub". Supabase's GitHub
+integration had to be disconnected first. It was unused (no `supabase/` folder; migrations are run by
+hand), so the disconnect changed nothing else.
+
+The plan at one point was to "delete the project from the other email". That would have destroyed
+the live database, and the free plan has no backups. The transfer moves the project instead, keeping
+ref, URL, keys and data, so `.env` and Railway needed no change.
+
+Verified after the transfer: the live backend's `/readyz` reports `db: ok` without a restart (uptime
+~12 days). The admin's `/api/v1/config` returns 200. Locally, the service role reads `merchants`
+(1 row) and `webhook_events` (65), the 0008 column exists, and the anon key is still refused (`42501`).
+
+Left for the owner: remove the old email from the new organization's Team, then delete the old, now
+empty organization. Delete the organization only, never the project.
+
+---
+
+## 2026-10-12 — No lost webhooks, no sales on unknown stock
+
+Two risks flagged in the 10-05 roadmap review, both fixed with tests (16 files, 125 tests).
+
+**Webhook.** The route sent Meta its 200 *before* writing the `webhook_events` row. The replay sweeper
+only covers recorded rows, so a DB blip or a crash in that gap lost the message silently, and Meta
+never retried because it had its 200. CLAUDE.md said "claim first", which was true only *after* the
+ACK. Now `claimWebhookPayload()` records every message before the route answers. Any failure (insert
+or tenant lookup) answers 500, so Meta redelivers. Rows already written dedupe as before, and the
+unwritten message waits for the redelivery instead of being processed now, which would reply twice.
+A failed tenant lookup used to look like "unknown number" (ignored, or dead-lettered by the replay
+sweeper as "not replayable"). It now throws, so it's retried rather than dropped. Statuses are still
+applied when their row can't be written; losing one is harmless.
+
+**Stock.** If the `reserve_stock` RPC errored, checkout logged it and confirmed the order without
+reserving, so the last unit could be sold twice. That was a fallback for before 0008 was applied,
+and 0008 has been live since 09-29. Now the order is put back to draft (number, `placed_at` and
+payment fields cleared, filtered on the status we just set) and checkout stops, matching the
+order-number failure. An attempt to also filter on `stock_reserved = false` failed in the test fake,
+which has no column defaults. It's unnecessary anyway: an errored RPC rolled back and reserved nothing.
+
+Not deployed by this change. The backend redeploys when the PR merges (it touches `backend/`).
+
+---
+
+## 2026-10-06 — Implementation sequence for all 31 completion features
+
+Added `docs/launch/IMPLEMENTATION-PLAN.md` with work packages W00–W10, prerequisites, demonstrations,
+Meta review checkpoints and complete F01–F31 coverage. Added a separate engineering appendix with
+existing code touchpoints, proposed persistence/API contracts, migration groups and targeted tests.
+The sequence fixes order/stock correctness and durable messaging before self-service signup, then
+brings the Meta connection flow forward for review while the remaining product work continues.
+
+The schema/auth review exposed two details that a generic signup plan would miss: current merchant
+defaults enable the bot, and the existing API auth resolver requires merchant membership before a
+brand-new authenticated user can provision a shop. The implementation plan explicitly handles both,
+preserves existing owners/data and distinguishes mock-tested integration from approved live access.
+
+Documentation only: no application feature, database migration, provider setting or deployment was
+changed. Existing local changes and the user's Meta roadmap PDF were preserved.
+
+---
+
+## 2026-10-06 — Feature-only market readiness plan
+
+Added `docs/launch/FEATURE-PLAN.md`, distilling the detailed launch roadmap into 31 product features
+grouped by merchant accounts, WhatsApp, shop setup, customer sales, orders/payments, the owner workspace,
+security/reliability and paid subscriptions. Each feature states the required behavior and whether it
+needs building or completion of existing code. The delivery sequence starts with order/stock correctness
+and message recovery; paid subscription features are separate from free-pilot requirements.
+
+Linked the shorter plan from the repository README and launch roadmap. This is documentation only;
+feature implementation and live-readiness status have not changed.
+
+---
+
+## 2026-10-05 — Detailed roadmap for the Pakistani market launch
+
+Added `docs/launch/README.md` and four separate work plans for merchant/Meta onboarding,
+customer sales, security/operations, and testing/pilot/commercial launch. Each task has an owner,
+release gate and completion condition. The plan records current code evidence, 15 founder decisions,
+40 acceptance scenarios, dependencies and provisional effort ranges. It preserves the owner's scope:
+no staff-management requirement, merchant-owned fulfillment, and manual bank-payment verification.
+
+The review found a mismatch between the old single-shop launch plans and the requested self-service
+release. It also confirmed two concrete code risks to fix before a real pilot: webhook success is sent
+before durable persistence, and checkout can continue after a stock-reservation RPC error. The new plan
+does not present proposed onboarding or passing unit tests as proof of live readiness. Current public
+Meta policy/partner/pricing and Supabase/Railway documentation informed the provider-dependent parts;
+the detailed Meta Tech Provider developer page could not be retrieved, so exact account-specific
+permissions and coexistence behavior remain explicit implementation-time checks.
+
+This change is documentation only. No credentials, database, deployed service or Meta account changed.
+Validation: all local links and task references in the five roadmap files resolve; the plan contains
+71 unique tasks and 410 checklist items; the tracked diff passes the whitespace check. Application tests
+were not rerun for this documentation change (the preceding code assessment recorded 121 passing tests).
+
+---
+
+## 2026-10-05 — Proposed post-verification onboarding and sales architecture
+
+Added separate merchant and customer target-flow diagrams. The merchant diagram separates Facebook
+portal login from Meta Embedded Signup, shows automatic shop creation at first login, and makes the
+merchant-owned WABA/number connection a readiness gate. The customer diagram shows one shared webhook
+with routing by phone-number ID, merchant-scoped credentials/data, durable event handling, code-enforced
+prices, stock reservation, and manual bank-transfer verification. These are design documents; the
+corresponding self-service onboarding and per-merchant token code have not been built.
+
+---
+
+## 2026-10-05 — Separate merchant and customer architecture diagrams
+
+The first combined diagram (`docs/CURRENT-ARCHITECTURE.md`) was too dense to read. Replaced it with
+`docs/MERCHANT-SIDE-ARCHITECTURE.md` and `docs/CUSTOMER-SIDE-ARCHITECTURE.md`, each showing only the
+main path and a short explanation. The diagrams describe current behavior: Supabase email/password
+login, Gemini-assisted messages, code-enforced pricing, and an invite-only merchant-creation API.
+
+---
+
 ## 2026-10-01 — Deploy facts recorded; a redeploy trap found in the watch paths
 
 The three admin changes of 09-30 now each record how they shipped and what was checked live (see
@@ -21,6 +181,16 @@ both apps build from them. It hasn't bitten yet. It would look exactly like the 
 episode: the old container keeps serving and everything looks healthy. Until the patterns include
 `/shared/**` and the root files, redeploy by hand after such a push. Changing the patterns is a
 `railway config apply`, so it was left for the owner's go-ahead.
+
+**Fixed the same day.** The backend and admin now also watch `/shared/**`, `/package.json`,
+`/package-lock.json` and `/tsconfig.base.json`. The admin also watches `/.dockerignore`, because its
+Dockerfile copies the whole repo. The site is unchanged; it reads only `site/`. Docs-only pushes
+still skip everything.
+
+The first `railway config plan` showed again that an apply would **delete `@app/admin.FIX`**, an
+undeclared variable nobody can explain (nothing in the code reads it). Applying as-is would have
+deleted it as a side effect. It's now declared `preserve()`, so the reviewed plan was exactly two
+watch-path updates and 0 to destroy. Whether `FIX` should exist at all is still the owner's call.
 
 ---
 

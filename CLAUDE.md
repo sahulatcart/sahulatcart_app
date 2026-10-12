@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **15 files, 121 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **16 files, 125 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -120,6 +120,12 @@ Supabase **Custom Access Token Hook** must be enabled in the dashboard (Authenti
 Storage buckets: `product-images` (public-read), `payment-screenshots`, `inbound-media`, `order-slips`,
 `catalog-imports` (all private).
 
+**Backups** (since 2026-10-12): the project is on Supabase's free plan, which has **no automatic
+backups**. `db/backup.sh` dumps `public` (schema + data) and the portal logins to
+`~/Sahulatcart-Backups/` on the owner's Mac and keeps 30 days. `db/backup-schedule.sh install` runs it
+daily through a LaunchAgent. It only runs while that Mac is on, and Storage files are not included.
+Details and restore steps are in [db/README.md](db/README.md).
+
 **Browsers get no direct table access** (`0007_lock_direct_table_access.sql`, live since 2026-09-29). The portal uses Supabase
 only to sign in; all reads and writes go through the backend's service role, where roles are enforced.
 RLS stays on as defence in depth. Two rules follow for every new migration:
@@ -134,22 +140,27 @@ RLS stays on as defence in depth. Two rules follow for every new migration:
 **Stock** (0008): a placed order (COD confirmed, or bank transfer awaiting payment) reserves its items
 with `reserve_stock()` — all or nothing, so a sold-out item cancels the checkout instead of overselling.
 Any cancellation calls `release_stock()`. Both are idempotent via `orders.stock_reserved`. Only products
-with `track_stock` and a known count are touched. If the reservation call itself fails, it's logged and
-the order goes through untracked (0008 live since 2026-09-29).
+with `track_stock` and a known count are touched. If the reservation call itself fails, the order goes
+back to draft and checkout stops, as with a missing order number. Unknown stock never sells (since
+2026-10-12; before that the order went through untracked).
 
 ## Architecture
 
 ### Inbound message pipeline
 
 [backend/src/whatsapp/webhook.ts](backend/src/whatsapp/webhook.ts) verifies `X-Hub-Signature-256` over
-the exact raw bytes (a scoped content-type parser preserves `rawBody`), fast-ACKs within 5s, then
+the exact raw bytes (a scoped content-type parser preserves `rawBody`), records each message, ACKs, then
 processes out of band: dedupes by `wa_message_id` via a `webhook_events` insert (the unique-constraint
 violation *is* the idempotency check), transcribes voice notes, upserts customer + conversation,
 persists the message, and calls `runOrchestrator`.
 
-Meta has its 200 before any work happens, so nothing may be lost after the ACK:
-- **Claim first.** Every message in a payload is claimed (`webhook_events` row, storing
-  `{ phoneNumberId, msg }`) before any is processed, then marked `processed` or `error`.
+Nothing Meta was told we received may be lost:
+- **Claim before the 200.** `claimWebhookPayload()` records every message in a payload (`webhook_events`
+  row, storing `{ phoneNumberId, msg }`) *before* the route answers; `processClaimed()` runs them after.
+  Each row is then marked `processed` or `error`. If a row can't be written, or the tenant lookup fails,
+  the route answers **500** and Meta redelivers. Rows already written come back as duplicates, and the
+  unwritten message isn't processed now. Before 2026-10-12 the 200 went out first, so a DB blip at
+  that moment lost the message for good.
 - **One at a time per buyer.** [lib/keyed-queue.ts](backend/src/lib/keyed-queue.ts) `serialize()` keys on
   merchant + sender, so a burst ("hi", "ye kitne ka?") can't race over one conversation's state. It is
   in-process: correct while the backend runs as **one instance**; more replicas need a DB lock instead.
@@ -324,6 +335,13 @@ boot locally.
 Three Railway services, all built from this repo, all in the owner's own Railway account (migrated
 off the previous owner's on 2026-09-21).
 
+**Accounts.** Railway and Supabase both belong to `sahulatcart2026@gmail.com`. The Supabase project
+(ref `cfvwxwpmwqfghstwutdp`, free plan) was transferred into that account on 2026-10-12. Ref, URL,
+keys and data were unchanged, so no env var moved. The transfer required disconnecting Supabase's
+GitHub integration. Nothing used it: migrations are applied by hand from `db/migrations`, and there
+is no `supabase/` folder. **The free plan has no automatic backups**, so never delete the project to
+"move" it. It holds the only copy of the live data.
+
 | Service | URL | Build |
 |---|---|---|
 | Marketing site | `site-production-d318.up.railway.app` | `site/Dockerfile` (nginx) |
@@ -362,10 +380,11 @@ answered unknown origins with no header too.
 For the admin, fetch `/login` and grep its stylesheets for a rule only the new code has.
 `railway deployment list --service <name>` shows each deploy's status:
 - **REMOVED** — a newer deploy replaced it. Normal, not a failure.
-- **SKIPPED** — the push didn't match that service's `watchPatterns` in `.railway/railway.ts`
-  (`/backend/**`, `/admin/**`, `/site/**`). An admin-only push skips the backend. **Trap:** a push
-  that changes only `shared/` or root files (`package.json`, the lockfile) matches none of them, so
-  nothing redeploys, although both apps build from them. Redeploy the affected services by hand.
+- **SKIPPED** — the push didn't match that service's `watchPatterns` in `.railway/railway.ts`. The
+  backend and admin watch their own folder **plus** `shared/` and the root workspace files
+  (`package.json`, the lockfile, `tsconfig.base.json`), since both build from them; the site watches
+  only `site/`. A docs-only push (CHANGELOG, CLAUDE.md) skips all three. A new root file a build reads
+  needs adding to `workspace` there, or changing it alone won't redeploy.
 - **FAILED** — read the build log before changing anything.
 
 The admin's `buildCommand` is deliberately `echo docker-build` — a harmless no-op. It is **not**
