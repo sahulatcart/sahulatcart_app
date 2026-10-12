@@ -41,7 +41,8 @@ async function nextOrderNumber(db: SupabaseClient, merchantId: string): Promise<
  * counter (db/migrations/0006), and the `status = 'draft'` filter makes this idempotent:
  * a repeated "cod", or a draft that was cancelled meanwhile, updates nothing → null.
  * The order's items then leave stock (0008), all or nothing; if one sold out meanwhile the
- * order is cancelled again and OUT_OF_STOCK returned.
+ * order is cancelled again and OUT_OF_STOCK returned. If the reservation call itself fails,
+ * the order goes back to draft → null.
  */
 async function placeDraft(db: SupabaseClient, merchantId: string, orderId: string, set: Record<string, string>): Promise<OrderRow | typeof OUT_OF_STOCK | null> {
   const orderNumber = await nextOrderNumber(db, merchantId);
@@ -55,7 +56,15 @@ async function placeDraft(db: SupabaseClient, merchantId: string, orderId: strin
   if (error) logger.error({ err: error.message, orderId }, 'order placement failed');
   if (!data) return null;
   const stock = await db.rpc('reserve_stock', { p_order: orderId });
-  if (stock.error) logger.error({ err: stock.error.message, orderId }, 'stock reservation failed — order kept'); // e.g. 0008 not applied
+  if (stock.error) {
+    // Unknown stock must not sell: undo the placement, so checkout stops like a missing order number.
+    logger.error({ err: stock.error.message, orderId }, 'stock reservation failed — order returned to draft');
+    await db
+      .from('orders')
+      .update({ status: 'draft', order_number: null, placed_at: null, payment_method: 'unset', payment_status: 'unpaid' })
+      .match({ id: orderId, status: set.status });
+    return null;
+  }
   if (stock.data === false) {
     await Promise.all([
       db.from('orders').update({ status: 'cancelled', cancelled_reason: 'out of stock at checkout' }).eq('id', orderId),
