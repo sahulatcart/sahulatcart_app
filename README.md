@@ -11,8 +11,8 @@ The merchant configures and oversees everything from a web admin portal.
 ## Documentation
 - **The plan:** [docs/launch/PLAN.md](docs/launch/PLAN.md) — what to build, in what order, and what
   changes on the day Meta approves us. The single current plan; older plans are in `docs/launch/archive/`.
-- **The build spec (SRS):** [docs/launch/SRS.md](docs/launch/SRS.md) — the plan split between two
-  developers, with requirements, data, API contracts, tests and schedule per feature.
+- **The build spec (SRS):** [docs/launch/SRS-Fazal.md](docs/launch/SRS-Fazal.md) and
+  [docs/launch/SRS-Uzair.md](docs/launch/SRS-Uzair.md) — the plan split between two developers, with requirements, data, API contracts, tests and schedule per feature.
 - **Spec (source of truth):** [docs/spec/](docs/spec/) — 10 docs (architecture, data model, API, bot flows,
   negotiation engine, screens, payments, devops) + [audit report](docs/spec/10-audit-report.md).
 - **Development plan:** [docs/DEV-PLAN.md](docs/DEV-PLAN.md) — phased build sequence.

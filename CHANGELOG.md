@@ -9,7 +9,11 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ## 2026-10-12 — SRS: the plan split between Fazal and Uzair
 
-The owner asked for the plan as a detailed SRS divided between two developers. `docs/launch/SRS.md`
+The owner asked for the plan as a detailed SRS divided between two developers, then for one file per
+developer. `docs/launch/SRS-Fazal.md` and `docs/launch/SRS-Uzair.md` each carry the shared rules,
+team split and interface contracts (identical in both), that developer's features, the shared
+schedule, their rows of the acceptance matrix, and the appendices they need. The split is generated
+from one source by headings, so the shared parts cannot drift. The combined file was removed. The SRS
 splits the work along the one line that keeps the two streams independent: everything that talks to
 Meta (per-merchant tokens, Embedded Signup, templates, quality webhooks, message meter, platform
 console, App Review) is Stream M for Fazal; the portal and shop operations (self-service signup,
