@@ -1,4 +1,4 @@
-"""Build SRS-Fazal.pdf and SRS-Uzair.pdf from the Markdown files.
+"""Build the PDFs of SRS-Fazal.md, SRS-Uzair.md and the review reply from their Markdown.
 Needs: pip install markdown, and Google Chrome (used headless to print the HTML to PDF).
 Run: python3 docs/launch/build-srs-pdf.py
 """
@@ -54,3 +54,4 @@ def build(md_name, pdf_name):
 if __name__ == "__main__":
     build("SRS-Fazal.md", "SRS-Fazal.pdf")
     build("SRS-Uzair.md", "SRS-Uzair.pdf")
+    build("SRS-REVIEW-RESPONSE-2026-10-13.md", "SRS-REVIEW-RESPONSE-2026-10-13.pdf")
