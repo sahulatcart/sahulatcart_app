@@ -24,6 +24,7 @@ const schema = z.object({
   META_SYSTEM_USER_TOKEN: z.string().optional(),
   META_GRAPH_API_VERSION: z.string().default('v21.0'),
   META_DEFAULT_PHONE_NUMBER_ID: z.string().optional(),
+  META_EMBEDDED_SIGNUP_CONFIG_ID: z.string().optional(), // Facebook Login for Business → Configurations (M7 step 2)
 
   // LLM provider (Phase 3) — provider-agnostic; Gemini by default.
   LLM_PROVIDER: z.enum(['gemini', 'anthropic']).default('gemini'),

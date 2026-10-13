@@ -201,6 +201,36 @@ base64, **required in production**). Callers (`sendText`, `sendImage`, `sendDocu
 - Migration **0009** (`whatsapp_connect`) adds `attention_message`, `last_test_at`, the connect
   attempts table and two enum values; it must be applied before a 190 error can be recorded.
 
+### Connect WhatsApp (M2, since 2026-10-13)
+
+[whatsapp/connect.ts](backend/src/whatsapp/connect.ts) runs Meta Embedded Signup server-side;
+[whatsapp/meta-graph.ts](backend/src/whatsapp/meta-graph.ts) holds the Graph calls (every one with
+`appsecret_proof`); [routes/whatsapp.ts](backend/src/routes/whatsapp.ts) is its own route file with
+`requireMerchant()` from `lib/auth.ts` (the hook inside `adminRoutes` is encapsulated there, so new
+route files apply their own); the page is `admin/app/settings/whatsapp/`. Rules:
+- **The browser sends only the single-use `code` plus hints.** The backend verifies the hinted WABA
+  and number against `debug_token` and `/{waba}/phone_numbers`; a hint that doesn't match is a 400.
+- **Connected is proven by a handshake, not an outbound test.** A free-form text to the merchant's
+  phone would be refused (131047: no window open). After the upsert the number is `connecting`;
+  `handleConnectHandshake()` in `webhook.ts` answers the merchant's own first text (phones compared
+  as digits only, `lib/phone.ts`) and sets `connected` only when the reply got a message id. A
+  131042 on that reply means "no payment method on the WABA" → `needs_attention`, `policy`.
+- **133005 is PIN mismatch, not "already registered".** The page asks for the merchant's existing
+  PIN and `POST /whatsapp/retry {pin}` registers with it. 133006 (re-verify) and 133016 (limit) get
+  their own messages. Registration with the same PIN again just succeeds.
+- Steps A.2–A.5 run with the raw token (the `whatsapp_numbers` row doesn't exist yet); only sends
+  after the upsert go through `credentials.ts`. The PIN is stored as a `whatsapp_secrets` row of
+  kind `pin`.
+- One number per merchant: a second connect sets the old row `disconnected` and deletes its secret;
+  a number owned by another merchant is 409 `number_in_use` and the new token is discarded.
+- `whatsapp_connect_attempts.code_hash` makes the route idempotent per code.
+- `GET /api/v1/admin/whatsapp` is IC-4; `connecting` means "awaiting the handshake". With Meta's
+  **test** number the merchant's phone must be one of the five test recipients, and the page says so.
+- Needs `META_APP_ID`, `META_APP_SECRET` and `META_EMBEDDED_SIGNUP_CONFIG_ID` (M7 step 2) on Railway;
+  without the last two the page shows "Meta app is not configured yet". The Graph field names and
+  error codes come from Meta's docs as of mid-2026; re-check them in the dashboard before the first
+  real connect.
+
 ### Conversation orchestrator
 
 [backend/src/orchestrator/orchestrator.ts](backend/src/orchestrator/orchestrator.ts) is the state machine

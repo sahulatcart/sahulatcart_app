@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Landmark, Plus, Save, Scale, Shield, Smile, Trash2, type LucideIcon } from 'lucide-react';
+import Link from 'next/link';
+import { ArrowRight, Landmark, MessageCircle, Plus, Save, Scale, Shield, Smile, Trash2, type LucideIcon } from 'lucide-react';
 import AppShell, { EmptyState, PageHead } from '../../components/AppShell';
 import { api, apiError, apiJson } from '../../lib/api';
 import { useToast } from '../../components/Toast';
@@ -101,6 +102,15 @@ export default function SettingsPage() {
   return (
     <AppShell>
       <PageHead title="Settings" sub="Configure your bot, negotiation, and payments" />
+
+      <Link href="/settings/whatsapp" className="card pad" style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', color: 'inherit', marginBottom: 16 }}>
+        <MessageCircle aria-hidden style={{ color: 'var(--brand)', flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h2 style={{ margin: 0 }}>WhatsApp</h2>
+          <div className="desc">Connect the number the bot answers from, or check its status.</div>
+        </div>
+        <ArrowRight aria-hidden className="hint" />
+      </Link>
 
       <div className="eyebrow">Bot</div>
       <div className="card">

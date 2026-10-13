@@ -7,6 +7,39 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — M2: "Connect WhatsApp" through Meta Embedded Signup
+
+Branch `feat/m2-connect`. 20 test files, 170 tests (21 new in `connect.test.ts`). Backend and
+admin typechecks clean; `next build` compiles the new page.
+
+Built: `whatsapp/meta-graph.ts` (A.1–A.5 with `appsecret_proof`, typed `GraphError`),
+`whatsapp/connect.ts` (`connectWhatsApp`, `retryConnect`, `handleConnectHandshake`,
+`getConnectionStatus`), `routes/whatsapp.ts` (own route file + `requireMerchant()` extracted to
+`lib/auth.ts`, the SRS Part 0.3 rule; Uzair's P1 no longer needs to do that), `lib/phone.ts`
+(digits-only comparisons), the handshake hook in `webhook.ts` (`resolveTenant` now carries `status`
+and the merchant phone), `/api/v1/config` exposing the public Meta ids, `META_EMBEDDED_SIGNUP_CONFIG_ID`
+in config, and the portal page `settings/whatsapp` (SDK load, origin-checked message listener,
+choose-a-number, PIN field, retry, handshake polling, connected card) with a link card on Settings.
+
+What the tests pin down: the exact order of Meta calls; every business-token call carries
+`appsecret_proof` and no token in the URL; hint mismatches keep nothing; another shop's number is
+never taken over and the new token is deleted; the same code twice does one exchange; 133005 →
+PIN field → retry with the PIN finishes; a second connect retires the old number and its secret;
+the handshake only matches the merchant's own phone (digits only) and only while `connecting`;
+131042 → the Meta Billing instruction with `flag_reason='policy'`.
+
+Hassle: `numbers[0]` under `noUncheckedIndexedAccess` left `chosen` possibly undefined through the
+rest of the function (13 errors); a guard after the choice fixed it. Nothing else fought back.
+
+Not done, by design: M3's quality/account webhooks, Disconnect and Send-test buttons (the connected
+card says so); `META_EMBEDDED_SIGNUP_CONFIG_ID` is not yet declared in `.railway/railway.ts` because
+`preserve()` on a variable that doesn't exist yet is untested, and the value only exists after M7
+step 2. **Not tested against Meta**: the Graph shapes are from the docs as of mid-2026; the first
+real run (after business verification, M7) is the check. The one pilot merchant is untouched and
+still sends on the env token.
+
+---
+
 ## 2026-10-13 — M1: per-merchant WhatsApp credentials
 
 First feature of the SRS (Stream M). Branch `feat/m1-credentials`. 19 test files, 149 tests.

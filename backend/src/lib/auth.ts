@@ -96,6 +96,16 @@ export function isManager(ctx: MerchantCtx): boolean {
   return ctx.isPlatformAdmin || ctx.role === 'owner' || ctx.role === 'manager';
 }
 
+/**
+ * preHandler for a route file of its own (SRS Part 0.3): resolves the merchant context or answers
+ * 401. The hook inside adminRoutes is encapsulated there, so every other route file applies this.
+ */
+export async function requireMerchant(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const ctx = await resolveCtx(req);
+  if (!ctx) return reply.code(401).send({ error: { code: 'UNAUTHORIZED', message: 'login required' } });
+  req.merchantCtx = ctx;
+}
+
 export function forbid(reply: FastifyReply): void {
   reply.code(403).send({ error: { code: 'FORBIDDEN', message: 'Only an owner or manager can do this' } });
 }
