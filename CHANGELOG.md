@@ -7,6 +7,43 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — fix/p1-followups: Fazal's P1 review table
+
+Branch `fix/p1-followups`, from `main` at `3bcbe6d` (sibling of the open P8 #32 and
+fix/p2-followups #33; they touch different files). 38 test files, 428 tests (4 new, 3 extended).
+Both typechecks, `next lint` and `next build` clean. Migration **0019** replaces
+`create_merchant_for_user()`.
+
+**What changed (review number in brackets).**
+- [1] `resolveAuthUser()` refuses a user without `email_confirmed_at`: proof of email ownership is
+  the confirmation, not the project's dashboard toggle. Every test user that bootstraps now carries
+  the field; an unconfirmed one gets 401 and creates nothing.
+- [2] Done by M6 (a platform admin without a shop is `kind: 'platform'`, 403 `NO_SHOP` on merchant
+  routes, 409 on bootstrap). Nothing to do.
+- [3] Tests pin the admin-token path: `x-admin-token` → 200 `isPlatformAdmin`, the token as a non-JWT
+  Bearer → 200, a wrong token → 401 `UNAUTHORIZED` (never `no_membership`).
+- [4] `/auth/confirmed` on a 400 (an auth user with no shop details) shows a three-field form and
+  posts it, instead of the login → confirmed → 400 loop. `bootstrap()` takes the details.
+- [5] Migration 0019: the RPC raises `SC001 inactive_membership` and `SC002 email_in_use` before
+  inserting (and for the unique_violation a race leaves); `signup.ts` maps them to 409 with plain
+  copy, and anything else to a 500 that never echoes Postgres text. The no-op
+  `delete from merchants` in the exception block is gone.
+- [6] The fake twin throws the same two codes, and `FakeDb.rpc()` turns a throw into `{ error }`.
+- [7] `signupAllowed()` treats a non-string email as empty; `{"email":5}` is a plain "not allowed".
+- [9] `/signup` reads `signupOpen` on load and, while closed, says "private pilot, book a demo" above
+  the form. The site's "Start free" button is unchanged.
+- [10] Login maps `email_not_confirmed` to "Confirm your email first…"; the three Eye icons are
+  `aria-hidden`; the checkbox rule sets `min-height: 0`; `/auth/reset` accepts only a recovery link
+  (the `PASSWORD_RECOVERY` event or `type=recovery` in the hash); bootstrap returns `existing`, and
+  `/auth/confirmed` sends a returning owner to the dashboard and a new one to the wizard.
+
+**Hassles.** Requiring `email_confirmed_at` broke the platform-console tests, whose mocked users
+had no such field; every bootstrap-capable test user now has one, which is the point of the check.
+
+**Open (ops, [8]).** Supabase's built-in mailer delivers only to the project team's addresses at
+about two an hour: custom SMTP through Resend (the key P3 already needs) and `/auth/confirmed` +
+`/auth/reset` in Supabase's Redirect URLs, both recorded here once done.
+
 ## 2026-10-13 — P7: plans, trial, invoices, soft enforcement
 
 Branch `feat/p7-billing`, from `main` at `b9eeea3` (after P6 #30). 38 test files, 424 tests

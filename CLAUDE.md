@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **38 files, 424 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **38 files, 428 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -537,7 +537,10 @@ discriminated union of ~20 reply kinds) and only phrases it.
 Merchants join through `/signup` (self-service, P1): Supabase Auth creates the user and emails a
 confirmation link that lands on `/auth/confirmed`, which calls `POST /api/v1/signup/bootstrap` →
 `create_merchant_for_user()` (migration 0012) to create the shop and owner row, with the bot off.
-Until `SIGNUP_OPEN=true` only emails on `SIGNUP_ALLOWLIST` may join. The platform admin can still
+Until `SIGNUP_OPEN=true` only emails on `SIGNUP_ALLOWLIST` may join. The JWT must carry
+`email_confirmed_at`, or bootstrap is 401. One login, one shop, ever: a deactivated membership is
+409 `inactive_membership` (support reinstates it) and an email another shop uses is 409
+`email_in_use` (migration 0019; the fake twin raises the same codes). The platform admin can still
 create one via `POST /api/v1/admin/merchants`. Credentials live in Supabase Auth, not in this repo.
 Locally the portal cannot authenticate at all without `.env` + a running backend: `/api/v1/config`
 returns 502 and the client throws `supabaseUrl is required`.

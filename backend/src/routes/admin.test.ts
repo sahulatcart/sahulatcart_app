@@ -65,6 +65,14 @@ describe('auth', () => {
     expect(r.statusCode).toBe(200);
     expect(r.json()).toMatchObject({ merchant: { id: 'MA' }, role: 'owner' });
   });
+  it('the pilot token as a non-JWT Bearer works too; a wrong token is a plain 401, never no_membership (review P1-3)', async () => {
+    let r = await app.inject({ method: 'GET', url: '/api/v1/admin/me', headers: { authorization: 'Bearer pilot-admin-token-for-tests' } });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().isPlatformAdmin).toBe(true);
+    r = await app.inject({ method: 'GET', url: '/api/v1/admin/me', headers: { 'x-admin-token': 'wrong-token' } });
+    expect(r.statusCode).toBe(401);
+    expect(r.json().error.code).toBe('UNAUTHORIZED');
+  });
   it('the pilot admin token → the default shop, as a platform admin', async () => {
     const r = await app.inject({ method: 'GET', url: '/api/v1/admin/me', headers: { 'x-admin-token': 'pilot-admin-token-for-tests' } });
     expect(r.statusCode).toBe(200);

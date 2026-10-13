@@ -26,8 +26,13 @@ export async function signupRoutes(app: FastifyInstance): Promise<void> {
     if (await platformAdminFor(user.id)) return reply.code(409).send({ error: { code: 'PLATFORM_ADMIN', message: 'This login is a platform admin; open /platform instead' } });
     const profile = signupProfile({ ...user.metadata, ...((req.body as Record<string, unknown> | undefined) ?? {}) });
     if ('error' in profile) return reply.code(400).send({ error: { code: 'BAD', message: profile.error } });
+    // Review P1-10: a returning owner goes to the dashboard, a new one to the wizard.
+    const had = await db.from('merchant_users').select('id').eq('auth_user_id', user.id).eq('is_active', true).limit(1).maybeSingle();
     const r = await bootstrapMerchant(db, user, profile);
-    if ('error' in r) return reply.code(400).send({ error: { code: 'DB', message: r.error } });
-    return reply.send(r);
+    if ('error' in r) {
+      if (r.conflict) return reply.code(409).send({ error: { code: r.conflict, message: r.error } });
+      return reply.code(500).send({ error: { code: 'DB', message: r.error } });
+    }
+    return reply.send({ ...r, existing: !!had.data });
   });
 }
