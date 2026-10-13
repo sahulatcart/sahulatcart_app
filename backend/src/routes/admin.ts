@@ -83,17 +83,22 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/admin/dashboard', async (req, reply) => {
     const mid = req.merchantCtx!.merchantId;
     const since = startOfTodayUtc();
-    const [ordersToday, pending, recent, activeChats] = await Promise.all([
+    const [ordersToday, pending, recent, activeChats, toPrepare, toDispatch] = await Promise.all([
       db.from('orders').select('total', { count: 'exact' }).eq('merchant_id', mid).gte('created_at', since).not('order_number', 'is', null),
       db.from('orders').select('id', { count: 'exact', head: true }).eq('merchant_id', mid).eq('payment_status', 'claimed'),
       db.from('orders').select('id, order_number, status, payment_method, payment_status, total, delivery_name, created_at').eq('merchant_id', mid).not('order_number', 'is', null).order('created_at', { ascending: false }).limit(10),
       db.from('conversations').select('id', { count: 'exact', head: true }).eq('merchant_id', mid).eq('status', 'bot_active'),
+      // P4 "to do" counts: placed and paid-or-COD orders nobody has started on, and prepared ones not yet sent.
+      db.from('orders').select('id', { count: 'exact', head: true }).eq('merchant_id', mid).in('status', ['confirmed', 'paid']),
+      db.from('orders').select('id', { count: 'exact', head: true }).eq('merchant_id', mid).eq('status', 'preparing'),
     ]);
     return reply.send({
       ordersToday: ordersToday.count ?? 0,
       revenueToday: (ordersToday.data ?? []).reduce((s, o) => s + (o.total ?? 0), 0),
       pendingPayments: pending.count ?? 0,
       activeChats: activeChats.count ?? 0,
+      toPrepare: toPrepare.count ?? 0,
+      toDispatch: toDispatch.count ?? 0,
       recentOrders: recent.data ?? [],
     });
   });
@@ -118,6 +123,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const items = await db.from('order_items').select('name_snapshot, quantity, unit_price, discount, line_total').eq('order_id', id);
     const payment = await db.from('payments').select('method, amount, status, screenshot_url, claimed_at, verified_at').eq('order_id', id).maybeSingle();
     const claims = await db.from('payment_claims').select('status, amount, rejection_reason, claimed_at').eq('order_id', id).order('created_at', { ascending: false });
+    // P4: the stage history drives the stepper on the order page.
+    const history = await db.from('order_status_history').select('from_status, to_status, changed_by, note, created_at').eq('order_id', id).order('created_at', { ascending: true });
     // M4: the buyer's 24-hour window decides whether a confirmation is free (free-form) or a paid template.
     const conv = order.data.conversation_id ? await db.from('conversations').select('window_expires_at').eq('id', order.data.conversation_id).maybeSingle() : null;
     return reply.send({
@@ -125,6 +132,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       items: items.data ?? [],
       payment: payment.data,
       claims: claims.data ?? [],
+      history: history.data ?? [],
       windowExpiresAt: conv?.data?.window_expires_at ?? null,
       pendingBuyerNotice: order.data.pending_buyer_notice ?? null,
       noticePricePaisa: loadConfig().META_UTILITY_RATE_PAISA,
@@ -140,7 +148,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ url: await signedScreenshotUrl(db, key) });
   });
 
-  // Verify/reject are owner/manager only; staff may mark COD collected and cancel unpaid orders (docs/spec/09 §2.3).
+  // Verify/reject and cancel are owner/manager only; staff may mark COD collected and set stages (SRS P4, spec 09 §2.3).
   const orderAction =
     (managersOnly: boolean, act: (a: Actor, id: string, body: { reason?: string }) => Promise<ActionResult>) =>
     async (req: FastifyRequest, reply: FastifyReply) => {
@@ -154,7 +162,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/v1/admin/orders/:id/payment/verify', orderAction(true, (a, id) => verifyPayment(db, a, id)));
   app.post('/api/v1/admin/orders/:id/payment/reject', orderAction(true, (a, id, b) => rejectPayment(db, a, id, reason(b, 'not verified'))));
   app.post('/api/v1/admin/orders/:id/payment/cod-collected', orderAction(false, (a, id) => markCodCollected(db, a, id)));
-  app.post('/api/v1/admin/orders/:id/cancel', orderAction(false, (a, id, b) => cancelOrder(db, a, id, reason(b, 'shop ne cancel kiya'))));
+  app.post('/api/v1/admin/orders/:id/cancel', orderAction(true, (a, id, b) => cancelOrder(db, a, id, reason(b, 'shop ne cancel kiya'))));
 
   // ── Inbox / Conversations ──
   app.get('/api/v1/admin/conversations', async (req, reply) => {

@@ -10,14 +10,30 @@ interface O { id: string; order_number: string; status: string; payment_method: 
 export default function Orders() {
   const [orders, setOrders] = useState<O[] | null>(null);
   const [payment, setPayment] = useState('');
+  const [stage, setStage] = useState('');
   useEffect(() => {
-    apiJson<{ orders: O[] }>(`/api/v1/admin/orders${payment ? `?payment=${payment}` : ''}`).then((r) => setOrders(r.orders)).catch(() => setOrders([]));
-  }, [payment]);
+    const q = new URLSearchParams();
+    if (payment) q.set('payment', payment);
+    if (stage) q.set('status', stage);
+    const qs = q.toString();
+    apiJson<{ orders: O[] }>(`/api/v1/admin/orders${qs ? `?${qs}` : ''}`).then((r) => setOrders(r.orders)).catch(() => setOrders([]));
+  }, [payment, stage]);
 
   return (
     <AppShell>
       <PageHead title="Orders" sub="Every order placed through the bot" action={
         <>
+          <label htmlFor="stage-filter" className="sr-only">Filter by stage</label>
+          <select id="stage-filter" value={stage} onChange={(e) => setStage(e.target.value)} style={{ width: 'auto' }}>
+            <option value="">All stages</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="awaiting_payment">Awaiting payment</option>
+            <option value="paid">Paid</option>
+            <option value="preparing">Preparing</option>
+            <option value="dispatched">Dispatched</option>
+            <option value="delivered">Delivered</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
           <label htmlFor="payment-filter" className="sr-only">Filter by payment</label>
           <select id="payment-filter" value={payment} onChange={(e) => setPayment(e.target.value)} style={{ width: 'auto' }}>
             <option value="">All payments</option>
@@ -29,7 +45,7 @@ export default function Orders() {
       } />
       <div className="card">
         {orders && orders.length === 0 ? (
-          <EmptyState icon={ShoppingBag} title={payment ? 'Nothing here' : 'No orders yet'} hint={payment ? 'No orders match this payment filter.' : 'Orders appear here as soon as the bot closes a sale.'} />
+          <EmptyState icon={ShoppingBag} title={payment || stage ? 'Nothing here' : 'No orders yet'} hint={payment || stage ? 'No orders match these filters.' : 'Orders appear here as soon as the bot closes a sale.'} />
         ) : (
           <div className="table-wrap">
             <table>

@@ -22,8 +22,12 @@ export interface Readiness {
   failing: ReadinessStep[];
 }
 
-/** An order the owner placed themselves counts as the test order once it got this far. */
-export const TEST_ORDER_STATUSES = ['confirmed', 'awaiting_payment', 'paid'];
+/**
+ * An order the owner placed themselves counts as the test order once it was placed, whatever
+ * happened to it since — a dispatched or delivered test order must not turn the step red again
+ * (review P2-8). Only never-placed, cancelled and returned orders do not count.
+ */
+export const TEST_ORDER_STATUSES = ['confirmed', 'awaiting_payment', 'paid', 'preparing', 'dispatched', 'delivered'];
 
 /** At least one day with opening and closing times (a day marked closed does not count). */
 export function hasBusinessHours(h: unknown): boolean {

@@ -14,7 +14,7 @@ interface Kb {
 interface Settings {
   business_name: string;
   negotiation_defaults: { maxDiscountPct?: number; roundsMax?: number; stalemateAction?: 'handoff' | 'hold_and_close'; bulkTiers?: Tier[] };
-  settings: { botEnabled?: boolean; defaultDeliveryCharge?: number; upsellEnabled?: boolean; kb?: Kb; afterFreeQuota?: 'continue' | 'handoff'; llmDailyCap?: number };
+  settings: { botEnabled?: boolean; defaultDeliveryCharge?: number; upsellEnabled?: boolean; kb?: Kb; afterFreeQuota?: 'continue' | 'handoff'; llmDailyCap?: number; unpaidExpiryHours?: number };
   bot_persona: { name?: string; style?: string } | null;
   bankAccounts: { id: string; bank_name: string; account_title: string; account_number: string; is_default: boolean }[];
   deliveryZones: Zone[];
@@ -36,8 +36,9 @@ export default function SettingsPage() {
   const [s, setS] = useState<Settings | null>(null);
   const [bank, setBank] = useState({ bank_name: '', account_title: '', account_number: '' });
   const [name, setName] = useState('');
+  const [expiryHours, setExpiryHours] = useState('24');
   const load = () => apiJson<Settings>('/api/v1/admin/settings')
-    .then((d) => { setS(d); setName(d.business_name ?? ''); })
+    .then((d) => { setS(d); setName(d.business_name ?? ''); setExpiryHours(String(d.settings.unpaidExpiryHours ?? 24)); })
     .catch(() => {});
   useEffect(() => { load(); }, []);
 
@@ -54,6 +55,9 @@ export default function SettingsPage() {
     if (await patch({ businessName: v }, 'Shop name saved')) load();
   }
 
+  async function saveExpiry() {
+    if (await patch({ settings: { unpaidExpiryHours: Number(expiryHours) } }, 'Saved')) load();
+  }
   async function saveNeg() {
     if (!s) return;
     await patch({ negotiationDefaults: s.negotiation_defaults, settings: { defaultDeliveryCharge: s.settings.defaultDeliveryCharge } }, 'Saved');
@@ -267,6 +271,14 @@ export default function SettingsPage() {
       </div>
 
       <div className="eyebrow">Payments</div>
+      <div className="card pad">
+        <h2>Unpaid bank orders</h2>
+        <p className="section-desc" style={{ marginBottom: 14 }}>A bank-transfer order with no payment screenshot is cancelled automatically after this many hours, and its items go back into stock. A screenshot that is waiting for your review is never cancelled.</p>
+        <div className="form-row">
+          <div className="field"><label htmlFor="expiry-h">Hours (6–72)</label><input id="expiry-h" type="number" min="6" max="72" step="1" className="num" style={{ width: 110 }} value={expiryHours} onChange={(e) => setExpiryHours(e.target.value)} /></div>
+          <button className="btn" onClick={saveExpiry} disabled={!(Number(expiryHours) >= 6 && Number(expiryHours) <= 72) || Number(expiryHours) === (s.settings.unpaidExpiryHours ?? 24)}><Save aria-hidden /> Save</button>
+        </div>
+      </div>
       <div className="card">
         <div className="card-head"><div><h2>Bank accounts</h2><div className="desc">Shown to buyers who choose bank transfer. You verify every payment yourself.</div></div></div>
         {s.bankAccounts.length === 0 ? (

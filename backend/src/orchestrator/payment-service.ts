@@ -15,7 +15,7 @@ export interface Actor {
 }
 export type ActionResult = { ok: true } | { ok: false; status: 404 | 409; message: string };
 
-interface OrderRow {
+export interface OrderRow {
   id: string;
   merchant_id: string;
   customer_id: string;
@@ -36,7 +36,7 @@ interface Transition {
  * Apply a status change atomically: the UPDATE's own filter is the state check, so a
  * double-click, two tabs or a stale page can never verify/reject/collect twice.
  */
-async function transition(db: SupabaseClient, a: Actor, orderId: string, t: Transition): Promise<{ order: OrderRow } | Exclude<ActionResult, { ok: true }>> {
+export async function transition(db: SupabaseClient, a: Actor, orderId: string, t: Transition): Promise<{ order: OrderRow } | Exclude<ActionResult, { ok: true }>> {
   const { data, error } = await db
     .from('orders')
     .update(t.set)
@@ -90,7 +90,7 @@ async function recordOutbound(db: SupabaseClient, order: OrderRow, type: 'text' 
  * price (notifyBuyerNow). The slip PDF, when there is one, is the message itself (one send, the
  * text as its caption), not a second message.
  */
-async function notifyBuyer(db: SupabaseClient, order: OrderRow, text: string, slipKey?: string | null, notice: TemplateKind = 'payment_update'): Promise<void> {
+export async function notifyBuyer(db: SupabaseClient, order: OrderRow, text: string, slipKey?: string | null, notice: TemplateKind = 'payment_update', fallback: 'notice' | 'none' = 'notice'): Promise<void> {
   const { waId, phoneNumberId, windowOpen } = await buyerChannel(db, order);
 
   let sent: { waMessageId: string | null } = { waMessageId: null };
@@ -108,6 +108,9 @@ async function notifyBuyer(db: SupabaseClient, order: OrderRow, text: string, sl
     await recordOutbound(db, order, type, text, sent.waMessageId);
     return;
   }
+  // 'none': the message was only worth sending for free (an expired unpaid order, P4) — no paid
+  // notice is offered and the merchant is not told about the silence.
+  if (fallback === 'none') return;
   const price = `Rs ${Math.round(loadConfig().META_UTILITY_RATE_PAISA / 100)}`;
   const why = windowOpen
     ? 'The WhatsApp message could not be sent.'
@@ -164,7 +167,7 @@ export async function notifyBuyerNow(db: SupabaseClient, a: Actor, orderId: stri
  * Move the buyer's chat to `state` only while it is still in THIS order's checkout. A buyer
  * who has since started another purchase must not have that chat reset under them.
  */
-async function setCheckoutState(db: SupabaseClient, order: OrderRow, state: BotState): Promise<void> {
+export async function setCheckoutState(db: SupabaseClient, order: OrderRow, state: BotState): Promise<void> {
   if (!order.conversation_id) return;
   await db.from('conversations').update({ current_state: state }).eq('id', order.conversation_id).eq('context->>pendingOrderId', order.id);
 }
@@ -213,7 +216,8 @@ export async function rejectPayment(db: SupabaseClient, a: Actor, orderId: strin
   return { ok: true };
 }
 
-const CANCELLABLE = ['draft', 'confirmed', 'awaiting_payment', 'preparing'];
+// Any non-terminal status (SRS P4, FR-P4.1); delivered/cancelled/returned are final. Managers only (routes).
+const CANCELLABLE = ['draft', 'pending_confirmation', 'confirmed', 'awaiting_payment', 'paid', 'preparing', 'dispatched'];
 
 /**
  * Merchant cancels an order that hasn't been paid for or dispatched: its stock comes back

@@ -41,6 +41,7 @@ export const invalidSettingsField = firstInvalid({
   deliveryConfigured: bool, // "one charge for everywhere" was chosen on purpose (readiness, P2)
   codEnabled: bool,
   paymentInstructions: (v) => typeof v === 'string' && v.length <= 500, // shown under the bank details
+  unpaidExpiryHours: (v) => Number.isInteger(v) && (v as number) >= 6 && (v as number) <= 72, // P4: bank orders with no screenshot
   botEnabled: bool,
   upsellEnabled: bool,
   // M5: what happens after the free 1,000 messages a month, and the daily AI-call cap per shop.

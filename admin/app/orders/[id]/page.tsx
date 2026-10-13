@@ -1,18 +1,23 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Banknote, Check, Image as ImageIcon, MapPin, MessageCircle, Phone, User, X } from 'lucide-react';
+import { Banknote, Check, Image as ImageIcon, MapPin, MessageCircle, Package, PackageCheck, Phone, Truck, User, X } from 'lucide-react';
 import AppShell, { BackLink, PageHead, PaymentPill, StatusPill, humanize } from '../../../components/AppShell';
 import { api, apiError, apiJson, dt, rs } from '../../../lib/api';
 import { useToast } from '../../../components/Toast';
 
 interface Detail {
-  order: { id: string; order_number: string; status: string; payment_method: string; payment_status: string; subtotal: number; discount_total: number; delivery_charge: number; total: number; delivery_name: string; delivery_address: string; delivery_area: string; delivery_city: string; delivery_phone: string; placed_at: string | null; created_at: string };
+  order: { id: string; order_number: string; status: string; payment_method: string; payment_status: string; subtotal: number; discount_total: number; delivery_charge: number; total: number; delivery_name: string; delivery_address: string; delivery_area: string; delivery_city: string; delivery_phone: string; placed_at: string | null; created_at: string; courier: string | null; tracking_ref: string | null; eta_text: string | null };
   items: { name_snapshot: string; quantity: number; unit_price: number; discount: number; line_total: number }[];
   windowExpiresAt: string | null;
   pendingBuyerNotice: 'payment_update' | 'order_sent' | null;
   noticePricePaisa: number;
+  history: { from_status: string | null; to_status: string; changed_by: string; note: string | null; created_at: string }[];
 }
+
+// P4 stage chain. Index of the current status; cancelled/returned sit outside it.
+const STAGES = ['confirmed', 'preparing', 'dispatched', 'delivered'] as const;
+const stageIndex = (status: string) => ['awaiting_payment', 'paid'].includes(status) ? 0 : STAGES.indexOf(status as typeof STAGES[number]);
 
 /** "Free to confirm until 3:40 pm tomorrow" — the buyer's 24-hour window decides the price of a message. */
 function WindowNote({ until, pricePaisa }: { until: string | null; pricePaisa: number }) {
@@ -31,6 +36,7 @@ export default function OrderDetail() {
   const [d, setD] = useState<Detail | null>(null);
   const [shot, setShot] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [ship, setShip] = useState({ courier: '', trackingRef: '', etaText: '' });
 
   const load = useCallback(() => { apiJson<Detail>(`/api/v1/admin/orders/${id}`).then(setD).catch(() => {}); }, [id]);
   useEffect(load, [load]);
@@ -57,7 +63,9 @@ export default function OrderDetail() {
   if (!d) return <AppShell><div className="skeleton" style={{ height: 40, width: 260, marginBottom: 20 }} /><div className="split"><div className="skeleton" style={{ height: 260 }} /><div className="skeleton" style={{ height: 200 }} /></div></AppShell>;
   const o = d.order;
   const claimed = o.payment_status === 'claimed';
-  const cancellable = ['draft', 'confirmed', 'awaiting_payment', 'preparing'].includes(o.status);
+  const cancellable = !['delivered', 'cancelled', 'returned'].includes(o.status);
+  const idx = stageIndex(o.status);
+  const canPrepare = ['confirmed', 'paid'].includes(o.status);
   const cancel = () => confirm('Cancel this order? Its items go back into stock and the buyer is told on WhatsApp.') && act('cancel', undefined, 'Order cancelled');
   const address = [o.delivery_address, o.delivery_area, o.delivery_city].filter(Boolean).join(', ');
 
@@ -66,6 +74,34 @@ export default function OrderDetail() {
       <BackLink href="/orders" label="Orders" />
       <PageHead title={`Order ${o.order_number ?? '(draft)'}`} sub={`Placed ${dt(o.placed_at ?? o.created_at, true)} (PKT)`}
         action={<><StatusPill status={o.status} /><PaymentPill status={o.payment_status} /></>} />
+
+      {idx >= 0 && (
+        <div className="card pad" style={{ marginBottom: 20 }}>
+          <ol className="steps" style={{ marginBottom: 14 }}>
+            {STAGES.map((st, i) => <li key={st} className={i < idx ? 'done' : i === idx ? 'now' : ''}><span className="n">{i < idx ? <Check size={14} aria-hidden /> : i + 1}</span>{humanize(st)}</li>)}
+          </ol>
+          {canPrepare && <button className="btn" disabled={busy} onClick={() => act('preparing', undefined, 'Marked as preparing')}><Package aria-hidden /> Start preparing</button>}
+          {o.status === 'preparing' && (
+            <div className="form-row">
+              <div className="field"><label htmlFor="courier">Courier</label><input id="courier" placeholder="TCS, Leopards, rider…" maxLength={60} value={ship.courier} onChange={(e) => setShip({ ...ship, courier: e.target.value })} /></div>
+              <div className="field"><label htmlFor="tracking">Tracking no.</label><input id="tracking" className="mono" maxLength={80} value={ship.trackingRef} onChange={(e) => setShip({ ...ship, trackingRef: e.target.value })} /></div>
+              <div className="field"><label htmlFor="eta">Delivery estimate</label><input id="eta" placeholder="2–3 din" maxLength={80} value={ship.etaText} onChange={(e) => setShip({ ...ship, etaText: e.target.value })} /></div>
+              <button className="btn" disabled={busy} onClick={() => act('dispatched', ship, 'Marked as dispatched')}><Truck aria-hidden /> Mark dispatched</button>
+            </div>
+          )}
+          {o.status === 'dispatched' && <button className="btn" disabled={busy} onClick={() => act('delivered', undefined, 'Marked as delivered')}><PackageCheck aria-hidden /> Mark delivered</button>}
+          {o.status === 'preparing' && <div className="hint" style={{ marginTop: 8 }}>The buyer gets a WhatsApp message with the courier and estimate if they wrote in the last 24 hours; otherwise a paid notice appears below.</div>}
+          {(o.courier || o.tracking_ref || o.eta_text) && <div className="hint" style={{ marginTop: 8 }}>{[o.courier, o.tracking_ref, o.eta_text].filter(Boolean).join(' · ')}</div>}
+          {d.history.length > 0 && (
+            <details style={{ marginTop: 12 }}>
+              <summary className="hint" style={{ cursor: 'pointer' }}>History</summary>
+              <ul className="hint" style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+                {d.history.map((h, i) => <li key={i}>{dt(h.created_at, true)}: {humanize(h.to_status)} ({h.changed_by}){h.note ? ` — ${h.note}` : ''}</li>)}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
 
       <div className="split">
         <div className="card">

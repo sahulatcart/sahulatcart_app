@@ -4,6 +4,7 @@ import { buildServer } from './server';
 import { drainWebhooks, startReplaySweeper } from './whatsapp/webhook';
 import { startRetentionJob } from './lib/retention';
 import { flushPendingDigests } from './lib/notify';
+import { startUnpaidExpiryJob } from './lib/jobs';
 
 async function main(): Promise<void> {
   const cfg = loadConfig(); // fail-fast env validation
@@ -22,6 +23,7 @@ async function main(): Promise<void> {
   if (cfg.NODE_ENV === 'production') {
     startReplaySweeper();
     startRetentionJob();
+    startUnpaidExpiryJob(); // P4: bank orders with no screenshot are cancelled after the merchant's hours
   }
 
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {

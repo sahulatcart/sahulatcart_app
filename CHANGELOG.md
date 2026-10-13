@@ -7,6 +7,58 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — P4: order stages and unpaid-order expiry
+
+Branch `feat/p4-order-stages`, from `main` at `fb509c9` (after P3 #22 and M6 #27). 33 test files,
+369 tests (58 new: 36 stage transitions, 7 expiry, 6 routes, plus the matrix). Both typechecks
+clean; `next build` clean. Migration **0015** must be applied (three nullable text columns on
+`orders`: `courier`, `tracking_ref`, `eta_text`); nothing else changes in the schema.
+
+**What landed (SRS-Uzair v1.1 week 5, FR-P4.1–4.5).**
+- [orchestrator/order-stages.ts](backend/src/orchestrator/order-stages.ts): `markPreparing`,
+  `markDispatched`, `markDelivered`, a strict chain (`STAGE_FROM`: preparing from confirmed/paid,
+  dispatched from preparing, delivered from dispatched). Each is one conditional UPDATE through the
+  same `transition()` the payment actions use, so a double-click is a 409, and each writes an
+  `order_status_history` row (the dispatch row's note is "courier · tracking"). Courier, tracking
+  and ETA are clipped to 60/80/80 characters server-side.
+- Dispatch tells the buyer in Roman Urdu with the courier and ETA, through the existing
+  `notifyBuyer()` with the `order_sent` kind: free-form text while the 24-hour window is open;
+  otherwise `pending_buyer_notice='order_sent'` and the paid button M4 already built on the order
+  page. No new template, no new path.
+- [lib/jobs.ts](backend/src/lib/jobs.ts) `expireUnpaidOrders()`: hourly in production only, like the
+  sweeper and retention. A bank-transfer order still `awaiting_payment`/`unpaid` for longer than the
+  merchant's `settings.unpaidExpiryHours` (6–72, default 24) with **no `payment_claims` row** is
+  cancelled with reason "payment not received in Nh", its stock released, a system history row
+  written, the merchant notified through `notify()`, the buyer told only if the window is open
+  (`fallback: 'none'` — an expired draft is not worth a paid notice or a merchant nag), and the
+  conversation reset to `completed` so the next message starts fresh. A screenshot waiting for
+  review is never touched, however old.
+- [routes/orders.ts](backend/src/routes/orders.ts): `POST /api/v1/admin/orders/:id/preparing|dispatched|delivered`,
+  own `requireMerchant`, staff allowed. **Cancel is now managers only** (`orderAction(true, …)`),
+  per SRS FR-P4.1; the old comment in routes/admin.ts said staff could cancel unpaid orders. Any
+  non-terminal status can be cancelled now (`CANCELLABLE` gained pending_confirmation, paid and
+  dispatched), since a paid order the shop cannot fulfil has to be cancellable somewhere.
+- Dashboard counts `toPrepare` (confirmed/paid) and `toDispatch` (preparing); the order detail
+  returns `history`; the orders list takes `?status=` (it already did) and the page got a stage
+  filter. Order page: a stepper on the existing `.steps` CSS, one next-action button, the dispatch
+  form (courier, tracking, estimate), and a collapsed history. Settings → Payments: the expiry hours.
+- Readiness's test-order check now accepts preparing/dispatched/delivered (review P2-8).
+
+**Hassles.**
+- `setCheckoutState` in payment-service was private; the job needs it, so it is exported along
+  with `transition`, `OrderRow` and `notifyBuyer` (which gained `notice` and `fallback`
+  parameters, defaults unchanged for existing callers).
+- The expiry test for "window closed" failed first: `notifyBuyer` judges the window on the real
+  clock, while the job takes an injected `now`. The test seeds `placed_at` against the injected
+  clock and `window_expires_at` against `Date.now()`. Do not "fix" the job to take the window from
+  its own clock; the window is a WhatsApp fact, not a job parameter.
+- No Python on this Windows machine (the Store alias answers instead) and the admin pages are CRLF,
+  so multi-line edits were scripted with node and a line-ending-preserving replace.
+
+**Open.** Migration 0015 (Fazal). The expiry job and the stage routes are not visually re-checked
+in the portal beyond `next build` and the typecheck; the order page's stepper reuses the onboarding
+`.steps` rule, so a change there moves both.
+
 ## 2026-10-13 — M6: the platform owner's console and suspension
 
 Branch `feat/m6-platform-console`. 28 test files, 299 tests (9 new). Both typechecks clean;
