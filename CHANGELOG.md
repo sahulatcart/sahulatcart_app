@@ -7,6 +7,52 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — P2, part 1: readiness checks, delivery zones, the go-live gate, the wizard shell
+
+**Outcome** — the bot can no longer be switched on by setting a flag. `GET /api/v1/admin/readiness`
+computes seven checks from the data itself ([lib/readiness.ts](backend/src/lib/readiness.ts)) and
+`PATCH settings { botEnabled: true }` answers **409 `not_ready`** with the failing steps until all
+pass. Delivery zones got their missing writes. The onboarding page is now a checklist that follows
+the server's verdict. Branch `feat/p2-onboarding`, week 2 of SRS-Uzair v1.1. Panels 1–7 proper,
+COD enforcement in the bot and the greeting text are week 3.
+
+**The seven checks and what they read.** profile: `business_name`, `phone`, `category`, at least
+one day in `business_hours` (`{ mon: { open, close } }` — a day marked `{ closed: true }` does not
+count), and the two attestations from signup. whatsapp: IC-4 status `connected` — M2/M3 are on
+`main`, so this is the real status, not the IC-10 stub; `connecting` says "send one message from your
+phone", `needs_attention` is shown as a problem with Meta's message. catalog: one active product with
+a price. delivery: one serviceable zone **or** `settings.deliveryConfigured` (the explicit "one
+charge for everywhere" choice). payment: `settings.codEnabled` or an active bank account. persona:
+`bot_persona.name` **and** `.style`. testOrder: an order in `confirmed`/`awaiting_payment`/`paid`
+whose customer's `wa_id` is the owner's phone, compared as digits (`samePhone()`), so `+92 300
+1234567` matches `923001234567`.
+
+**Routes** live in a new [routes/onboarding.ts](backend/src/routes/onboarding.ts) with its own
+`requireMerchant` hook (Part 0.3): readiness, and `GET/POST /admin/delivery-zones`,
+`PATCH/DELETE /admin/delivery-zones/:id` (managers only; `area_name` 2–60, `charge` ≥ 0 paisa,
+the same area in any case is 409 `DUPLICATE`, because the bot matches areas by whole words and two
+spellings would make the match arbitrary). `GET settings` now carries the `readiness` block
+(FR-P2.6) so the settings page can disable the bot toggle and say why.
+
+**Portal.** `/onboarding` is a left checklist (Done / To do / Problem) with the active panel on the
+right; on phones the list becomes a horizontal stepper. `?step=` deep-links a panel; otherwise the
+first open step opens. The Delivery panel is complete: zones table with serviceable toggle and
+delete, add form in rupees (stored as paisa), default charge, free-delivery threshold and the
+"everywhere" checkbox. The other panels show the server's reason and a link to the page that handles
+it today, until week 3 fills them in. "Go live" sends `botEnabled: true` and, on 409, jumps to the
+first failing step. The dashboard card now reads readiness: "N of 7 steps done", linking to the first
+open step, and disappears exactly when ready **and** the bot is on (FR-P2.4).
+
+**Tests.** [lib/readiness.test.ts](backend/src/lib/readiness.test.ts): each check flips on its own
+data (21 tests, over FakeDb through the real routes), the 409 gate, "off" never needs readiness, zone
+CRUD with the duplicate and staff refusals. FakeDb needed nothing new: its many-to-one embed already
+resolves `customers(wa_id)` on orders. Suite: 24 files, 235 tests.
+
+**Checked visually** against a throwaway mock backend (not committed; it serves fixtures with two
+zones and four failing steps) at desktop and phone width.
+
+---
+
 ## 2026-10-13 — P1: self-service signup, email confirmation, password reset, automatic shop
 
 **Outcome** — a shop owner can sign up at `/signup`, confirm by email, and land on onboarding with

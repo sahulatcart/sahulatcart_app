@@ -5,6 +5,7 @@ import { tokenForNumber } from '../whatsapp/credentials';
 import { getServiceClient } from '../lib/supabase';
 import { forbid, isAdminToken, isManager, requireMerchant } from '../lib/auth';
 import { NEW_MERCHANT_SETTINGS } from '../lib/signup';
+import { computeReadiness } from '../lib/readiness';
 import { cancelOrder, markCodCollected, rejectPayment, verifyPayment, type ActionResult, type Actor } from '../orchestrator/payment-service';
 import { signedScreenshotUrl } from '../whatsapp/media';
 import { sendText } from '../whatsapp/client';
@@ -469,8 +470,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const m = await db.from('merchants').select('business_name, negotiation_defaults, settings, bot_persona').eq('id', mid).single();
     // Staff get no bank-account access at all, not even to read (docs/spec/09 §2.3).
     const banks = isManager(req.merchantCtx!) ? await db.from('bank_accounts').select('id, bank_name, account_title, account_number, iban, is_default, is_active').eq('merchant_id', mid) : null;
-    const zones = await db.from('delivery_zones').select('id, area_name, city, charge, is_serviceable').eq('merchant_id', mid);
-    return reply.send({ ...m.data, bankAccounts: banks?.data ?? [], deliveryZones: zones.data ?? [] });
+    const zones = await db.from('delivery_zones').select('id, area_name, city, charge, is_serviceable, eta_text').eq('merchant_id', mid);
+    // FR-P2.6: the settings page shows why the bot toggle is disabled.
+    const readiness = await computeReadiness(db, mid);
+    return reply.send({ ...m.data, bankAccounts: banks?.data ?? [], deliveryZones: zones.data ?? [], readiness });
   });
 
   app.patch('/api/v1/admin/settings', async (req, reply) => {
@@ -479,6 +482,11 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const b = (req.body ?? {}) as { businessName?: string; negotiationDefaults?: Record<string, unknown>; settings?: Record<string, unknown>; botPersona?: Record<string, unknown> };
     const bad = (b.negotiationDefaults && invalidNegotiationField(b.negotiationDefaults)) || (b.settings && invalidSettingsField(b.settings));
     if (bad) return reply.code(400).send(badField(bad));
+    // FR-P2.2: the bot cannot be switched on until every readiness check passes, whatever the client sends.
+    if (b.settings?.botEnabled === true) {
+      const r = await computeReadiness(db, mid);
+      if (!r.ready) return reply.code(409).send({ error: { code: 'not_ready', message: 'Finish setting up before going live', failing: r.failing, steps: r.steps } });
+    }
     const cur = await db.from('merchants').select('negotiation_defaults, settings, bot_persona').eq('id', mid).single();
     const patch: Record<string, unknown> = {};
     if (b.businessName) patch.business_name = b.businessName;

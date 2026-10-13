@@ -37,6 +37,19 @@ export const invalidNegotiationField = firstInvalid({
 /** merchants.settings — only the money/switch fields; free text (kb, persona) is not constrained. */
 export const invalidSettingsField = firstInvalid({
   defaultDeliveryCharge: (v) => Number.isInteger(v) && (v as number) >= 0,
+  freeDeliveryThreshold: (v) => Number.isInteger(v) && (v as number) >= 0,
+  deliveryConfigured: bool, // "one charge for everywhere" was chosen on purpose (readiness, P2)
+  codEnabled: bool,
   botEnabled: bool,
   upsellEnabled: bool,
+});
+
+/** delivery_zones rows (P2). area_name is matched by whole words in the bot, so keep it a real name. */
+const shortText = (max: number) => (v: unknown): boolean => typeof v === 'string' && v.trim().length >= 2 && v.trim().length <= max;
+export const invalidZoneField = firstInvalid({
+  area_name: shortText(60),
+  city: optional((v) => v === '' || shortText(60)(v)),
+  charge: (v) => Number.isInteger(v) && (v as number) >= 0, // paisa; 0 = free
+  is_serviceable: bool,
+  eta_text: optional((v) => v === '' || (typeof v === 'string' && v.length <= 80)),
 });

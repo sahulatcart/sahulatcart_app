@@ -376,6 +376,24 @@ input[type="checkbox"] { width: 18px; height: 18px; padding: 0; margin: 0; flex:
 .steps .now .n { background: var(--brand-tint-2); color: var(--brand-ink); box-shadow: inset 0 0 0 1px var(--brand); }
 .steps li.done + li::before { background: var(--brand); }
 
+/* Onboarding wizard (P2): checklist on the left, the active panel on the right. */
+.wizard { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 20px; align-items: start; }
+.wizard-steps { list-style: none; margin: 0; padding: 6px; display: grid; gap: 2px; }
+.wizard-steps li a { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--r-sm); color: var(--ink); text-decoration: none; font-size: 13.5px; }
+.wizard-steps li a:hover { background: var(--surface-hover); }
+.wizard-steps li.now a { background: var(--brand-tint); color: var(--brand-ink); font-weight: 600; }
+.wizard-steps .n { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; background: var(--surface-2); color: var(--muted); flex: none; }
+.wizard-steps .ok .n { background: var(--success-tint); color: var(--success); }
+.wizard-steps .bad .n { background: var(--danger-tint); color: var(--danger); }
+.wizard-steps .label { flex: 1; min-width: 0; }
+.wizard-foot { padding: 12px; border-top: 1px solid var(--border); }
+@media (max-width: 960px) {
+  .wizard { grid-template-columns: minmax(0, 1fr); }
+  .wizard-steps { display: flex; overflow-x: auto; gap: 6px; padding: 4px; }
+  .wizard-steps li a { white-space: nowrap; }
+  .wizard-steps .pill { display: none; }
+}
+
 /* ── Inbox ─────────────────────────────────────────────────── */
 .inbox { display: grid; grid-template-columns: 300px minmax(0, 1fr); height: calc(100dvh - 160px); min-height: 480px; overflow: hidden; }
 .content:has(.inbox) { padding-bottom: 24px; } /* the chat fills the window; the page itself never scrolls */

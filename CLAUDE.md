@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **23 files, 214 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **24 files, 235 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -346,6 +346,15 @@ discriminated union of ~20 reply kinds) and only phrases it.
   with no login, 401 `no_membership` for a valid JWT whose user owns no shop (the portal then sends
   them to `/auth/confirmed` to create one), and 403 `NO_SHOP` when there is no `merchantId` to act
   on. `resolveAuthUser()` verifies the JWT alone, for the one call made before a shop exists.
+- **The bot cannot be switched on until the shop is ready** (P2, since 2026-10-13).
+  [lib/readiness.ts](backend/src/lib/readiness.ts) `computeReadiness()` runs seven checks from the data
+  (profile, whatsapp, catalog, delivery, payment, persona, testOrder); `PATCH settings` with
+  `botEnabled: true` answers 409 `not_ready` with the failing steps unless all pass, whatever the
+  client sends. `GET /admin/readiness` and the `readiness` block on `GET settings` drive the
+  onboarding checklist and the settings toggle. `business_hours` is `{ mon: { open, close } }` per
+  day; a day marked `{ closed: true }` does not count as "hours set". Delivery zones are edited
+  through [routes/onboarding.ts](backend/src/routes/onboarding.ts); the same area in any case is
+  refused, since the bot matches areas by whole words.
 - **Phone numbers are digits only** everywhere they are stored or compared — `923001234567`, never
   `+92 300…` — because that is what WhatsApp sends as `wa_id`. Normalise with `phoneDigits()` and
   compare with `samePhone()` from [lib/phone.ts](backend/src/lib/phone.ts).
