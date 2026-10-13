@@ -7,6 +7,22 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — Fix: an opt-out mid-checkout left the order placed with its stock held
+
+Found by the lead's review of PR #29 (P5). "band karo" is both a stop word (`STOP_RE`, whole
+message) and a cancel word (`CANCEL_RE`), and the stop check runs first; before P5 a buyer saying
+"band karo" while a bank order waited for its screenshot cancelled it, after P5 they were opted out
+and the order stayed `awaiting_payment` with stock reserved until the expiry job, with no word to the
+merchant. The cancel block is now a shared `cancelPending()` used by both paths, so an opt-out during
+checkout cancels, releases stock, writes history and tells the merchant; the goodbye also says how
+to come back ("'start' likh dein"). Two flow tests. 34 files, 386 tests.
+
+Also applied today after PRs #28/#29 merged: migrations **0015** and **0016**, verified. Checked on
+live right after: the catalog route returns all 5 products (it would have answered an empty list
+before 0016), and no customer is opted out (both are `unknown`, treated as in).
+
+---
+
 ## 2026-10-13 — P5: opt-out enforcement, STOP keyword, and the small gaps
 
 Branch `feat/p5-opt-out`, from `main` at `8d43f34` (after P4 #28). 34 test files, 384 tests
