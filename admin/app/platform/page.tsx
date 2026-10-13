@@ -1,8 +1,8 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
-import { Ban, CheckCircle2, ChevronDown, ChevronUp, Search, ShieldCheck, Store } from 'lucide-react';
+import { Ban, CheckCircle2, ChevronDown, ChevronUp, Receipt, Search, ShieldCheck, Store } from 'lucide-react';
 import AppShell, { EmptyState, PageHead, Pill } from '../../components/AppShell';
-import { api, apiError, apiJson, dt } from '../../lib/api';
+import { api, apiError, apiJson, dt, rs } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 
 /** The platform owner's console (SRS-Fazal M6): every shop, its connection, a suspend switch. */
@@ -13,6 +13,8 @@ interface Merchant {
   lastInboundAt: string | null; ordersThisMonth: number; outboundThisMonth: number;
   suspension: { reason?: string; at?: string; by?: string } | null;
 }
+interface Invoice { id: string; merchant_id: string; businessName: string | null; plan: string; period_start: string; period_end: string; amount_paisa: number; reference: string | null; claimed_at: string | null; created_at: string }
+interface PlanRequest { id: string; merchant_id: string; businessName: string | null; plan: string; status: string; requested_plan: string }
 interface Attempt { id: string; status: string; phone_number_id: string | null; error_code: string | null; error_message: string | null; created_at: string }
 
 const tone = (s: string) => (s === 'connected' ? 'success' : s === 'needs_attention' || s === 'connecting' ? 'warning' : s === 'disconnected' ? 'danger' : 'neutral');
@@ -25,6 +27,18 @@ export default function PlatformConsole() {
   const [busy, setBusy] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [attempts, setAttempts] = useState<Record<string, Attempt[]>>({});
+  // P7 (FR-P7.5): due invoices with the merchant's claimed reference, and plan-change requests.
+  const [bill, setBill] = useState<{ invoices: Invoice[]; requests: PlanRequest[] } | null>(null);
+  const loadBill = useCallback(() => apiJson<{ invoices: Invoice[]; requests: PlanRequest[] }>('/api/v1/platform/invoices').then(setBill).catch(() => setBill({ invoices: [], requests: [] })), []);
+  useEffect(() => { loadBill(); }, [loadBill]);
+  async function post(url: string, body?: object, ok = 'Done') {
+    setBusy(url);
+    const r = await api(url, { method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}) });
+    setBusy(null);
+    if (!r.ok) toast(await apiError(r), 'error'); else { toast(ok, 'success'); loadBill(); load(q); }
+  }
+  const markPaid = (i: Invoice) => confirm(`Mark ${rs(i.amount_paisa)} from ${i.businessName ?? i.merchant_id} as received? Their plan runs to ${dt(i.period_end)} and the bot sells again.`) && post(`/api/v1/platform/invoices/${i.id}/paid`, undefined, 'Marked paid');
+  const setPlan = (merchantId: string, plan: string) => post(`/api/v1/platform/merchants/${merchantId}/plan`, { plan }, `Plan: ${plan}`);
 
   const load = useCallback((query = '') => apiJson<{ month: string; merchants: Merchant[] }>(`/api/v1/platform/merchants${query ? `?q=${encodeURIComponent(query)}` : ''}`)
     .then((r) => { setRows(r.merchants); setMonth(r.month); })
@@ -67,7 +81,7 @@ export default function PlatformConsole() {
                 {rows.map((m) => (
                   <>
                     <tr key={m.id}>
-                      <td><div className="strong">{m.businessName}</div><div className="hint">{m.ownerEmail ?? '—'} · {m.plan}</div></td>
+                      <td><div className="strong">{m.businessName}</div><div className="hint">{m.ownerEmail ?? '—'} · <label htmlFor={`plan-${m.id}`} className="sr-only">Plan for {m.businessName}</label><select id={`plan-${m.id}`} value={m.plan} onChange={(e) => setPlan(m.id, e.target.value)} disabled={!!busy} style={{ width: 'auto', padding: '0 4px', fontSize: 12, display: 'inline-block' }}><option value="pilot">pilot</option><option value="basic">basic</option><option value="pro">pro</option></select></div></td>
                       <td><Pill kind={tone(m.connection.status)}>{m.connection.status.replace('_', ' ')}</Pill>{m.connection.phone && <div className="mono hint">+{m.connection.phone}</div>}{m.connection.flagReason && <div className="hint">{m.connection.flagReason}</div>}</td>
                       <td className="hide-sm">{dt(m.lastInboundAt)}</td>
                       <td className="num">{m.ordersThisMonth}</td>
@@ -101,6 +115,42 @@ export default function PlatformConsole() {
           </div>
         )}
         {!rows && <div className="skeleton" style={{ height: 120, margin: 16 }} />}
+      </div>
+
+      <div className="card" style={{ marginTop: 24 }}>
+        <div className="card-head"><div><h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Receipt aria-hidden /> Invoices</h2><div className="desc">Due invoices and plan requests. Mark paid once the transfer shows in the Nubrix account.</div></div></div>
+        {bill && bill.invoices.length === 0 && bill.requests.length === 0 && <div className="pad hint">Nothing due and no requests.</div>}
+        {bill && bill.invoices.length > 0 && (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Shop</th><th>Period</th><th>Plan</th><th className="num">Amount</th><th>Reference</th><th></th></tr></thead>
+              <tbody>
+                {bill.invoices.map((i) => (
+                  <tr key={i.id}>
+                    <td className="strong">{i.businessName ?? i.merchant_id}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{dt(i.period_start)} to {dt(i.period_end)}</td>
+                    <td>{i.plan}</td>
+                    <td className="num">{rs(i.amount_paisa)}</td>
+                    <td>{i.reference ? <><span className="mono">{i.reference}</span><div className="hint">claimed {dt(i.claimed_at)}</div></> : <span className="hint">not claimed yet</span>}</td>
+                    <td><button className="btn sm" disabled={!!busy} onClick={() => markPaid(i)}><CheckCircle2 aria-hidden /> Mark paid</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {bill && bill.requests.length > 0 && (
+          <div className="pad">
+            <div className="hint" style={{ marginBottom: 6 }}>Plan requests</div>
+            {bill.requests.map((r) => (
+              <div key={r.id} className="row between" style={{ padding: '6px 0' }}>
+                <span><span className="strong">{r.businessName ?? r.merchant_id}</span> <span className="hint">{r.plan} → {r.requested_plan}</span></span>
+                <button className="btn sm ghost" disabled={!!busy} onClick={() => setPlan(r.merchant_id, r.requested_plan)}>Apply {r.requested_plan}</button>
+              </div>
+            ))}
+          </div>
+        )}
+        {!bill && <div className="skeleton" style={{ height: 60, margin: 16 }} />}
       </div>
     </AppShell>
   );

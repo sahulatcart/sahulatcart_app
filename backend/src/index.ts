@@ -6,6 +6,7 @@ import { startRetentionJob } from './lib/retention';
 import { flushPendingDigests } from './lib/notify';
 import { startUnpaidExpiryJob } from './lib/jobs';
 import { initSentry } from './lib/sentry';
+import { startBillingJob } from './lib/billing';
 
 async function main(): Promise<void> {
   const cfg = loadConfig(); // fail-fast env validation
@@ -32,6 +33,7 @@ async function main(): Promise<void> {
     startReplaySweeper();
     startRetentionJob();
     startUnpaidExpiryJob(); // P4: bank orders with no screenshot are cancelled after the merchant's hours
+    startBillingJob(); // P7: trial notices, monthly invoices, past-due enforcement
   }
 
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {

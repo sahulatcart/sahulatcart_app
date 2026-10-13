@@ -36,6 +36,12 @@ const schema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default('claude-opus-4-8'),
 
+  // Billing (P7): plan prices in paisa and the bank account merchants transfer to. Config, not code,
+  // so the pilot can change them without a deploy. PLATFORM_BANK_DETAILS is multi-line ("\n").
+  PLAN_BASIC_PRICE_PAISA: z.coerce.number().int().nonnegative().default(299900),
+  PLAN_PRO_PRICE_PAISA: z.coerce.number().int().nonnegative().default(799900),
+  PLATFORM_BANK_DETAILS: z.string().default('').transform((s) => s.replace(/\\n/g, '\n')),
+
   // Error reporting (P6): a missing DSN means Sentry is never initialised.
   SENTRY_DSN: z.string().url().optional(),
 

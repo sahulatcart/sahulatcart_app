@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Bell, Clock, Gauge, MessageSquare, Package, ShoppingBag, Sparkles, Truck, Wallet } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Bell, Clock, Gauge, MessageSquare, Package, ShoppingBag, Sparkles, Truck, Wallet } from 'lucide-react';
 import AppShell, { EmptyState, PageHead, PaymentPill, StatusPill } from '../components/AppShell';
 import { apiJson, rs } from '../lib/api';
 import { enablePush, pushState } from '../lib/push';
@@ -18,8 +18,11 @@ export default function Dashboard() {
   // FR-P2.4: the card shows until every readiness check passes AND the bot is on; it links to the first open step.
   const [setup, setSetup] = useState<{ done: number; next: string | null; ready: boolean } | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
+  // P7: an unpaid invoice or a used-up allowance puts the bot in hand-over mode; say so here, with the way out.
+  const [billing, setBilling] = useState<{ mode: string; reason: string | null } | null>(null);
   useEffect(() => {
     apiJson<Dash>('/api/v1/admin/dashboard').then(setD).catch(() => {});
+    apiJson<{ mode: string; reason: string | null }>('/api/v1/admin/billing').then(setBilling).catch(() => {});
     apiJson<Usage>('/api/v1/admin/usage').then(setUsage).catch(() => {});
     Promise.all([
       apiJson<{ ready: boolean; failing: string[] }>('/api/v1/admin/readiness'),
@@ -43,6 +46,18 @@ export default function Dashboard() {
       <PageHead title="Dashboard" sub="Your shop at a glance — today, in Pakistan time" />
 
       <PushNudge />
+      {billing?.mode === 'handoff' && (
+        <div className="callout" role="status">
+          <div className="row" style={{ flexWrap: 'nowrap' }}>
+            <div className="ico"><AlertTriangle aria-hidden /></div>
+            <div>
+              <div className="strong">{billing.reason === 'limit' ? 'The bot is handing chats to you: this month\'s conversation allowance is used up' : 'The bot is handing chats to you: an invoice is unpaid'}</div>
+              <div className="hint">Every message is still stored and you can reply from the inbox. {billing.reason === 'limit' ? 'Ask for a bigger plan, or wait for the month to reset.' : 'Pay the invoice and enter the transfer reference to restore selling.'}</div>
+            </div>
+          </div>
+          <Link href="/billing" className="btn">Open billing <ArrowRight aria-hidden /></Link>
+        </div>
+      )}
       {setup && (
         <div className="callout">
           <div className="row" style={{ flexWrap: 'nowrap' }}>

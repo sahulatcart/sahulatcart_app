@@ -2,6 +2,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { loadConfig, type Config } from '../config';
 import { isPakistaniMobile, phoneDigits } from './phone';
+import { ensureTrial } from './billing';
 
 /** merchants.settings for a shop that has not been through onboarding: the bot is OFF. */
 export const NEW_MERCHANT_SETTINGS = {
@@ -69,5 +70,6 @@ export async function bootstrapMerchant(
   });
   const row = (Array.isArray(r.data) ? r.data[0] : r.data) as { merchant_id?: string; role?: string } | null;
   if (r.error || !row?.merchant_id) return { error: r.error?.message ?? 'could not create the shop' };
+  await ensureTrial(db, row.merchant_id); // P7: 30 free days start now
   return { merchantId: row.merchant_id, role: row.role ?? 'owner' };
 }
