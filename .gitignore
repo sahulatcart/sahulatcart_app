@@ -18,3 +18,6 @@ coverage/
 
 # db/backup-schedule.sh writes this next to the copied script; never in the repo
 backup.env
+
+# a symlink named node_modules is not matched by "node_modules/" (directories only); one got committed on 2026-10-13
+node_modules
