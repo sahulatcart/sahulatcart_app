@@ -7,6 +7,21 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — Live: the pilot shop is kept free; finished branches deleted
+
+Owner decision after 0017: the pilot shop's subscription was set by hand from `trial` (ending
+2026-11-12) to `active` with `current_period_end = 2099-01-01` and `trial_ends_at` cleared
+(`UPDATE 1`, verified). With that, the billing job never invoices it or moves it to `past_due`,
+and `botMode()` keeps selling. The pilot plan's 300-conversations-a-month allowance still
+applies; raise the plan in the console if the pilot ever nears it.
+
+PR #35 (the opt-out fix, both review documents, and the M5/M6/P3 live record that had sat on
+`docs/m5-m6-live`) merged. Deleted on GitHub: `docs/m5-m6-live`, `fix/opt-out-cancels-pending-order`
+and the seven already-merged feature branches. `docs/market-ready-plan` (the SRS files) is still
+unmerged and was left alone.
+
+---
+
 ## 2026-10-13 — Fix: an opt-out mid-checkout left the order placed with its stock held
 
 Found by the lead's review of PR #29 (P5). "band karo" is both a stop word (`STOP_RE`, whole
