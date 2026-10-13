@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **29 files, 311 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **33 files, 369 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -437,6 +437,14 @@ discriminated union of ~20 reply kinds) and only phrases it.
 - Payment actions live in `payment-service.ts` as single conditional UPDATEs — the filter is the state
   check, so a double-click can't act twice (409 instead). Audit columns (`*_by_user_id`) reference
   `merchant_users.id`, which is `MerchantCtx.memberId` — **not** the Supabase auth user id.
+- **Order stages** (P4, since 2026-10-13): [orchestrator/order-stages.ts](backend/src/orchestrator/order-stages.ts)
+  moves an order confirmed/paid → preparing → dispatched → delivered, one step at a time (`STAGE_FROM`),
+  through the same `transition()`; anything else is 409. Routes are in
+  [routes/orders.ts](backend/src/routes/orders.ts); staff may set stages, **only managers cancel**, and
+  any non-terminal order can be cancelled. Dispatch tells the buyer through `notifyBuyer(…, 'order_sent')`:
+  free text inside the 24-hour window, else the paid notice on the order page. Unpaid bank orders
+  expire hourly in production ([lib/jobs.ts](backend/src/lib/jobs.ts), `settings.unpaidExpiryHours`
+  6–72, default 24); an order with a `payment_claims` row is never expired. Migration 0015.
 - Merchant input is validated in [lib/validation.ts](backend/src/lib/validation.ts) (product fields,
   negotiation defaults, settings). A price is never 0 and `maxDiscountPct` is 0–100 — a typo of 150
   would otherwise put every floor at Rs 0.

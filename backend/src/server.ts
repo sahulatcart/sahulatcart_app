@@ -7,6 +7,7 @@ import { adminRoutes } from './routes/admin';
 import { signupRoutes } from './routes/signup';
 import { onboardingRoutes } from './routes/onboarding';
 import { notificationRoutes } from './routes/notifications';
+import { orderRoutes } from './routes/orders';
 import { whatsappRoutes } from './routes/whatsapp';
 import { usageRoutes } from './routes/usage';
 import { platformRoutes } from './routes/platform';
@@ -36,6 +37,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(signupRoutes); // P1: self-service signup gate + bootstrap
   await app.register(onboardingRoutes); // P2: readiness + delivery zones (own auth hook)
   await app.register(notificationRoutes); // P3: push subscriptions, alert prefs, send-me-a-test (own auth hook)
+  await app.register(orderRoutes); // P4: preparing / dispatched / delivered (own auth hook)
 
   return app;
 }

@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Bell, Clock, Gauge, MessageSquare, ShoppingBag, Sparkles, Wallet } from 'lucide-react';
+import { ArrowRight, Bell, Clock, Gauge, MessageSquare, Package, ShoppingBag, Sparkles, Truck, Wallet } from 'lucide-react';
 import AppShell, { EmptyState, PageHead, PaymentPill, StatusPill } from '../components/AppShell';
 import { apiJson, rs } from '../lib/api';
 import { enablePush, pushState } from '../lib/push';
@@ -9,7 +9,7 @@ import { useToast } from '../components/Toast';
 
 interface Usage { month: string; outbound: number; freeQuota: number; paidOutbound: number; ratePaisa: number; estimatedCostPaisa: number; afterQuota: 'continue' | 'handoff'; llmCallsToday: number; llmDailyCap: number }
 interface Dash {
-  ordersToday: number; revenueToday: number; pendingPayments: number; activeChats: number;
+  ordersToday: number; revenueToday: number; pendingPayments: number; activeChats: number; toPrepare: number; toDispatch: number;
   recentOrders: { id: string; order_number: string; status: string; payment_status: string; total: number; delivery_name: string }[];
 }
 
@@ -61,6 +61,8 @@ export default function Dashboard() {
         {stat("Today's revenue", d && rs(d.revenueToday), Wallet)}
         {stat('Payments to verify', d?.pendingPayments, Clock, !!d?.pendingPayments)}
         {stat('Active chats', d?.activeChats, MessageSquare)}
+        {stat('To prepare', d?.toPrepare, Package, !!d?.toPrepare)}
+        {stat('To dispatch', d?.toDispatch, Truck, !!d?.toDispatch)}
       </div>
 
       {usage && (() => {
