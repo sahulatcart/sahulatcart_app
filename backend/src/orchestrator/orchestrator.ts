@@ -60,6 +60,12 @@ function coerceDefaults(raw: unknown): NegotiationDefaults {
   };
 }
 
+// Order statuses in the buyer's words (P8.3). "Aapka order SK-1001 bhej diya gaya hai."
+const STATUS_UR: Record<string, string> = {
+  draft: 'abhi confirm nahi hua', pending_confirmation: 'abhi confirm nahi hua', confirmed: 'confirm ho chuka', awaiting_payment: 'payment ke intezar mein',
+  paid: 'ki payment mil gayi', preparing: 'tayyar ho raha', dispatched: 'bhej diya gaya', delivered: 'deliver ho chuka', cancelled: 'cancel ho gaya', returned: 'wapas aa gaya',
+};
+
 // ── Deterministic Roman-Urdu fallbacks (used when the LLM is down or the price guard fails) ──
 /** " (3 ki total Rs 7500)" — appended when the customer asked for multiple units. */
 function qtySuffix(spec: { quantity?: number; totalRupees?: number }): string {
@@ -86,6 +92,11 @@ function fallbackText(spec: ReplySpec): string {
     case 'bank_await': return 'Amount transfer kar ke payment ka screenshot yahan bhej dein, shukriya.';
     case 'payment_received': return 'Screenshot mil gaya, verify kar ke abhi confirm karte hain.';
     case 'payment_verified': return `Order ${spec.orderNumber} confirm ho gaya. Shukriya!`;
+    case 'order_status': {
+      if (!spec.orderNumber) return 'Aapka koi order abhi record mein nahi mila. Order karna ho to product ka naam batayein.';
+      const line = `Aapka order ${spec.orderNumber} ${STATUS_UR[spec.status ?? ''] ?? spec.status} hai.`;
+      return spec.claimPaid && spec.status === 'awaiting_payment' ? `${line} Payment ka screenshot yahan bhej dein, verify kar ke confirm karte hain.` : line;
+    }
     case 'clarify': return 'Zara batayein kaunsa product chahiye?';
     case 'chitchat': return 'Ji bilkul! Batayein kaise madad karoon?';
     case 'handoff': return 'Aapko humari team se connect kar raha hoon, thodi dair mein reply aayega.';
@@ -298,6 +309,8 @@ async function runTurn(db: SupabaseClient, ctx: OrchestratorCtx, message: Normal
 
   // P5 (FR-P5.2): the exact STOP words work in every state, before any LLM call.
   if (message.type !== 'image' && STOP_RE.test(text)) return optOut(db, ctx, context);
+  // P8.5: the chat so far goes to every AI call as context (the current message is excluded).
+  cc.history = await recentHistory(db, ctx.conversationId, message.waMessageId);
 
   // M5: past the free 1,000 messages a month, a shop set to "hand off" stops selling to NEW
   // conversations; a buyer already in checkout finishes (the states below), never dropped.
@@ -323,11 +336,14 @@ async function runTurn(db: SupabaseClient, ctx: OrchestratorCtx, message: Normal
   if (state === 'selecting_payment') return handlePayment(db, ctx, cc, context, message);
   if (state === 'awaiting_payment_proof') return handlePaymentProof(db, ctx, cc, context, message);
 
+  // P8.3: "status" / "mera order kahan hai" as the whole message never needs the classifier.
+  if (STATUS_RE.test(text)) return orderStatusReply(db, ctx, context, state);
+
   // ── Shopping states: classify intent ──
   let cls;
   try {
     await chargeLlmCall(); // M5 daily AI cap → the same handoff as an outage
-    cls = await getLlmClient().classify(text, { productNames: catalog.map((c) => c.name) });
+    cls = await getLlmClient().classify(text, { productNames: catalog.map((c) => c.name), history: cc.history });
   } catch {
     // The AI is down (quota/outage). Hand the chat to a person rather than promise a reply that never comes.
     await handoff(db, ctx, cc, context, state, 'The AI is unavailable (quota or outage), so the bot handed this chat to you.');
@@ -350,6 +366,12 @@ async function runTurn(db: SupabaseClient, ctx: OrchestratorCtx, message: Normal
 
   // ── Intent routing ──
   if (cls.intent === 'stop') return optOut(db, ctx, context);
+  // P8.3: "mera order kahan hai?" / "payment kar di" answer from the buyer's latest placed order, never from the price path.
+  if (cls.intent === 'ask_status' || cls.intent === 'claim_paid') return orderStatusReply(db, ctx, context, state, cls.intent === 'claim_paid');
+  if (cls.intent === 'out_of_scope' && !product) {
+    await reply(db, ctx, await safeCompose({ kind: 'clarify' }, cc), state, context, false);
+    return;
+  }
   if (cls.intent === 'human_request' || cls.intent === 'complaint') {
     await handoff(db, ctx, cc, context, convoRes.data?.current_state as BotState);
     return;
@@ -739,6 +761,27 @@ async function askPaymentMethod(db: SupabaseClient, ctx: OrchestratorCtx, cc: Co
 
 // NOTE: these run on address/free-text too — keep patterns multi-word or unambiguous
 // (e.g. "Malik" is a common name; "Band Road" is a real street) to avoid false triggers.
+// P8.3: whole-message status questions. Anchored, so an address line never matches.
+const STATUS_RE = /^\s*(status|order status|order ka status|mera order|mera order kahan hai|order kahan hai)\s*\??\s*$/i;
+
+/** The buyer's latest placed order with this shop, in Roman Urdu; template only, no LLM call. */
+async function orderStatusReply(db: SupabaseClient, ctx: OrchestratorCtx, context: Record<string, unknown>, state: BotState, claimPaid = false): Promise<void> {
+  const { data: o } = await db.from('orders').select('order_number, status').eq('merchant_id', ctx.merchantId).eq('customer_id', ctx.customerId)
+    .not('order_number', 'is', null).order('placed_at', { ascending: false }).limit(1).maybeSingle();
+  const spec: ReplySpec = { kind: 'order_status', orderNumber: (o?.order_number as string | null) ?? null, status: (o?.status as string | null) ?? null, claimPaid };
+  await reply(db, ctx, fallbackText(spec), state, context, false);
+}
+
+/** P8.5: the last 12 lines of this chat before the current message, each trimmed to 300 characters, oldest first. */
+async function recentHistory(db: SupabaseClient, conversationId: string, currentWaMessageId: string): Promise<string[]> {
+  const { data } = await db.from('messages').select('direction, body, wa_message_id').eq('conversation_id', conversationId).order('created_at', { ascending: false }).limit(13);
+  return (data ?? [])
+    .filter((m) => m.wa_message_id !== currentWaMessageId && typeof m.body === 'string' && m.body.trim())
+    .slice(0, 12)
+    .reverse()
+    .map((m) => `${m.direction === 'inbound' ? 'Customer' : 'Bot'}: ${String(m.body).replace(/\s+/g, ' ').trim().slice(0, 300)}`);
+}
+
 // P5: whole-message keywords only, so "band karo" alone is an opt-out while "order band karo" stays a cancel.
 const STOP_RE = /^\s*(stop|unsubscribe|band karo|bandh karo|msg mat karo)\s*$/i;
 const START_RE = /^\s*(start|shuru)\s*$/i;
@@ -844,6 +887,10 @@ async function handleEscape(
     await handoff(db, ctx, cc, context, resumeFrom);
     return true;
   }
+  if (STATUS_RE.test(txt)) { // P8.3: works mid-checkout too, without leaving the state
+    await orderStatusReply(db, ctx, context, resumeFrom);
+    return true;
+  }
   if (CANCEL_RE.test(txt)) {
     const orderId = context.pendingOrderId as string | undefined;
     if (orderId) {
@@ -891,7 +938,7 @@ async function handleDelivery(db: SupabaseClient, ctx: OrchestratorCtx, cc: Comp
   let ex: DeliveryDetails;
   try {
     await chargeLlmCall();
-    ex = await getLlmClient().extractDelivery(message.text ?? '');
+    ex = await getLlmClient().extractDelivery(message.text ?? '', cc.history);
   } catch {
     // Re-asking would loop forever ("naam bata dein") while the AI can't read the reply.
     await handoff(db, ctx, cc, context, 'collecting_delivery', 'The AI is unavailable, so the bot could not read the delivery details.');
