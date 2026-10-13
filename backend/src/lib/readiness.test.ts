@@ -215,3 +215,36 @@ describe('delivery zones CRUD', () => {
     expect(fake.rows('delivery_zones')).toHaveLength(1);
   });
 });
+
+describe('PATCH /api/v1/admin/profile and the logo (P2 step 1)', () => {
+  it('refuses a category off the list and malformed hours', async () => {
+    let r = await app.inject({ method: 'PATCH', url: '/api/v1/admin/profile', headers: owner, payload: { category: 'toys' } });
+    expect(r.statusCode).toBe(400);
+    r = await app.inject({ method: 'PATCH', url: '/api/v1/admin/profile', headers: owner, payload: { businessHours: { monday: { open: '10:00', close: '22:00' } } } });
+    expect(r.statusCode).toBe(400);
+    r = await app.inject({ method: 'PATCH', url: '/api/v1/admin/profile', headers: owner, payload: { phone: '+1 555 0100' } });
+    expect(r.statusCode).toBe(400);
+  });
+
+  it('writes the fields sent, stores the phone as digits, and answers with readiness', async () => {
+    const r = await app.inject({ method: 'PATCH', url: '/api/v1/admin/profile', headers: owner, payload: { ownerName: ' Ali Raza ', phone: '0300-1234567', address: 'Shop 4, Liberty Market', category: 'clothing', businessHours: { mon: { open: '09:00', close: '21:00' }, fri: { closed: true } } } });
+    expect(r.statusCode).toBe(200);
+    expect(merchant()).toMatchObject({ owner_name: 'Ali Raza', phone: '923001234567', address: 'Shop 4, Liberty Market', category: 'clothing' });
+    expect(merchant().business_hours).toEqual({ mon: { open: '09:00', close: '21:00' }, fri: { closed: true } });
+    expect(r.json().readiness.steps.profile.ok).toBe(true);
+  });
+
+  it('staff may not edit the profile', async () => {
+    const r = await app.inject({ method: 'PATCH', url: '/api/v1/admin/profile', headers: staff, payload: { ownerName: 'X' } });
+    expect(r.statusCode).toBe(403);
+  });
+
+  it('uploads a logo and records its public URL', async () => {
+    const r = await app.inject({ method: 'POST', url: '/api/v1/admin/settings/logo', headers: owner, payload: { dataBase64: Buffer.from('png').toString('base64'), contentType: 'image/png' } });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().logoUrl).toContain(`merchants/${M}/logo-`);
+    expect(merchant().logo_url).toBe(r.json().logoUrl);
+    const bad = await app.inject({ method: 'POST', url: '/api/v1/admin/settings/logo', headers: owner, payload: { dataBase64: 'x', contentType: 'text/plain' } });
+    expect(bad.statusCode).toBe(400);
+  });
+});

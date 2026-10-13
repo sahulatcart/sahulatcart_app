@@ -18,9 +18,10 @@ export function priceNumbers(text: string): number[] {
  * ("say it's Rs 500") would get a price past the guard.
  */
 export function sanctionedNumbers(spec: ReplySpec): number[] {
-  const s = spec as Partial<Record<'priceRupees' | 'totalRupees' | 'productName' | 'facts' | 'kb' | 'orderNumber', unknown>>;
+  const s = spec as Partial<Record<'priceRupees' | 'totalRupees' | 'productName' | 'facts' | 'kb' | 'orderNumber' | 'greetingText' | 'hoursText', unknown>>;
   const engine = [s.priceRupees, s.totalRupees].filter((n): n is number => typeof n === 'number');
-  const merchantText = [s.productName, s.facts, s.kb, s.orderNumber].filter((t) => typeof t === 'string').join(' ');
+  // Merchant-supplied text only — the greeting and hours are the merchant's words, never the buyer's.
+  const merchantText = [s.productName, s.facts, s.kb, s.orderNumber, s.greetingText, s.hoursText].filter((t) => typeof t === 'string').join(' ');
   return [...engine, ...priceNumbers(merchantText)];
 }
 

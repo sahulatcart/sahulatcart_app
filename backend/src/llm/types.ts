@@ -16,9 +16,12 @@ export interface ClassifyContext {
   productNames: string[]; // catalog names, to help resolution
 }
 
+/** The ways a buyer may pay; the merchant switches COD on or off and adds bank accounts (P2 step 5). */
+export type PaymentMethodKind = 'cod' | 'bank';
+
 /** A structured instruction for what to say — the LLM only phrases it (Roman Urdu). */
 export type ReplySpec =
-  | { kind: 'greeting' }
+  | { kind: 'greeting'; greetingText?: string; hoursText?: string } // the merchant's own line (P2 step 6) + today's hours (FR-P2.5)
   | { kind: 'quote'; productName: string; priceRupees: number; quantity?: number; totalRupees?: number }
   | { kind: 'counter'; productName: string; priceRupees: number; final?: boolean; quantity?: number; totalRupees?: number }
   | { kind: 'accept'; productName: string; priceRupees: number; quantity?: number; totalRupees?: number }
@@ -30,7 +33,7 @@ export type ReplySpec =
   | { kind: 'order_ack'; productName: string; priceRupees: number }
   | { kind: 'ask_delivery' } // after accept — ask name/address/area
   | { kind: 'ask_delivery_missing'; missing: string }
-  | { kind: 'ask_payment_method'; priceRupees: number } // summary total + COD/bank?
+  | { kind: 'ask_payment_method'; priceRupees: number; methods: PaymentMethodKind[] } // summary total + the methods the merchant enabled
   | { kind: 'bank_await' } // sent after bank details — ask for screenshot
   | { kind: 'payment_received' } // screenshot received, verifying
   | { kind: 'payment_verified'; orderNumber: string }

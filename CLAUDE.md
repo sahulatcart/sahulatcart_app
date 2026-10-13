@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **24 files, 235 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **26 files, 274 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -378,7 +378,19 @@ discriminated union of ~20 reply kinds) and only phrases it.
   onboarding checklist and the settings toggle. `business_hours` is `{ mon: { open, close } }` per
   day; a day marked `{ closed: true }` does not count as "hours set". Delivery zones are edited
   through [routes/onboarding.ts](backend/src/routes/onboarding.ts); the same area in any case is
-  refused, since the bot matches areas by whole words.
+  refused, since the bot matches areas by whole words. The same file holds `PATCH /admin/profile`
+  (name, owner, phone, address, category, hours — then a best-effort `syncBusinessProfile()`) and the
+  logo upload.
+- **The bot offers only the payment methods the merchant enabled.** `paymentMethods()` in the
+  orchestrator reads `settings.codEnabled` (default on) and the default active bank account. Both →
+  two buttons; COD only → a text confirm where a plain "haan" is a yes; bank only → no question, the
+  details go straight out; neither → handoff. Every path that takes a payment choice, including the
+  "COD kar dein" switch while waiting for a screenshot, goes through it. `settings.paymentInstructions`
+  is appended under the bank details.
+- **The greeting is the merchant's.** `bot_persona.greeting` and today's hours
+  (`todayHoursText()` in [lib/hours.ts](backend/src/lib/hours.ts), Pakistan time) travel on the
+  `greeting` reply spec as `greetingText`/`hoursText`; both are merchant text, so the guard sanctions
+  their numbers. `formatHours()` folds the week for the WhatsApp business profile.
 - **Phone numbers are digits only** everywhere they are stored or compared — `923001234567`, never
   `+92 300…` — because that is what WhatsApp sends as `wa_id`. Normalise with `phoneDigits()` and
   compare with `samePhone()` from [lib/phone.ts](backend/src/lib/phone.ts).

@@ -344,3 +344,72 @@ describe('M4: fewer messages, buttons, the window rule', () => {
     expect(await notifyBuyerNow(db.client, { merchantId: M }, order().id, 'order_sent')).toMatchObject({ ok: false, code: 'NOT_PLACED' });
   });
 });
+
+describe('P2: only the payment methods the merchant enabled; the greeting', () => {
+  const everyDay = Object.fromEntries(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map((d) => [d, { open: '10:00', close: '22:00' }]));
+  const merchant = () => db.rows('merchants')[0]!;
+
+  it('COD off: no question — one message with the bank details, straight to the screenshot wait', async () => {
+    merchant().settings.codEnabled = false;
+    const out = await toPayment();
+    expect(h.sent.at(-1)!.type).toBe('text');
+    expect(out).toContain('bank transfer se hogi');
+    expect(out).toContain('Meezan Bank');
+    expect(out).toContain('screenshot');
+    expect(convo().current_state).toBe('awaiting_payment_proof');
+    expect(order().payment_method).toBe('bank_transfer');
+  });
+
+  it('COD off: "cash on delivery" while waiting for the screenshot does not switch the order', async () => {
+    merchant().settings.codEnabled = false;
+    await toPayment();
+    const out = await say('cash on delivery kar dein');
+    expect(out).toContain('Cash on Delivery available nahi');
+    expect(order().payment_method).toBe('bank_transfer');
+    expect(convo().current_state).toBe('awaiting_payment_proof');
+  });
+
+  it('COD only: the question asks to confirm, and a plain "haan" places the COD order', async () => {
+    db.rows('bank_accounts')[0]!.is_active = false;
+    const ask = await toPayment();
+    expect(ask).toContain('haan');
+    expect(ask).not.toContain('bank transfer');
+    expect(await say('haan')).toContain('SK-1001');
+    expect(order().payment_method).toBe('cod');
+  });
+
+  it('COD only: asking for bank transfer is refused with the COD line, and the order waits', async () => {
+    db.rows('bank_accounts')[0]!.is_active = false;
+    await toPayment();
+    expect(await say('bank transfer')).toContain('sirf Cash on Delivery');
+    expect(convo().current_state).toBe('selecting_payment');
+  });
+
+  it('neither method: the chat goes to the merchant instead of trapping the buyer', async () => {
+    merchant().settings.codEnabled = false;
+    db.rows('bank_accounts')[0]!.is_active = false;
+    await toPayment();
+    expect(convo().status).toBe('human_takeover');
+    expect(db.rows('notifications').some((n) => String(n.body).includes('No payment method'))).toBe(true);
+  });
+
+  it('the merchant\'s payment note appears under the bank details', async () => {
+    merchant().settings.paymentInstructions = 'JazzCash bhi chalta hai: 0300-1234567';
+    await toPayment();
+    const out = await say('bank transfer');
+    expect(out).toContain('JazzCash bhi chalta hai');
+  });
+
+  it('a greeting uses the merchant\'s own line and today\'s hours', async () => {
+    merchant().bot_persona = { greeting: 'Khush aamdeed Test Shop mein!' };
+    merchant().business_hours = everyDay;
+    const out = await say('salam', { intent: 'greet' });
+    expect(out).toContain('Khush aamdeed Test Shop mein!');
+    expect(out).toContain('Hum aaj 10:00–22:00 khule hain');
+  });
+
+  it('without a greeting or hours, the default greeting is unchanged', async () => {
+    const out = await say('salam', { intent: 'greet' });
+    expect(out).toBe('Assalam-o-Alaikum! Kaise madad kar sakta hoon?');
+  });
+});

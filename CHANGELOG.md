@@ -7,6 +7,54 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — P2, part 2: the seven panels, COD enforced, the greeting, the live-merchant back-fill
+
+**Outcome** — onboarding is complete end to end. Every panel of the wizard saves on its own
+(FR-P2.8), the bot offers only the payment methods the merchant switched on, the merchant's own
+greeting and today's hours open each chat, and the WhatsApp business profile gets the new address
+and hours. Branch `feat/p2-onboarding-panels`, week 3 of SRS-Uzair v1.1.
+
+**Panels.** 1 Shop: name, owner, phone (stored digits-only), address, category (fixed list), hours
+per day with a closed toggle, logo upload, and the attestations shown as accepted with their date —
+`PATCH /api/v1/admin/profile` and `POST /api/v1/admin/settings/logo`, both in
+[routes/onboarding.ts](backend/src/routes/onboarding.ts). After a profile save `syncBusinessProfile()`
+(IC-9) runs best-effort; it now prefers `merchants.address` and `business_hours` (folded to
+"Mon–Thu 10:00–22:00, Sat 11:00–18:00" by `formatHours()`) over the knowledgebase text — a small
+edit in Fazal's `connect.ts`, noted in the PR. 2 WhatsApp: M2's page became an exported
+`WhatsAppConnect` component with an `embedded` flag; the page is a one-line wrapper. 3 Products: the
+catalog's add form and CSV import inline, plus the list. 4 Delivery: moved to
+`components/DeliveryZones.tsx`, which Settings now shows too (FR-P2.7). 5 Payment: COD switch, bank
+accounts, and a payment note. 6 Bot: name, style presets, greeting, max discount and rounds. 7 Test
+order: the shop number, a wa.me link, and M3's "send test message".
+
+**The bot, enforced (FR-P2.3 step 5).** `paymentMethods()` in the orchestrator reads
+`settings.codEnabled` (default on) and the default active bank account. Both: two buttons as M4
+built. COD only: a text "confirm karne ke liye haan likh dein", and a plain yes (`YES_RE`, anchored
+to the start of the message) places the COD order. Bank only: no question at all — the order is
+placed and the details go out in one message. Neither: handoff with a notification naming the
+cause (readiness blocks going live in that state, so this is a safety net). Asking for a disabled
+method gets one "maazrat" line and the other method. **One trap found while testing:** typing "COD"
+while waiting for a screenshot switched the bank order to COD through `handlePaymentProof()` even
+with COD off; that path now checks the same function. `settings.paymentInstructions` is appended
+under the bank details.
+
+**Greeting (step 6, FR-P2.5).** `bot_persona.greeting` was saved by the old wizard and never read.
+The `greeting` reply spec now carries `greetingText` and `hoursText` ("Hum aaj 10:00–22:00 khule
+hain.", from `todayHoursText()` in [lib/hours.ts](backend/src/lib/hours.ts), Pakistan time), the
+fallback uses both, the prompt asks for them close to verbatim, and `sanctionedNumbers()` counts
+their digits as merchant text so the guard does not throw the hours away.
+
+**Back-fill (FR-P2.10).** `db/backfill/2026-10-13-live-merchant-attestations.sql` records the two
+attestations for the pilot merchant (created by the seed, never through signup). Fazal runs it once
+after 0013, with the number id filled in; everything else the owner does through the wizard.
+
+**Tests.** 8 flow tests (COD off → straight to bank details; COD typed during the screenshot wait
+does not switch; COD-only confirm with "haan"; bank refused when only COD; neither → handoff; the
+payment note; the greeting with hours; the default greeting unchanged), 4 profile/logo route tests,
+6 for `lib/hours.ts`. Suite: 26 files, 274 tests.
+
+---
+
 ## 2026-10-13 — M4: templates, the 24-hour cost rule, fewer messages per sale
 
 Branch `feat/m4-templates`. 22 test files, 213 tests (21 new). Both typechecks clean; `next build`

@@ -45,7 +45,8 @@ function loadFbSdk(appId: string, version: string): Promise<void> {
   });
 }
 
-export default function WhatsAppPage() {
+/** The connect flow. `embedded` drops the page chrome so the onboarding wizard can show it as step 2 (P2). */
+export function WhatsAppConnect({ embedded = false }: { embedded?: boolean }) {
   const toast = useToast();
   const [cfg, setCfg] = useState<Config | null>(null);
   const [st, setSt] = useState<Status | null>(null);
@@ -147,13 +148,13 @@ export default function WhatsAppPage() {
     setBusy(null);
   }
 
-  const head = <PageHead title="WhatsApp" sub="Connect the number the bot answers from" />;
-  if (!st) return <AppShell><BackLink href="/settings" label="Settings" />{head}<div className="card pad"><div className="skeleton" style={{ height: 120 }} /></div></AppShell>;
+  const Frame = ({ children }: { children: React.ReactNode }) => embedded
+    ? <>{children}</>
+    : <AppShell><BackLink href="/settings" label="Settings" /><PageHead title="WhatsApp" sub="Connect the number the bot answers from" />{children}</AppShell>;
+  if (!st) return <Frame><div className="card pad"><div className="skeleton" style={{ height: 120 }} /></div></Frame>;
 
   return (
-    <AppShell>
-      <BackLink href="/settings" label="Settings" />
-      {head}
+    <Frame>
 
       {choices && (
         <div className="card pad" style={{ marginBottom: 16 }}>
@@ -248,6 +249,10 @@ export default function WhatsAppPage() {
           </div>
         </div>
       )}
-    </AppShell>
+    </Frame>
   );
+}
+
+export default function WhatsAppPage() {
+  return <WhatsAppConnect />;
 }

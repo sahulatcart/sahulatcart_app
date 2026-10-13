@@ -13,6 +13,7 @@ import {
 } from './meta-graph';
 import { ensureTemplates, listTemplates } from './templates';
 import type { NormalizedMessage } from './types';
+import { formatHours } from '../lib/hours';
 
 /**
  * "Connect WhatsApp" through Meta Embedded Signup (SRS-Fazal M2).
@@ -300,16 +301,18 @@ function sendFailure(code: number | string | undefined): { message: string; flag
 export async function syncBusinessProfile(db: SupabaseClient, merchantId: string): Promise<boolean> {
   const [{ data: num }, { data: m }] = await Promise.all([
     db.from('whatsapp_numbers').select('phone_number_id, status').eq('merchant_id', merchantId).in('status', ['connected', 'connecting']).limit(1).maybeSingle(),
-    db.from('merchants').select('business_name, settings, business_hours, email').eq('id', merchantId).maybeSingle(),
+    db.from('merchants').select('business_name, settings, business_hours, email, address').eq('id', merchantId).maybeSingle(),
   ]);
   if (!num || !m) return false;
   const token = await tokenForNumber(db, num.phone_number_id);
   if (!token) return false;
   const kb = ((m.settings as { kb?: { address?: string; hours?: string; delivery?: string } } | null)?.kb) ?? {};
-  const hoursText = kb.hours?.trim();
+  // P2 step 1 writes merchants.address and business_hours; the knowledgebase text is the fallback.
+  const address = (typeof m.address === 'string' && m.address.trim()) || kb.address?.trim();
+  const hoursText = formatHours(m.business_hours) ?? kb.hours?.trim();
   const profile = {
     about: String(m.business_name ?? '').slice(0, 139),
-    ...(kb.address?.trim() ? { address: kb.address.trim().slice(0, 256) } : {}),
+    ...(address ? { address: address.slice(0, 256) } : {}),
     description: [hoursText ? `Hours: ${hoursText}` : '', kb.delivery?.trim() ? `Delivery: ${kb.delivery.trim()}` : ''].filter(Boolean).join('. ').slice(0, 512) || `${m.business_name} on WhatsApp`,
     ...(m.email ? { email: String(m.email).slice(0, 128) } : {}),
   };

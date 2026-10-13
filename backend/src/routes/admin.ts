@@ -477,7 +477,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // ── Settings ──
   app.get('/api/v1/admin/settings', async (req, reply) => {
     const mid = req.merchantCtx!.merchantId;
-    const m = await db.from('merchants').select('business_name, negotiation_defaults, settings, bot_persona').eq('id', mid).single();
+    // The profile columns feed onboarding step 1 (P2); email is read-only (it is the login).
+    const m = await db.from('merchants').select('business_name, owner_name, email, phone, address, category, business_hours, logo_url, negotiation_defaults, settings, bot_persona').eq('id', mid).single();
     // Staff get no bank-account access at all, not even to read (docs/spec/09 §2.3).
     const banks = isManager(req.merchantCtx!) ? await db.from('bank_accounts').select('id, bank_name, account_title, account_number, iban, is_default, is_active').eq('merchant_id', mid) : null;
     const zones = await db.from('delivery_zones').select('id, area_name, city, charge, is_serviceable, eta_text').eq('merchant_id', mid);
