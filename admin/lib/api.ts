@@ -12,6 +12,11 @@ export async function api(path: string, opts: RequestInit = {}): Promise<Respons
     const j = (await res.clone().json().catch(() => null)) as { error?: { code?: string } } | null;
     window.location.href = j?.error?.code === 'no_membership' ? '/auth/confirmed' : '/login';
   }
+  // M6: the platform owner has no shop; every merchant page sends them to the console.
+  if (res.status === 403 && typeof window !== 'undefined' && !window.location.pathname.startsWith('/platform')) {
+    const j = (await res.clone().json().catch(() => null)) as { error?: { code?: string } } | null;
+    if (j?.error?.code === 'NO_SHOP') window.location.href = '/platform';
+  }
   return res;
 }
 

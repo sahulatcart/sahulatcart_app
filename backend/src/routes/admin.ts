@@ -61,7 +61,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/v1/admin/me', async (req, reply) => {
     const { merchantId: mid, role, isPlatformAdmin } = req.merchantCtx!;
-    const m = await db.from('merchants').select('id, business_name, settings, negotiation_defaults').eq('id', mid).maybeSingle();
+    const m = await db.from('merchants').select('id, business_name, status, settings, negotiation_defaults').eq('id', mid).maybeSingle();
     return reply.send({ merchant: m.data, role, isPlatformAdmin });
   });
 

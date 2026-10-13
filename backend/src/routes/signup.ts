@@ -2,7 +2,7 @@
 // portal; these routes gate it and turn a confirmed user into a shop.
 import type { FastifyInstance } from 'fastify';
 import { getServiceClient } from '../lib/supabase';
-import { resolveAuthUser } from '../lib/auth';
+import { platformAdminFor, resolveAuthUser } from '../lib/auth';
 import { bootstrapMerchant, signupAllowed, signupProfile } from '../lib/signup';
 
 const closed = { error: { code: 'signup_closed', message: 'Sahulatcart is in private pilot; email us to join' } };
@@ -22,6 +22,8 @@ export async function signupRoutes(app: FastifyInstance): Promise<void> {
     const user = await resolveAuthUser(req);
     if (!user) return reply.code(401).send({ error: { code: 'UNAUTHORIZED', message: 'login required' } });
     if (!signupAllowed(user.email)) return reply.code(403).send(closed);
+    // IC-7 (M6): the platform owner logs in to the console, not into a shop of their own.
+    if (await platformAdminFor(user.id)) return reply.code(409).send({ error: { code: 'PLATFORM_ADMIN', message: 'This login is a platform admin; open /platform instead' } });
     const profile = signupProfile({ ...user.metadata, ...((req.body as Record<string, unknown> | undefined) ?? {}) });
     if ('error' in profile) return reply.code(400).send({ error: { code: 'BAD', message: profile.error } });
     const r = await bootstrapMerchant(db, user, profile);

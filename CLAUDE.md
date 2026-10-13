@@ -296,6 +296,18 @@ send in `client.ts`, every inbound in `webhook.ts`, and every AI call through `c
   classify falls into the existing "AI down" handoff and compose falls back to the template.
   Outside a budget scope (admin actions, tests) it is a no-op. Both settings are validated in
   `lib/validation.ts`.
+- **Platform console (M6, since 2026-10-13).** [routes/platform.ts](backend/src/routes/platform.ts)
+  behind `requirePlatformAdmin()`: a JWT whose user is in `platform_admins` (with or without a shop)
+  or the pilot `ADMIN_API_TOKEN`. `jwtAuthn()` now looks up `platform_admins` beside the membership;
+  a platform admin with no shop is `kind: 'platform'`, never `no_membership` (IC-7), so merchant
+  routes answer 403 `NO_SHOP`, the portal's `api()` sends them to `/platform`, and
+  `POST /signup/bootstrap` answers 409 for them. **Suspension**: `merchants.status='suspended'`
+  (set by the console with a reason in `settings.suspension`, plus an `audit_log` row) makes the
+  orchestrator store-only and every merchant route 403 `merchant_suspended` except the few in
+  `SUSPENDED_OK` (`/me`, `GET /settings`, notifications) that the portal needs to show the banner.
+  Adding a platform admin is a one-off SQL on `platform_admins` (`auth_user_id` from
+  `auth.users`), recorded in the CHANGELOG, never a migration. The fake DB has `reset()` for route
+  tests, because route modules capture the client once at registration.
 - **A page file may export only the page.** `next build` refuses a named export from
   `app/**/page.tsx` ("does not match the required types of a Next.js Page"), while `tsc` is happy.
   Shared pieces go in `admin/components/`. This took the admin deploy down after PR #21 while the
