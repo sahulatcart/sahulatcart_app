@@ -787,9 +787,32 @@ const STOP_RE = /^\s*(stop|unsubscribe|band karo|bandh karo|msg mat karo)\s*$/i;
 const START_RE = /^\s*(start|shuru)\s*$/i;
 
 /** One goodbye, then silence for good (until "start"). Shared by the keyword and the classifier. */
+/**
+ * Cancel the order this chat is checking out (draft/confirmed/awaiting_payment): stock back, history
+ * row, merchant told, open negotiations abandoned. Shared by "cancel" and by an opt-out mid-checkout,
+ * so a buyer who leaves never strands a placed order with its stock reserved.
+ */
+async function cancelPending(db: SupabaseClient, ctx: OrchestratorCtx, context: Record<string, unknown>, note: string): Promise<void> {
+  const orderId = context.pendingOrderId as string | undefined;
+  if (orderId) {
+    const o = await db.from('orders').select('status').eq('id', orderId).eq('merchant_id', ctx.merchantId).maybeSingle();
+    if (o.data && CUSTOMER_CANCELLABLE.includes(o.data.status as string)) {
+      await db.from('orders').update({ status: 'cancelled' }).eq('id', orderId).eq('status', o.data.status);
+      await db.rpc('release_stock', { p_order: orderId }); // no-op if nothing was reserved
+      await db.from('order_status_history').insert({ order_id: orderId, from_status: o.data.status, to_status: 'cancelled', changed_by: 'customer' });
+      await notify(db, ctx.merchantId, { type: 'system', title: 'Order cancelled by customer', body: note, data: { orderId } });
+    }
+  }
+  // Abandon this conversation's open negotiations so they are not reused by a future order.
+  await db.from('negotiations').update({ status: 'abandoned' }).eq('conversation_id', ctx.conversationId).in('status', ['agreed', 'ongoing']);
+}
+
 async function optOut(db: SupabaseClient, ctx: OrchestratorCtx, context: Record<string, unknown>): Promise<void> {
   await db.from('customers').update({ wa_opt_in_status: 'out', wa_opt_in_at: new Date().toISOString() }).eq('id', ctx.customerId);
-  await reply(db, ctx, 'Theek hai, aainda message nahi karenge. Shukriya!', 'completed', context);
+  // "band karo" during checkout is both a stop and a cancel: the order must not stay placed with
+  // its stock held after the buyer has gone silent on us.
+  await cancelPending(db, ctx, context, 'The customer opted out of messages during checkout; the order was cancelled.');
+  await reply(db, ctx, "Theek hai, aainda message nahi karenge. Shukriya! Dobara baat karni ho to 'start' likh dein.", 'completed', {});
 }
 
 const CANCEL_RE = /\bcancel\b|cancle|band kar do|band karo|rehne d|rehnay d|nahi chahiye|nai chahiye|nahin chahiye|chhor d|chor d|khatam kar|order wapis|mind badal/;
@@ -892,18 +915,7 @@ async function handleEscape(
     return true;
   }
   if (CANCEL_RE.test(txt)) {
-    const orderId = context.pendingOrderId as string | undefined;
-    if (orderId) {
-      const o = await db.from('orders').select('status').eq('id', orderId).eq('merchant_id', ctx.merchantId).maybeSingle();
-      if (o.data && CUSTOMER_CANCELLABLE.includes(o.data.status as string)) {
-        await db.from('orders').update({ status: 'cancelled' }).eq('id', orderId).eq('status', o.data.status);
-        await db.rpc('release_stock', { p_order: orderId }); // no-op if nothing was reserved
-        await db.from('order_status_history').insert({ order_id: orderId, from_status: o.data.status, to_status: 'cancelled', changed_by: 'customer' });
-        await notify(db, ctx.merchantId, { type: 'system', title: 'Order cancelled by customer', body: 'The customer cancelled during checkout.', data: { orderId } });
-      }
-    }
-    // Abandon this conversation's open negotiations so they are not reused by a future order.
-    await db.from('negotiations').update({ status: 'abandoned' }).eq('conversation_id', ctx.conversationId).in('status', ['agreed', 'ongoing']);
+    await cancelPending(db, ctx, context, 'The customer cancelled during checkout.');
     await reply(db, ctx, 'Theek hai, order cancel kar diya hai. Kabhi bhi dobara order kar sakte hain. Shukriya!', 'browsing', {});
     return true;
   }

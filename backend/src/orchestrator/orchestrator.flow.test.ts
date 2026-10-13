@@ -571,6 +571,29 @@ describe('stock double-order guard (P5, FR-P5.7)', () => {
   });
 });
 
+describe('opt-out during checkout cancels the pending order (fix after the P5 review)', () => {
+  it('"band karo" while waiting for the screenshot: order cancelled, stock back, merchant told, buyer opted out', async () => {
+    await toPayment();
+    await say('bank transfer');
+    expect(order().status).toBe('awaiting_payment');
+    expect(stock()).toBe(2);
+    const out = await say('band karo');
+    expect(out).toContain('aainda message nahi karenge');
+    expect(out).toContain('start');
+    expect(order().status).toBe('cancelled');
+    expect(stock()).toBe(3);
+    expect(db.rows('customers')[0]!.wa_opt_in_status).toBe('out');
+    expect(db.rows('notifications').at(-1)?.title).toContain('cancelled');
+    expect(db.rows('order_status_history').at(-1)).toMatchObject({ to_status: 'cancelled', changed_by: 'customer' });
+  });
+
+  it('STOP with nothing in progress just opts out', async () => {
+    await say('STOP');
+    expect(db.rows('customers')[0]!.wa_opt_in_status).toBe('out');
+    expect(db.rows('orders')).toHaveLength(0);
+  });
+});
+
 describe('billing mode (P7, FR-P7.6)', () => {
   const sub = (patch: Record<string, unknown>) => db.add('subscriptions', { merchant_id: M, plan: 'pilot', status: 'trial', trial_ends_at: new Date(Date.now() + 86_400_000).toISOString(), ...patch });
 
