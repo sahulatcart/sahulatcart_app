@@ -29,8 +29,9 @@ the old container. Found by checking variable *lengths* on Railway (never values
 Two test slips fixed on the way: `Buffer[i] ^= …` trips `noUncheckedIndexedAccess`, and the 190
 test left the stubbed `fetch` answering 401 when it sent from the second merchant.
 
-Not yet done: migration 0009 is **not applied** to the live database (apply after merge, in
-order), the pilot merchant still sends on the env token (until M2), and `notify()` does not exist
+**Live:** PR #14 merged 2026-10-13; migration 0009 applied to the live database the same day and
+verified (both enum values, the attempts table locked for anon/authenticated, the two columns, the
+index). Still pending: the pilot merchant still sends on the env token (until M2), and `notify()` does not exist
 so `markTokenInvalid` writes the `notifications` row directly, as `handoff()` does.
 
 ---
