@@ -16,6 +16,7 @@ import { parsePaisa } from '../lib/money';
 import { invalidNegotiationField, invalidProductField, invalidSettingsField } from '../lib/validation';
 import { getLlmClient } from '../llm';
 import { isShopifyCsv, mapShopifyRows } from '../lib/shopify';
+import { importRow, loadExisting } from '../lib/catalog-import';
 
 const PUBLIC = new Set(['/api/v1/admin/login', '/api/v1/config']);
 
@@ -177,9 +178,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const { id } = req.params as { id: string };
     const convo = await db.from('conversations').select('id, status, current_state, window_expires_at, customers(id, name, wa_id, wa_opt_in_status, wa_opt_in_at, is_blocked)').eq('id', id).eq('merchant_id', mid).maybeSingle();
     if (!convo.data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'conversation not found' } });
-    const messages = await db.from('messages').select('direction, sender, type, body, status, created_at').eq('conversation_id', id).order('created_at', { ascending: true }).limit(200);
+    // P8: the NEWEST 200, returned oldest-first for the chat view (a long chat used to show its first 200 and nothing since).
+    const messages = await db.from('messages').select('direction, sender, type, body, status, created_at').eq('conversation_id', id).order('created_at', { ascending: false }).limit(200);
     await db.from('conversations').update({ unread_count: 0 }).eq('id', id);
-    return reply.send({ conversation: convo.data, messages: messages.data ?? [] });
+    return reply.send({ conversation: convo.data, messages: (messages.data ?? []).reverse() });
   });
 
   app.post('/api/v1/admin/conversations/:id/takeover', async (req, reply) => {
@@ -389,29 +391,18 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     if (!csv) return reply.code(400).send({ error: { code: 'BAD', message: 'csv required' } });
     const rows = parseCsv(csv);
 
-    // Shopify product export? Map variants/images/options and upsert.
+    // P8 (FR-P8.6): a re-import never un-hides a product, never overwrites portal photos, never duplicates a no-SKU row.
+    const existing = await loadExisting(db, mid);
+
+    // Shopify product export? Map variants/images/options.
     if (isShopifyCsv(rows)) {
       const mapped = mapShopifyRows(rows);
       const errors: string[] = [];
       let imported = 0;
       for (const p of mapped) {
-        const row = {
-          merchant_id: mid,
-          name: p.name,
-          description: p.description,
-          price: p.price,
-          stock: p.stock,
-          track_stock: p.stock != null,
-          sku: p.sku,
-          images: p.images,
-          attributes: p.attributes,
-          is_active: true,
-        };
-        const { error } = p.sku
-          ? await db.from('products').upsert(row, { onConflict: 'merchant_id,sku' })
-          : await db.from('products').insert(row);
-        if (error) errors.push(`${p.name}: ${error.message}`);
-        else imported++;
+        const row = { name: p.name, description: p.description, price: p.price, stock: p.stock, track_stock: p.stock != null, sku: p.sku, images: p.images, attributes: p.attributes };
+        const err = await importRow(db, mid, existing, row, { shopify: true });
+        if (err) errors.push(`${p.name}: ${err}`); else imported++;
       }
       return reply.send({ imported, errors, total: mapped.length, source: 'shopify' });
     }
@@ -425,17 +416,15 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       if (!name || price == null) { errors.push(`Row ${i + 2}: name and a price above 0 are required`); continue; }
       // Only columns present in the file are written, so re-importing a price list never
       // wipes floors, stock or the negotiable flag that were set in the portal.
-      const row: Record<string, unknown> = { merchant_id: mid, name, price, is_active: true };
+      const row: Record<string, unknown> = { name, price };
       if ('description' in r) row.description = r.description || null;
       if ('stock' in r) Object.assign(row, { stock: r.stock ? Number(r.stock) : null, track_stock: !!r.stock });
       if ('negotiable' in r) row.negotiable = truthy(r.negotiable!);
       if ('max_discount_pct' in r) row.max_discount_pct = r.max_discount_pct ? Number(r.max_discount_pct) : null;
       if ('min_price' in r) row.min_price = r.min_price ? parsePaisa(r.min_price) ?? Number.NaN : null; // unreadable → rejected below
       if ('sku' in r) row.sku = r.sku || null;
-      const bad = invalidProductField(row);
-      if (bad) { errors.push(`Row ${i + 2}: ${bad} is invalid`); continue; }
-      const { error } = row.sku ? await db.from('products').upsert(row, { onConflict: 'merchant_id,sku' }) : await db.from('products').insert(row);
-      if (error) errors.push(`Row ${i + 2}: ${error.message}`); else imported++;
+      const err = await importRow(db, mid, existing, row);
+      if (err) errors.push(`Row ${i + 2}: ${err}`); else imported++;
     }
     return reply.send({ imported, errors, total: rows.length });
   });
