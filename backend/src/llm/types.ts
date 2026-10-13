@@ -14,6 +14,7 @@ export interface Classification {
 
 export interface ClassifyContext {
   productNames: string[]; // catalog names, to help resolution
+  history?: string[]; // P8.5: the last 12 lines of the chat, "Customer: …" / "Bot: …", for understanding only
 }
 
 /** The ways a buyer may pay; the merchant switches COD on or off and adds bank accounts (P2 step 5). */
@@ -37,6 +38,7 @@ export type ReplySpec =
   | { kind: 'bank_await' } // sent after bank details — ask for screenshot
   | { kind: 'payment_received' } // screenshot received, verifying
   | { kind: 'payment_verified'; orderNumber: string }
+  | { kind: 'order_status'; orderNumber: string | null; status: string | null; claimPaid?: boolean } // P8.3: the buyer's latest placed order, or none
   | { kind: 'clarify' }
   | { kind: 'chitchat' }
   | { kind: 'handoff' }
@@ -50,7 +52,7 @@ export type ReplySpec =
  */
 export const TEMPLATE_ONLY_KINDS = [
   'ask_delivery', 'ask_delivery_missing', 'bank_await', 'payment_received', 'handoff',
-  'clarify', 'not_found', 'choose_product', 'out_of_stock', 'limited_stock',
+  'clarify', 'not_found', 'choose_product', 'out_of_stock', 'limited_stock', 'order_status',
 ] as const;
 /** The reply kinds that actually go to the LLM. */
 export type ComposedSpec = Exclude<ReplySpec, { kind: (typeof TEMPLATE_ONLY_KINDS)[number] }>;
@@ -65,6 +67,7 @@ export interface ComposeContext {
   botName?: string;
   style?: BotStyle;
   language: Lang;
+  history?: string[]; // P8.5, same block as ClassifyContext.history
 }
 
 export interface DeliveryDetails {
@@ -80,7 +83,7 @@ export class LlmUnavailableError extends Error {}
 export interface LlmClient {
   classify(text: string, ctx: ClassifyContext): Promise<Classification>;
   compose(spec: ComposedSpec, ctx: ComposeContext): Promise<string>;
-  extractDelivery(text: string): Promise<DeliveryDetails>;
+  extractDelivery(text: string, history?: string[]): Promise<DeliveryDetails>;
   /** Transcribe a WhatsApp voice note to Roman Urdu text. Null when unintelligible/unavailable. */
   transcribeAudio(data: Buffer, mimeType: string): Promise<string | null>;
   /** Draft a short Roman-Urdu product description from a product photo. */

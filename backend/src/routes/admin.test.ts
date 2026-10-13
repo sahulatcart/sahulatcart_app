@@ -103,6 +103,17 @@ describe('cross-tenant: merchant B never sees A', () => {
   });
 });
 
+describe('inbox shows the newest messages (P8, FR-P8.2)', () => {
+  it('a chat with 250 messages returns the newest 200, oldest first', async () => {
+    for (let i = 1; i <= 250; i++) fake.add('messages', { conversation_id: convoA, merchant_id: 'MA', direction: i % 2 ? 'inbound' : 'outbound', sender: i % 2 ? 'customer' : 'bot', type: 'text', body: `m${i}`, status: 'sent' });
+    const r = await app.inject({ method: 'GET', url: `/api/v1/admin/conversations/${convoA}`, headers: A });
+    const bodies = r.json().messages.map((m: { body: string }) => m.body);
+    expect(bodies).toHaveLength(200);
+    expect(bodies[0]).toBe('m51');
+    expect(bodies[199]).toBe('m250');
+  });
+});
+
 describe('manager-only routes refuse staff (spec 09 §2.3)', () => {
   it.each([
     ['POST', '/api/v1/admin/products', { name: 'X', price: 100 }],

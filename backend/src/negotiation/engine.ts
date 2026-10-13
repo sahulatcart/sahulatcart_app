@@ -132,7 +132,7 @@ export function decide(input: NegotiationInput): NegotiationDecision {
     return decision('HOLD', list, mkAudit(history.rounds), { reason: 'no_discount_room' });
   }
 
-  const currentBotCounter = curveOffer(list, floor, defaults.concessionSteps, history.rounds || 1);
+  const currentBotCounter = curveOffer(list, floor, defaults.concessionSteps, history.rounds || 1, defaults.openingStance);
 
   // No number AND no discount ask (a question, chitchat, etc.) — restate the standing
   // price, do NOT advance the concession curve. Only an offer or an explicit "kam karo"
