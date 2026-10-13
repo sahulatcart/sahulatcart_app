@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { getServiceClient } from '../lib/supabase';
 import { requirePlatformAdmin } from '../lib/auth';
 import { periodMonth } from '../lib/usage';
+import { notify } from '../lib/notify';
 
 /**
  * /api/v1/platform/* — the platform owner's console (SRS-Fazal M6). Every shop, its connection,
@@ -82,14 +83,7 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
     const by = req.platformCtx!.email ?? req.platformCtx!.via;
     await db.from('merchants').update({ status: 'suspended', settings: { ...(m.settings as object), suspension: { reason, at, by } } }).eq('id', id);
     await db.from('audit_log').insert({ merchant_id: id, actor: 'platform', user_id: req.platformCtx!.authUserId, action: 'suspend', entity: 'merchant', entity_id: id, diff: { reason, by } });
-    await db.from('notifications').insert({
-      merchant_id: id,
-      type: 'system',
-      title: 'Your shop has been suspended',
-      body: `Reason: ${reason}. The bot is not replying and the portal is read-only. Contact support to resolve this.`,
-      data: { action: 'suspended' },
-      channel: 'portal',
-    });
+    await notify(db, id, { type: 'system', title: 'Your shop has been suspended', body: `Reason: ${reason}. The bot is not replying and the portal is read-only. Contact support to resolve this.`, data: { action: 'suspended' } });
     return reply.send({ ok: true, status: 'suspended' });
   });
 
@@ -102,7 +96,7 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
     delete settings.suspension;
     await db.from('merchants').update({ status: 'active', settings }).eq('id', id);
     await db.from('audit_log').insert({ merchant_id: id, actor: 'platform', user_id: req.platformCtx!.authUserId, action: 'unsuspend', entity: 'merchant', entity_id: id, diff: {} });
-    await db.from('notifications').insert({ merchant_id: id, type: 'system', title: 'Your shop is active again', body: 'The suspension has been lifted. The bot is replying and the portal works normally.', data: { action: 'unsuspended' }, channel: 'portal' });
+    await notify(db, id, { type: 'system', title: 'Your shop is active again', body: 'The suspension has been lifted. The bot is replying and the portal works normally.', data: { action: 'unsuspended' } });
     return reply.send({ ok: true, status: 'active' });
   });
 }
