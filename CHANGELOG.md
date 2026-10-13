@@ -34,6 +34,107 @@ Record the date here when run. `platform_admins` has 0 rows today, so the consol
 unreachable by JWT until then; the pilot admin token reaches it.
 
 ---
+## 2026-10-13 — P3 review fixes (Fazal's review of 13 Oct, items 1–16), merged with main
+
+`feat/p3-alerts` was merged with `main` (the go-live fix, the admin build fix, M5), then the
+review's P3 items were applied before the merge into `main`:
+
+- **`ADMIN_ORIGIN` is optional again** with the fallback in `portalOrigin()` (config.ts). It has
+  existed on Railway since the CORS days; a required `.url()` would have turned a stale value into
+  a boot failure.
+- **Resend is listed as a sub-processor** in `site/privacy.html` §7, since alert emails carry the
+  buyer's name and, for an undeliverable message, its text. The policy promises not to add one
+  silently, so this goes in before `RESEND_API_KEY` is set.
+- **Manager-only, everywhere.** All alert routes now `isManager()`; staff were able to save prefs
+  and register devices that could never fire. `POST /notifications/test` has a 30 s cooldown per
+  member and channel (in-memory), so a looped tab cannot burn the shared Resend quota (100/day free).
+- **Push endpoints are allow-listed**: only `fcm.googleapis.com`, `*.push.services.mozilla.com`,
+  `*.push.apple.com` and `*.notify.windows.com` over https, ≤1024 chars, keys ≤256 — the previous
+  "any https URL" was a small reflector through `/test`. A device already registered to another
+  shop is refused (403) instead of silently re-homed by the upsert.
+- **Each alert gets its own notification** on the lock screen: the payload carries the row `id` and
+  the service worker tags with it (`renotify: true`). Before, every handoff tagged `/inbox` and a
+  second "Bot needs help" replaced the first.
+- **Queued digests survive a deploy**: `flushPendingDigests()` is awaited in the SIGTERM handler
+  after `drainWebhooks()`. The 5-minute timer was `unref`'d, so up to five minutes of emails died
+  with the process.
+- **Push payload**: body cut to 300 chars (push services reject >4 KB; the window-closed notice
+  embeds the buyer's message), `TTL: 86400`, `urgency: 'high'` (Android Doze held the 1 h/normal one).
+- **Logging out forgets this device's subscription** before `signOut()`, so on a shared phone the
+  next person does not keep getting this shop's orders.
+- **Real icons**: 192/512 PNGs and a monochrome 96 px badge were generated from
+  `site/assets/logo-1024.png` with .NET's `System.Drawing` from PowerShell (there is no image
+  tooling in the repo; this is the Windows equivalent of `sips`). Android drew the colour icon as a
+  white square in the status bar; the badge is a white silhouette.
+- Nits: generic DB error messages (the raw Postgres text was returned), `NotificationType` imported
+  from `@app/shared`, `test()` has a catch and the channel switches are disabled when the server
+  lacks that channel, `focus().then(navigate).catch(openWindow)` in the worker, "1 new notification".
+- **M5's one direct `notifications` insert** (`lib/usage.ts` `warnQuota`) was switched to
+  `notify()` here rather than in a later M5 rebase, since `notify()` exists on this branch; usage
+  alerts lead to `/settings/messages`.
+
+**What fought back.** The merge conflicted only on the changelog and the dashboard's icon import.
+After it, the backend typecheck lost `@fastify/helmet` and vitest died with
+`ENOTDIR: mkdir backend/node_modules`: commit `9ad4a96` on `main` had added `backend/node_modules`
+to git as a **symlink** to a path on Fazal's Mac (`.gitignore` has `node_modules/`, but a forced add
+bypasses it). Windows checks a symlink out as a 67-byte text file, so npm could not create the
+nested `backend/node_modules` directory where the lockfile puts helmet. Removed from git here;
+`npm install` then rebuilt the tree. If a checkout ever shows `backend/node_modules` as a file,
+that is why.
+`next build` is now part of the pre-push check (Fazal's rule after #21 broke the admin deploy):
+`cd admin && npm run build`, then `rm -rf admin/.next` so the dev server is not poisoned.
+
+---
+
+## 2026-10-13 — P3: merchant alerts — `notify()`, Web Push, email, the digest rule
+
+**Outcome** — a merchant no longer has to keep the portal open to learn of an order. Every
+notification now goes through one function, [lib/notify.ts](backend/src/lib/notify.ts) `notify()`
+(IC-3), which writes the portal row and then sends a Web Push to each owner's/manager's devices and
+an email to their address, by their preferences. Never WhatsApp (decided 2026-10-13). Branch
+`feat/p3-alerts`, week 4 of SRS-Uzair v1.1. Needs the VAPID and Resend variables on Railway
+(Appendix B) and migration 0014; without them the channels are silently skipped and only the portal
+row is written, exactly as before.
+
+**How it is built.** `notify()` awaits the `notifications` insert and starts the fan-out in the
+background (`void …catch(log)`, FR-P3.7); tests wait for it with `flushNotifications()`. Members are
+`merchant_users` with role owner/manager, `is_active`, and `notification_prefs` (`{ push, email }`,
+both on by default; staff never get alerts). Push goes through the `web-push` package
+([lib/push.ts](backend/src/lib/push.ts)); a 404/410 from the push service deletes that
+subscription. Email is Resend's HTTP API with plain `fetch` ([lib/email.ts](backend/src/lib/email.ts)),
+plain text plus a minimal HTML version with the portal link (`ADMIN_ORIGIN`). **The digest rule:**
+more than five emails in five minutes for one merchant → the rest wait and go out as one
+"N new notifications" email when the window closes; push is not batched. The counter is
+in-process, which is right for the one backend instance we run. The nine producers (handoff,
+new order, payment claim, cancel, the window-closed notice, M1's dead-token flag, M3's account
+events and disconnected reminder, M4's template status) were switched; `grep "from('notifications').insert"`
+now finds only `notify.ts`.
+
+**Routes** in a new [routes/notifications.ts](backend/src/routes/notifications.ts) (own auth hook):
+`GET/PATCH /admin/notification-prefs`, `POST/DELETE /admin/push-subscriptions` (one row per device,
+upsert on the endpoint), `POST /admin/notifications/test { channel }`. All need a portal login — the
+shared admin token has no member to alert, so it gets 400. `/config` adds `vapidPublicKey`.
+
+**Portal.** `public/sw.js` shows the payload and opens its `url` on tap, focusing an open portal
+window if there is one; `public/manifest.json` makes the portal installable (standalone, teal
+theme). The icons are the existing SVG and the 180px apple-touch-icon — no 192/512 PNGs were
+generated, since the repo has no image tooling; Chrome accepts the SVG, iOS uses the PNG.
+`lib/push.ts` registers the worker, subscribes with the server's key and posts the subscription.
+Settings → Notifications: the two channel switches, this device's state (on / available /
+blocked / unsupported / "add to Home Screen first, iOS 16.4+"), and a test button per channel. The
+dashboard shows a one-time "turn on phone notifications" callout while push is possible but off.
+
+**Tests.** `lib/notify.test.ts` (fan-out per prefs, staff and other shops excluded, 410 deletes
+the subscription, unconfigured channels skipped, an email failure never reaches the caller, the
+digest after five in five minutes with fake timers, individual emails again afterwards) and
+`routes/notifications.test.ts` (malformed subscription, upsert per device, prefs read, test push,
+test email 409 while unconfigured, unsubscribe, prefs patch). Suite: 28 files, 289 tests.
+
+**Still to do for the "done when" (needs the owner/Fazal):** generate the VAPID pair
+(`npx web-push generate-vapid-keys`) and set it with `RESEND_API_KEY` on Railway; apply 0014; verify
+the domain in Resend so `ALERT_EMAIL_FROM` can move off the test sender; then T18 on Android Chrome
+and an iPhone with the portal on the Home Screen.
+---
 
 ## 2026-10-13 — M5: the message meter and the AI budget; the admin build fixed
 

@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **26 files, 274 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **29 files, 311 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -475,9 +475,17 @@ discriminated union of ~20 reply kinds) and only phrases it.
 
   Or skip login by putting a session straight into `localStorage` `sk_auth`.
 - The backend registers **no CORS** on purpose: nothing calls it from a browser on another origin.
-- **Notifications** (new orders, payment claims, handoffs, failed buyer messages) are listed at
-  `/notifications`, with an unread badge in the nav. Before this the backend wrote them and nothing ever
-  read them — anything meant for the merchant needs a notification *and* this page to be seen.
+- **Notifications go through `notify()`** in [lib/notify.ts](backend/src/lib/notify.ts) (P3, since
+  2026-10-13) — never a direct `notifications` insert. It writes the portal row, then fans out in the
+  background to Web Push (each owner's/manager's devices, `push_subscriptions`, migration 0014) and
+  email (Resend, plain `fetch`) by `merchant_users.notification_prefs`; staff get nothing; WhatsApp is
+  never used for merchant alerts. A missing `VAPID_*` or `RESEND_API_KEY` skips that channel. More than
+  five emails in five minutes for one merchant become one digest (in-process counter: one instance;
+  `flushPendingDigests()` runs on SIGTERM so a deploy does not drop the queue). The list is at
+  `/notifications` with an unread badge in the nav; the channel switches and "send me a test" are at
+  `/settings/notifications`, managers only, with a 30 s cooldown on the test. Push endpoints are
+  allow-listed to the four real push services (`validPushEndpoint()`); the payload carries the row
+  id so each alert gets its own lock-screen entry. Tests await the fan-out with `flushNotifications()`.
 - **WhatsApp's 24-hour window.** Free-form messages to a buyer who last wrote over 24h ago are refused
   unless they use an approved template, and none exist yet. `notifyBuyer()` doesn't attempt them; it
   notifies the merchant to reach the buyer another way. The inbox disables replies and says why.

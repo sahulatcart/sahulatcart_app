@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
 import { ArrowLeft, BarChart3, Bell, LayoutDashboard, LogOut, Menu, MessagesSquare, Package, Settings, ShieldCheck, ShoppingBag, X, type LucideIcon } from 'lucide-react';
 import { apiJson, hasSession, signOut } from '../lib/api';
+import { disablePush } from '../lib/push';
 import Wordmark from '../components/Wordmark';
 import ThemeToggle from './ThemeToggle';
 
@@ -68,7 +69,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }, [ready]);
   if (!ready) return null;
 
-  const logout = async () => { await signOut(); router.replace('/login'); };
+  // Logging out also forgets this device's push subscription: on a shared phone the next person must
+  // not keep getting this shop's orders (review P3-9). Push errors never block the logout.
+  const logout = async () => { await disablePush().catch(() => {}); await signOut(); router.replace('/login'); };
 
   return (
     <div className="shell">

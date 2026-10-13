@@ -41,6 +41,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" className={`${poppins.variable} ${kaisei.variable} ${mono.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+        {/* Installable (P3): Web Push on iPhone works only from a Home Screen install (iOS 16.4+). */}
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#249E87" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content={PRODUCT_NAME} />
       </head>
       <body>
         <ToastProvider>{children}</ToastProvider>

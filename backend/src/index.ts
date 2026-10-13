@@ -3,6 +3,7 @@ import { logger } from './lib/logger';
 import { buildServer } from './server';
 import { drainWebhooks, startReplaySweeper } from './whatsapp/webhook';
 import { startRetentionJob } from './lib/retention';
+import { flushPendingDigests } from './lib/notify';
 
 async function main(): Promise<void> {
   const cfg = loadConfig(); // fail-fast env validation
@@ -28,6 +29,7 @@ async function main(): Promise<void> {
       logger.info(`${sig} received, shutting down`);
       await app.close(); // stop taking webhooks
       await drainWebhooks(25_000); // let queued messages finish; anything cut off is replayed after restart
+      await flushPendingDigests().catch(() => {}); // queued alert emails go out now rather than dying with the process
       process.exit(0);
     });
   }

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../lib/logger';
 import { rs } from '../lib/money';
+import { notify } from '../lib/notify';
 import { formatPkt, generateSlipPdf, isPdfSafe, uploadSlip, type SlipData } from './slip';
 
 export interface DeliveryInfo {
@@ -231,14 +232,7 @@ export async function switchBankOrderToCod(db: SupabaseClient, ctx: { merchantId
 }
 
 function notifyNewOrder(db: SupabaseClient, merchantId: string, orderId: string, order: OrderRow, title: string, paymentMethod: string, note = order.delivery_name ?? 'customer') {
-  return db.from('notifications').insert({
-    merchant_id: merchantId,
-    type: 'new_order',
-    title,
-    body: `${rs(order.total)} — ${note}`,
-    data: { orderId, orderNumber: order.order_number, paymentMethod },
-    channel: 'portal',
-  });
+  return notify(db, merchantId, { type: 'new_order', title, body: `${rs(order.total)} — ${note}`, data: { orderId, orderNumber: order.order_number, paymentMethod } });
 }
 
 async function placed(db: SupabaseClient, merchantId: string, orderId: string, businessName: string, order: OrderRow, paymentLabel: string): Promise<Placed> {

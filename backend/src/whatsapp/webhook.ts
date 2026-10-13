@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { loadConfig } from '../config';
 import { logger } from '../lib/logger';
 import { getServiceClient } from '../lib/supabase';
+import { notify } from '../lib/notify';
 import { verifySignature } from './signature';
 import crypto from 'node:crypto';
 import { parseAccountEvents, parseWebhook } from './parse';
@@ -304,13 +305,11 @@ async function remindDisconnected(db: SupabaseClient, tenant: Tenant): Promise<v
     .gt('created_at', since)
     .limit(1);
   if (recent?.length) return;
-  await db.from('notifications').insert({
-    merchant_id: tenant.merchant_id,
+  await notify(db, tenant.merchant_id, {
     type: 'system',
     title: 'Customers are messaging while WhatsApp is disconnected',
     body: 'The bot cannot reply until the number is reconnected from Settings → WhatsApp. Their messages are in the inbox.',
     data: { action: 'reconnect_whatsapp' },
-    channel: 'portal',
   });
 }
 

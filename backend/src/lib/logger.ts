@@ -14,6 +14,7 @@ export const loggerOptions: LoggerOptions = {
       'req.headers.authorization', 'req.headers["x-hub-signature-256"]',
       '*.access_token', '*.token', '*.ciphertext', '*.pin',
       'err.response.access_token', 'body.access_token',
+      '*.p256dh', '*.auth', '*.keys.auth', // Web Push subscription keys (P3)
     ],
     censor: '[redacted]',
   },

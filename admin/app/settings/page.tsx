@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Landmark, MessageCircle, Plus, Save, Scale, Shield, Smile, Trash2, type LucideIcon } from 'lucide-react';
+import { ArrowRight, Bell, Landmark, MessageCircle, Plus, Save, Scale, Shield, Smile, Trash2, type LucideIcon } from 'lucide-react';
 import AppShell, { EmptyState, PageHead } from '../../components/AppShell';
 import DeliveryZones, { type Zone } from '../../components/DeliveryZones';
 import { api, apiError, apiJson } from '../../lib/api';
@@ -120,6 +120,15 @@ export default function SettingsPage() {
         <div style={{ flex: 1, minWidth: 0 }}>
           <h2 style={{ margin: 0 }}>WhatsApp</h2>
           <div className="desc">Connect the number the bot answers from, or check its status.</div>
+        </div>
+        <ArrowRight aria-hidden className="hint" />
+      </Link>
+
+      <Link href="/settings/notifications" className="card pad" style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', color: 'inherit', marginBottom: 16 }}>
+        <Bell aria-hidden style={{ color: 'var(--brand)', flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h2 style={{ margin: 0 }}>Notifications</h2>
+          <div className="desc">Phone and email alerts for new orders, payment screenshots and handed-over chats.</div>
         </div>
         <ArrowRight aria-hidden className="hint" />
       </Link>

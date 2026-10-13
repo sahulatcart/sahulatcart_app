@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../lib/logger';
+import { notify } from '../lib/notify';
 import { tokenForNumber } from './credentials';
 import { GraphError, createTemplate, type TemplateComponent } from './meta-graph';
 import type { AccountEvent } from './types';
@@ -151,13 +152,11 @@ export async function applyTemplateStatus(db: SupabaseClient, ev: AccountEvent):
   }
   if (status !== 'rejected' && status !== 'paused' && status !== 'disabled') return;
   for (const r of rows) {
-    await db.from('notifications').insert({
-      merchant_id: r.merchant_id,
+    await notify(db, r.merchant_id, {
       type: 'template_status',
       title: `Template ${r.name} ${status}`,
       body: v.reason ? `Meta's reason: ${v.reason}. Resubmit it from Settings → WhatsApp.` : 'Resubmit it from Settings → WhatsApp.',
       data: { action: 'template_status', template: r.name, status, reason: v.reason ?? null },
-      channel: 'portal',
     });
   }
 }
