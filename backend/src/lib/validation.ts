@@ -43,6 +43,9 @@ export const invalidSettingsField = firstInvalid({
   paymentInstructions: (v) => typeof v === 'string' && v.length <= 500, // shown under the bank details
   botEnabled: bool,
   upsellEnabled: bool,
+  // M5: what happens after the free 1,000 messages a month, and the daily AI-call cap per shop.
+  afterFreeQuota: (v) => v === 'continue' || v === 'handoff',
+  llmDailyCap: (v) => Number.isInteger(v) && (v as number) >= 100 && (v as number) <= 100_000,
 });
 
 /** The fixed category list the onboarding wizard offers (FR-P2.3 step 1). */

@@ -7,6 +7,7 @@ import { adminRoutes } from './routes/admin';
 import { signupRoutes } from './routes/signup';
 import { onboardingRoutes } from './routes/onboarding';
 import { whatsappRoutes } from './routes/whatsapp';
+import { usageRoutes } from './routes/usage';
 import { webhookRoutes } from './whatsapp/webhook';
 
 /**
@@ -28,6 +29,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(webhookRoutes); // Phase 2: /api/v1/webhook/whatsapp
   await app.register(adminRoutes); // Phase 5: merchant admin API (pilot token-gated)
   await app.register(whatsappRoutes); // M2/M3: /api/v1/admin/whatsapp/* (own auth hook)
+  await app.register(usageRoutes); // M5: /api/v1/admin/usage
   await app.register(signupRoutes); // P1: self-service signup gate + bootstrap
   await app.register(onboardingRoutes); // P2: readiness + delivery zones (own auth hook)
 

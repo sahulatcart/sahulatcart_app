@@ -12,6 +12,7 @@ import { getLlmClient } from '../llm';
 import { runOrchestrator } from '../orchestrator/orchestrator';
 import { serialize } from '../lib/keyed-queue';
 import { handleConnectHandshake } from './connect';
+import { bumpUsage, chargeLlmCall, DEFAULT_LLM_DAILY_CAP, withLlmBudget } from '../lib/usage';
 import type { AccountEvent, NormalizedMessage, NormalizedStatus, WebhookPayload } from './types';
 
 declare module 'fastify' {
@@ -27,7 +28,7 @@ const REPLAY_MIN_AGE_MS = 5 * 60_000;
 const REPLAY_MAX_AGE_MS = 60 * 60_000;
 const MAX_REPLAYS = 3;
 
-export interface Tenant { id: string; merchant_id: string; phone_number_id: string; business_name: string; status: string; merchant_phone: string | null }
+export interface Tenant { id: string; merchant_id: string; phone_number_id: string; business_name: string; status: string; merchant_phone: string | null; llm_daily_cap?: number }
 /** What a message's webhook_events row stores, so it can be replayed without the original payload. */
 interface StoredMessage { phoneNumberId: string; msg: NormalizedMessage }
 
@@ -53,13 +54,13 @@ async function claimEvent(
 async function resolveTenant(db: SupabaseClient, phoneNumberId: string): Promise<Tenant | null> {
   const { data, error } = await db
     .from('whatsapp_numbers')
-    .select('id, merchant_id, phone_number_id, status, merchants(business_name, phone)')
+    .select('id, merchant_id, phone_number_id, status, merchants(business_name, phone, settings)')
     .eq('phone_number_id', phoneNumberId)
     .maybeSingle();
   if (error) throw new Error(`tenant lookup failed: ${error.message}`);
   if (!data) return null;
-  const m = (data as { merchants?: { business_name?: string; phone?: string | null } }).merchants;
-  return { id: data.id, merchant_id: data.merchant_id, phone_number_id: data.phone_number_id, business_name: m?.business_name ?? 'Shop', status: data.status ?? 'connected', merchant_phone: m?.phone ?? null };
+  const m = (data as { merchants?: { business_name?: string; phone?: string | null; settings?: { llmDailyCap?: number } } }).merchants;
+  return { id: data.id, merchant_id: data.merchant_id, phone_number_id: data.phone_number_id, business_name: m?.business_name ?? 'Shop', status: data.status ?? 'connected', merchant_phone: m?.phone ?? null, llm_daily_cap: m?.settings?.llmDailyCap };
 }
 
 /**
@@ -153,7 +154,11 @@ async function handleInboundMessage(
     if (audioId) {
       const media = await downloadWhatsAppMedia(audioId, tenant.phone_number_id);
       if (media) {
-        const transcript = await getLlmClient().transcribeAudio(media.buffer, media.mimeType);
+        // Transcription is an AI call like any other: counted and capped per shop (M5).
+        const transcript = await withLlmBudget({ db, phoneNumberId: tenant.phone_number_id, cap: tenant.llm_daily_cap ?? DEFAULT_LLM_DAILY_CAP }, async () => {
+          await chargeLlmCall();
+          return getLlmClient().transcribeAudio(media.buffer, media.mimeType);
+        }).catch(() => null);
         if (transcript) msg.text = transcript;
       }
     }
@@ -182,6 +187,7 @@ async function handleInboundMessage(
     .from('conversations')
     .update({ last_message_at: new Date().toISOString(), window_expires_at: new Date(Date.now() + WINDOW_MS).toISOString() })
     .eq('id', convo.id);
+  await bumpUsage(db, tenant.phone_number_id, { inbound: 1 }); // M5 meter; never throws
 
   // M3: no credentials, no reply; the message is in the inbox and the merchant is reminded daily.
   if (tenant.status === 'disconnected') {

@@ -1,10 +1,11 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Clock, MessageSquare, ShoppingBag, Sparkles, Wallet } from 'lucide-react';
+import { ArrowRight, Clock, Gauge, MessageSquare, ShoppingBag, Sparkles, Wallet } from 'lucide-react';
 import AppShell, { EmptyState, PageHead, PaymentPill, StatusPill } from '../components/AppShell';
 import { apiJson, rs } from '../lib/api';
 
+interface Usage { month: string; outbound: number; freeQuota: number; paidOutbound: number; ratePaisa: number; estimatedCostPaisa: number; afterQuota: 'continue' | 'handoff'; llmCallsToday: number; llmDailyCap: number }
 interface Dash {
   ordersToday: number; revenueToday: number; pendingPayments: number; activeChats: number;
   recentOrders: { id: string; order_number: string; status: string; payment_status: string; total: number; delivery_name: string }[];
@@ -14,8 +15,10 @@ export default function Dashboard() {
   const [d, setD] = useState<Dash | null>(null);
   // FR-P2.4: the card shows until every readiness check passes AND the bot is on; it links to the first open step.
   const [setup, setSetup] = useState<{ done: number; next: string | null; ready: boolean } | null>(null);
+  const [usage, setUsage] = useState<Usage | null>(null);
   useEffect(() => {
     apiJson<Dash>('/api/v1/admin/dashboard').then(setD).catch(() => {});
+    apiJson<Usage>('/api/v1/admin/usage').then(setUsage).catch(() => {});
     Promise.all([
       apiJson<{ ready: boolean; failing: string[] }>('/api/v1/admin/readiness'),
       apiJson<{ merchant: { settings?: { botEnabled?: boolean } } }>('/api/v1/admin/me'),
@@ -56,6 +59,30 @@ export default function Dashboard() {
         {stat('Payments to verify', d?.pendingPayments, Clock, !!d?.pendingPayments)}
         {stat('Active chats', d?.activeChats, MessageSquare)}
       </div>
+
+      {usage && (() => {
+        const pct = Math.min(100, Math.round((usage.outbound / usage.freeQuota) * 100));
+        const tone = usage.outbound >= usage.freeQuota ? 'var(--danger)' : pct >= 80 ? 'var(--warning)' : 'var(--brand)';
+        return (
+          <div className="card pad" style={{ marginTop: 24 }}>
+            <div className="row between" style={{ flexWrap: 'wrap', gap: 8 }}>
+              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><Gauge aria-hidden /> Messages this month</h2>
+              <Link href="/settings#messages" className="link" style={{ fontSize: 13 }}>What happens after 1,000 <ArrowRight size={14} aria-hidden /></Link>
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 600, marginTop: 10 }}>{usage.outbound.toLocaleString('en-PK')} <span className="muted" style={{ fontSize: 14, fontWeight: 400 }}>of {usage.freeQuota.toLocaleString('en-PK')} free</span></div>
+            <div role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Free messages used" style={{ height: 8, borderRadius: 4, background: 'var(--surface)', marginTop: 8, overflow: 'hidden' }}>
+              <div style={{ width: `${pct}%`, height: '100%', background: tone }} />
+            </div>
+            <div className="hint" style={{ marginTop: 8 }}>
+              {usage.paidOutbound > 0
+                ? `${usage.paidOutbound.toLocaleString('en-PK')} paid messages so far, about ${rs(usage.estimatedCostPaisa)} at Meta's rate of ${rs(usage.ratePaisa)} each. `
+                : `After ${usage.freeQuota.toLocaleString('en-PK')}, each message costs about ${rs(usage.ratePaisa)} (Meta's rate; check the current card). `}
+              {usage.afterQuota === 'handoff' ? 'Past the free messages the bot hands new chats to you.' : 'Past the free messages the bot keeps selling.'}
+              {' '}AI calls today: {usage.llmCallsToday.toLocaleString('en-PK')} of {usage.llmDailyCap.toLocaleString('en-PK')}. This is an estimate; WhatsApp Manager has the exact count.
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="card" style={{ marginTop: 24 }}>
         <div className="card-head">

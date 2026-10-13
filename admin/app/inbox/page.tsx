@@ -43,6 +43,8 @@ export default function Inbox() {
   const expires = shown?.conversation.window_expires_at;
   const windowClosed = !!expires && new Date(expires).getTime() <= Date.now();
   const canType = takenOver && !windowClosed;
+  const [quotaUsed, setQuotaUsed] = useState(false);
+  useEffect(() => { apiJson<{ outbound: number; freeQuota: number }>('/api/v1/admin/usage').then((u) => setQuotaUsed(u.outbound >= u.freeQuota)).catch(() => {}); }, []);
   const name = shown?.conversation.customers?.name || shown?.conversation.customers?.wa_id || '';
 
   return (
@@ -121,7 +123,8 @@ export default function Inbox() {
               <form className="composer" onSubmit={(e) => { e.preventDefault(); send(); }}>
                 <label htmlFor="reply" className="sr-only">Reply</label>
                 <input id="reply" style={{ flex: 1 }} placeholder={canType ? 'Type a reply…' : windowClosed ? 'Replies are blocked for now' : 'Take over to reply yourself'} value={text} onChange={(e) => setText(e.target.value)} disabled={!canType} />
-                <button className="btn icon-btn" disabled={!canType || !text.trim() || busy} aria-label="Send"><Send /></button>
+                {quotaUsed && canType && <span className="pill warning" title="The free 1,000 messages for this month are used; Meta charges for this one">paid</span>}
+                <button className="btn icon-btn" disabled={!canType || !text.trim() || busy} aria-label={quotaUsed ? 'Send (paid message)' : 'Send'}><Send /></button>
               </form>
             </>
           )}

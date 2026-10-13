@@ -413,3 +413,45 @@ describe('P2: only the payment methods the merchant enabled; the greeting', () =
     expect(out).toBe('Assalam-o-Alaikum! Kaise madad kar sakta hoon?');
   });
 });
+
+describe('M5: the message meter and the AI budget', () => {
+  const month = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi', year: 'numeric', month: '2-digit' }).format(new Date());
+  const usage = () => db.rows('message_usage').find((u) => u.phone_number_id === 'pn-1');
+  /** Set this month's counters, on the row the AI charges may already have created (one row per number per month). */
+  const setUsage = (patch: Record<string, number>) => {
+    const row = usage() ?? db.add('message_usage', { merchant_id: M, phone_number_id: 'pn-1', period_month: month(), outbound_count: 0, inbound_count: 0, llm_calls: 0, llm_calls_day: db.karachiToday });
+    Object.assign(row, patch);
+  };
+
+  it('inbound and outbound are not counted here (the client mock bypasses the meter), but AI calls are', async () => {
+    await say('mug?', { intent: 'ask_price', productQuery: 'coffee mug' });
+    expect(usage()?.llm_calls).toBeGreaterThanOrEqual(1); // classify counted; compose throws in tests before counting matters
+  });
+
+  it('past the daily AI cap a new message is handed to the merchant, like an outage', async () => {
+    db.rows('merchants')[0]!.settings = { ...db.rows('merchants')[0]!.settings, llmDailyCap: 100 };
+    setUsage({ llm_calls: 100 });
+    expect(await say('assalam o alaikum')).toContain('team se connect');
+    expect(convo().status).toBe('human_takeover');
+    expect(db.rows('notifications').at(-1)?.body).toContain('AI is unavailable');
+  });
+
+  it('after the free 1,000 with "hand off": a new chat is handed over, a buyer mid-checkout finishes', async () => {
+    // A buyer already at the payment step first.
+    await toPayment();
+    db.rows('merchants')[0]!.settings = { ...db.rows('merchants')[0]!.settings, afterFreeQuota: 'handoff' };
+    setUsage({ outbound_count: 1000 });
+    expect(await tap('pay_cod', 'Cash on Delivery')).toContain('SK-1001'); // checkout finishes
+    expect(convo().status).toBe('bot_active');
+    // The next, new conversation (state completed → fresh) is handed over.
+    expect(await say('salam, mug hai?', { intent: 'ask_price', productQuery: 'coffee mug' })).toContain('team se connect');
+    expect(convo().status).toBe('human_takeover');
+    expect(db.rows('notifications').at(-1)?.body).toContain('free 1000');
+  });
+
+  it('with "continue" (the default) the bot keeps selling past the free messages', async () => {
+    setUsage({ outbound_count: 5000 });
+    expect(await say('mug?', { intent: 'ask_price', productQuery: 'coffee mug' })).toContain('Rs 800');
+    expect(convo().status).toBe('bot_active');
+  });
+});
