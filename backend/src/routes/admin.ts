@@ -37,7 +37,14 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // ── Public runtime config (Supabase URL + publishable anon key — not secret) ──
   app.get('/api/v1/config', async (_req, reply) => {
     const cfg = loadConfig();
-    return reply.send({ supabaseUrl: cfg.SUPABASE_URL, supabaseAnonKey: cfg.SUPABASE_ANON_KEY });
+    return reply.send({
+      supabaseUrl: cfg.SUPABASE_URL,
+      supabaseAnonKey: cfg.SUPABASE_ANON_KEY,
+      // Embedded Signup (M2): the app id and configuration id are public by design; the secret never is.
+      metaAppId: cfg.META_APP_ID ?? null,
+      embeddedSignupConfigId: cfg.META_EMBEDDED_SIGNUP_CONFIG_ID ?? null,
+      graphVersion: cfg.META_GRAPH_API_VERSION,
+    });
   });
 
   // ── Auth (token fallback path; email/password login happens client-side via Supabase) ──

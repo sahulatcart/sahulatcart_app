@@ -9,6 +9,7 @@ import { downloadWhatsAppMedia } from './media';
 import { getLlmClient } from '../llm';
 import { runOrchestrator } from '../orchestrator/orchestrator';
 import { serialize } from '../lib/keyed-queue';
+import { handleConnectHandshake } from './connect';
 import type { NormalizedMessage, NormalizedStatus, WebhookPayload } from './types';
 
 declare module 'fastify' {
@@ -24,7 +25,7 @@ const REPLAY_MIN_AGE_MS = 5 * 60_000;
 const REPLAY_MAX_AGE_MS = 60 * 60_000;
 const MAX_REPLAYS = 3;
 
-export interface Tenant { id: string; merchant_id: string; phone_number_id: string; business_name: string }
+export interface Tenant { id: string; merchant_id: string; phone_number_id: string; business_name: string; status: string; merchant_phone: string | null }
 /** What a message's webhook_events row stores, so it can be replayed without the original payload. */
 interface StoredMessage { phoneNumberId: string; msg: NormalizedMessage }
 
@@ -50,13 +51,13 @@ async function claimEvent(
 async function resolveTenant(db: SupabaseClient, phoneNumberId: string): Promise<Tenant | null> {
   const { data, error } = await db
     .from('whatsapp_numbers')
-    .select('id, merchant_id, phone_number_id, merchants(business_name)')
+    .select('id, merchant_id, phone_number_id, status, merchants(business_name, phone)')
     .eq('phone_number_id', phoneNumberId)
     .maybeSingle();
   if (error) throw new Error(`tenant lookup failed: ${error.message}`);
   if (!data) return null;
-  const businessName = (data as { merchants?: { business_name?: string } }).merchants?.business_name ?? 'Shop';
-  return { id: data.id, merchant_id: data.merchant_id, phone_number_id: data.phone_number_id, business_name: businessName };
+  const m = (data as { merchants?: { business_name?: string; phone?: string | null } }).merchants;
+  return { id: data.id, merchant_id: data.merchant_id, phone_number_id: data.phone_number_id, business_name: m?.business_name ?? 'Shop', status: data.status ?? 'connected', merchant_phone: m?.phone ?? null };
 }
 
 /**
@@ -179,6 +180,10 @@ async function handleInboundMessage(
     .from('conversations')
     .update({ last_message_at: new Date().toISOString(), window_expires_at: new Date(Date.now() + WINDOW_MS).toISOString() })
     .eq('id', convo.id);
+
+  // M2: while the number is still `connecting`, the merchant's own first text is the handshake
+  // that proves the connection; it is stored above but never answered by the bot.
+  if (await handleConnectHandshake(db, tenant, msg)) return;
 
   // Phase 3: real orchestrator (FSM + Gemini + negotiation engine).
   await runOrchestrator(
