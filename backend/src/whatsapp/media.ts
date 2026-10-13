@@ -2,13 +2,20 @@ import crypto from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { loadConfig } from '../config';
 import { logger } from '../lib/logger';
+import { getServiceClient } from '../lib/supabase';
+import { tokenForNumber } from './credentials';
 
-/** Download an inbound WhatsApp media object (docs/spec/04 §3.2): media id → URL → bytes. */
-export async function downloadWhatsAppMedia(mediaId: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
+/**
+ * Download an inbound WhatsApp media object (docs/spec/04 §3.2): media id → URL → bytes.
+ * Media ids are scoped to the WABA, so the download uses the credentials of the number that
+ * received the message.
+ */
+export async function downloadWhatsAppMedia(mediaId: string, phoneNumberId: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
   const cfg = loadConfig();
-  if (!cfg.META_SYSTEM_USER_TOKEN) return null;
+  const token = await tokenForNumber(getServiceClient(), phoneNumberId);
+  if (!token) return null;
   const v = cfg.META_GRAPH_API_VERSION;
-  const auth = { Authorization: `Bearer ${cfg.META_SYSTEM_USER_TOKEN}` };
+  const auth = { Authorization: `Bearer ${token}` };
   try {
     const meta = (await fetch(`https://graph.facebook.com/${v}/${mediaId}`, { headers: auth }).then((r) => r.json())) as {
       url?: string;

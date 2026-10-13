@@ -148,7 +148,7 @@ async function handleInboundMessage(
   if (msg.type === 'audio' && !msg.text) {
     const audioId = (msg.raw as { audio?: { id?: string } })?.audio?.id;
     if (audioId) {
-      const media = await downloadWhatsAppMedia(audioId);
+      const media = await downloadWhatsAppMedia(audioId, tenant.phone_number_id);
       if (media) {
         const transcript = await getLlmClient().transcribeAudio(media.buffer, media.mimeType);
         if (transcript) msg.text = transcript;

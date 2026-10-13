@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { loadConfig } from '../config';
+import { tokenForNumber } from '../whatsapp/credentials';
 import { getServiceClient } from '../lib/supabase';
 import { forbid, isAdminToken, isManager, resolveCtx } from '../lib/auth';
 import { cancelOrder, markCodCollected, rejectPayment, verifyPayment, type ActionResult, type Actor } from '../orchestrator/payment-service';
@@ -412,9 +413,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     if (!isManager(req.merchantCtx!)) return forbid(reply);
     const cfg = loadConfig();
     const mid = req.merchantCtx!.merchantId;
-    const token = cfg.META_SYSTEM_USER_TOKEN;
-    const wabaRow = await db.from('whatsapp_numbers').select('waba_id').eq('merchant_id', mid).limit(1).maybeSingle();
+    const wabaRow = await db.from('whatsapp_numbers').select('waba_id, phone_number_id').eq('merchant_id', mid).limit(1).maybeSingle();
     const waba = wabaRow.data?.waba_id;
+    // The merchant's own credentials (M1): the catalog belongs to their WABA, not the platform's.
+    const token = wabaRow.data?.phone_number_id ? await tokenForNumber(db, wabaRow.data.phone_number_id) : null;
     if (!token || !waba) return reply.code(400).send({ error: { code: 'NO_WABA', message: 'WhatsApp/WABA not connected' } });
     // Token in a header, never the URL (URLs end up in proxy and error logs).
     const graph = async <T>(path: string): Promise<T> =>
