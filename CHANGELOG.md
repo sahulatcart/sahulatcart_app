@@ -7,6 +7,54 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — P5: opt-out enforcement, STOP keyword, and the small gaps
+
+Branch `feat/p5-opt-out`, from `main` at `8d43f34` (after P4 #28). 34 test files, 384 tests
+(15 new). Both typechecks clean; `next build` clean. Migration **0016** (one nullable column,
+`products.deleted_at`). M4's orchestrator PR was already on main, so IC-8's merge order holds.
+
+**What landed (SRS-Uzair v1.1 week 6, FR-P5.1–5.8).**
+- **Opt-out and block are store-only, before any LLM call.** The first thing `runTurn()` does is
+  read the customer: `is_blocked`, or `wa_opt_in_status='out'`, bumps `unread_count` and
+  returns. The flow test counts classifier calls to prove no AI call is made. The exact words
+  `start` / `shuru` re-opt in (`wa_opt_in_source='keyword'`) with one welcome.
+- **STOP keyword** (`STOP_RE`, whole message only: stop / unsubscribe / band karo / bandh karo /
+  msg mat karo) runs in every state before the order-flow handlers and the classifier. One
+  goodbye, then silence. `optOut()` is shared with the classifier's `stop` intent. "order band
+  karo" during checkout is still a cancel because the pattern is anchored.
+- **Opt-in capture** in `upsertCustomer()` (webhook): an `unknown` customer becomes `in` /
+  `inbound_message` on their first message; an `out` one is never flipped back by a message.
+- **Soft-delete a product**: `DELETE /api/v1/admin/products/:id` in
+  [routes/catalog.ts](backend/src/routes/catalog.ts) sets `is_active=false, deleted_at`; the two
+  product reads in admin.ts filter `deleted_at is null`. The bot already filtered on
+  `is_active`. Managers only; a Delete button per catalog row.
+- **Block / unblock**: `POST /api/v1/admin/customers/:id/block|unblock` in
+  [routes/customers.ts](backend/src/routes/customers.ts), managers only (the SRS is silent on
+  roles; moderation felt like a manager's call, easy to loosen). The inbox lists show "opted
+  out" / "blocked" pills, the chat head shows the opt-in state and date, with a Block/Unblock
+  button. The conversation routes now embed those customer columns.
+- **Dashboard "today" in Pakistan time**: `startOfTodayKarachi()` in `lib/hours.ts` (a fixed
+  +05:00, Pakistan has no DST), tested at 23:30 and 00:30 PKT. The UTC helper in admin.ts is gone.
+- **Bot name and greeting** editable from Settings → Bot (two fields and a Save). The SRS said to
+  reuse the wizard's step-6 component; it also carries the two negotiation limits that Settings
+  already has elsewhere, so the two fields were the smaller change. Server-side persona
+  validation is still the P2 follow-up.
+- **Double-order guard**: the flow test proves a buyer with an open COD order for 2 of 3 units
+  gets "sirf 1 available" when asking for 3 more. No code change was needed; the reservation had
+  already reduced `products.stock`.
+
+**Hassles.**
+- The flow test for "STOP in every state" first assumed a price question lands in `negotiating`;
+  it lands in `product_qa`, and only an offer moves to `negotiating`. Both are now in the table.
+- `FakeDb` has no column defaults, so a customer created through `upsert` has no
+  `wa_opt_in_status` at all, while Postgres gives `unknown`. The opt-in check treats a missing
+  value as unknown, and the follow-up update is keyed on id alone (messages per buyer are already
+  serialised, so the STOP-between-two-writes race cannot happen in one instance).
+- A heredoc holding the edit script tripped bash's quote parsing (a stray apostrophe in a
+  comment), so the scripted edits were written with the Write tool instead.
+
+**Open.** Migration 0016 (Fazal). Block role: managers only, say if staff should have it too.
+
 ## 2026-10-13 — P4: order stages and unpaid-order expiry
 
 Branch `feat/p4-order-stages`, from `main` at `fb509c9` (after P3 #22 and M6 #27). 33 test files,

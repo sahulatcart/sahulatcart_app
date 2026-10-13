@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Download, FileUp, Loader2, Package, Plus, RefreshCw } from 'lucide-react';
+import { Download, FileUp, Loader2, Package, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import AppShell, { EmptyState, PageHead } from '../../components/AppShell';
 import { api, apiError, apiJson } from '../../lib/api';
 import { useToast } from '../../components/Toast';
@@ -25,6 +25,12 @@ export default function Catalog() {
     const r = await api(`/api/v1/admin/products/${p.id}`, { method: 'PATCH', body: JSON.stringify({ price: p.price, stock: p.stock, is_active: p.is_active, negotiable: p.negotiable, max_discount_pct: p.max_discount_pct, min_price: p.min_price }) });
     setSaving(null);
     if (r.ok) toast('Saved', 'success'); else toast(await apiError(r), 'error');
+  }
+  // P5: a deleted product is hidden, never removed (orders reference it).
+  async function remove(p: P) {
+    if (!confirm(`Delete "${p.name}"? Past orders keep it; the bot and the catalog stop showing it.`)) return;
+    const r = await api(`/api/v1/admin/products/${p.id}`, { method: 'DELETE' });
+    if (r.ok) { toast('Product deleted', 'info'); load(); } else toast(await apiError(r), 'error');
   }
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -96,7 +102,7 @@ export default function Catalog() {
                     <td><input aria-label={`${p.name} maximum percent off`} type="number" min="0" max="100" value={p.max_discount_pct ?? ''} onChange={(e) => edit(p.id, { max_discount_pct: e.target.value === '' ? null : Number(e.target.value) })} className="xs num" disabled={!p.negotiable} /></td>
                     <td><input aria-label={`${p.name} minimum price in rupees`} type="number" min="0" step="any" value={p.min_price != null ? p.min_price / 100 : ''} onChange={(e) => edit(p.id, { min_price: e.target.value === '' ? null : paisa(e.target.value) })} className="mini num" disabled={!p.negotiable} /></td>
                     <td><label className="switch"><input type="checkbox" aria-label={`${p.name} active`} checked={p.is_active} onChange={(e) => edit(p.id, { is_active: e.target.checked })} /><span className="track" /></label></td>
-                    <td><button className="btn ghost sm" onClick={() => save(p)} disabled={saving === p.id}>{saving === p.id ? <Loader2 className="spin" aria-label="Saving" /> : 'Save'}</button></td>
+                    <td style={{ whiteSpace: 'nowrap' }}><button className="btn ghost sm" onClick={() => save(p)} disabled={saving === p.id}>{saving === p.id ? <Loader2 className="spin" aria-label="Saving" /> : 'Save'}</button> <button className="btn subtle icon-btn sm" onClick={() => remove(p)} aria-label={`Delete ${p.name}`}><Trash2 /></button></td>
                   </tr>
                 ))}
                 {!products && [0, 1, 2].map((i) => <tr key={i}><td colSpan={8}><div className="skeleton" style={{ height: 22 }} /></td></tr>)}

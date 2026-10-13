@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **33 files, 369 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **34 files, 384 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -323,6 +323,14 @@ in that are easy to break accidentally:
 
 - **Human takeover**: if `conversations.status === 'human_takeover'`, the bot stays silent — it only
   stores the message and bumps `unread_count`.
+- **Opted-out and blocked customers** (P5, since 2026-10-13) are handled the same way, and
+  **first**, before the merchant is even read: `customers.wa_opt_in_status='out'` or
+  `is_blocked` → store, bump `unread_count`, no reply, no LLM call. The exact words `start` /
+  `shuru` re-opt in. `STOP_RE` (whole message: stop, unsubscribe, band karo, bandh karo, msg mat
+  karo) runs in every state before the order-flow handlers and the classifier; `optOut()` sends
+  the one goodbye. A customer's first inbound message sets `wa_opt_in_status='in'` in the
+  webhook's `upsertCustomer()`; an `out` is never flipped back by a message. Block/unblock is
+  `routes/customers.ts`, managers only.
 - **AI down → hand off.** If intent classification or address extraction fails (quota, outage, bad key),
   the chat goes to `handoff()` with a "Bot needs help" notification. Never promise a follow-up the bot
   can't deliver, and never re-ask for an address it can't read.
@@ -437,6 +445,11 @@ discriminated union of ~20 reply kinds) and only phrases it.
 - Payment actions live in `payment-service.ts` as single conditional UPDATEs — the filter is the state
   check, so a double-click can't act twice (409 instead). Audit columns (`*_by_user_id`) reference
   `merchant_users.id`, which is `MerchantCtx.memberId` — **not** the Supabase auth user id.
+- **Products are never deleted** (P5, since 2026-10-13): `DELETE /api/v1/admin/products/:id`
+  (`routes/catalog.ts`) sets `is_active=false` and `deleted_at` (migration 0016) because
+  `order_items` reference the row. Product reads filter `deleted_at is null`; the bot filters on
+  `is_active`. The dashboard's "today" starts at 00:00 Pakistan time (`startOfTodayKarachi()`
+  in `lib/hours.ts`), not UTC.
 - **Order stages** (P4, since 2026-10-13): [orchestrator/order-stages.ts](backend/src/orchestrator/order-stages.ts)
   moves an order confirmed/paid → preparing → dispatched → delivered, one step at a time (`STAGE_FROM`),
   through the same `transition()`; anything else is 409. Routes are in

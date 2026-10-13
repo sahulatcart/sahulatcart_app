@@ -19,6 +19,12 @@ export function validBusinessHours(h: unknown): h is BusinessHours {
 }
 
 /** The weekday in Pakistan for an instant: 'mon' … 'sun'. */
+/** ISO instant of 00:00 today in Pakistan time (no DST there, so a fixed +05:00). P5, FR-P5.6. */
+export function startOfTodayKarachi(now: Date = new Date()): string {
+  const ymd = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  return new Date(`${ymd}T00:00:00+05:00`).toISOString();
+}
+
 export function dayInKarachi(now: Date = new Date()): Day {
   const name = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'Asia/Karachi' }).format(now).toLowerCase();
   return (DAYS.find((d) => d === name) ?? 'mon') as Day;

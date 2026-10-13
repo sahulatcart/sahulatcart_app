@@ -87,7 +87,7 @@ function dispatch(db: SupabaseClient, t: Tenant, msg: NormalizedMessage): Promis
   return done;
 }
 
-async function upsertCustomer(
+export async function upsertCustomer(
   db: SupabaseClient,
   merchantId: string,
   waId: string,
@@ -98,11 +98,16 @@ async function upsertCustomer(
   const { data, error } = await db
     .from('customers')
     .upsert(row, { onConflict: 'merchant_id,wa_id' })
-    .select('id')
+    .select('id, wa_opt_in_status')
     .single();
   if (error) {
     logger.error({ err: error.message }, 'customer upsert failed');
     return null;
+  }
+  // P5 (FR-P5.3): writing to the shop is the opt-in. Only an unknown customer is marked, so a
+  // later STOP ('out') is never undone by their next message.
+  if ((data.wa_opt_in_status ?? 'unknown') === 'unknown') {
+    await db.from('customers').update({ wa_opt_in_status: 'in', wa_opt_in_source: 'inbound_message', wa_opt_in_at: new Date().toISOString() }).eq('id', data.id);
   }
   return data;
 }

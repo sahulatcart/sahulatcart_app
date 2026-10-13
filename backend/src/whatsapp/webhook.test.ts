@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { accountEventId, claimWebhookPayload } from './webhook';
+import { accountEventId, claimWebhookPayload, upsertCustomer } from './webhook';
+import { FakeDb } from '../test-support/fake-db';
 import type { WebhookPayload } from './types';
 
 const payload = (ids: string[]): WebhookPayload => ({
@@ -92,5 +93,19 @@ describe('account events (M3)', () => {
     const r = await claimWebhookPayload(eventPayload, db);
     expect(r.complete).toBe(false);
     expect(r.events).toHaveLength(0);
+  });
+});
+
+describe('upsertCustomer (P5, FR-P5.3: the first message is the opt-in)', () => {
+  it('marks a new customer opted in by inbound message, and never undoes a STOP', async () => {
+    const db = new FakeDb();
+    const first = await upsertCustomer(db.client, 'M1', '923001234567', 'Ahmed');
+    const row = () => db.rows('customers').find((c) => c.id === first!.id)!;
+    expect(row()).toMatchObject({ wa_opt_in_status: 'in', wa_opt_in_source: 'inbound_message', name: 'Ahmed' });
+    expect(row().wa_opt_in_at).toBeTruthy();
+    row().wa_opt_in_status = 'out';
+    await upsertCustomer(db.client, 'M1', '923001234567', null);
+    expect(row().wa_opt_in_status).toBe('out');
+    expect(db.rows('customers')).toHaveLength(1);
   });
 });
