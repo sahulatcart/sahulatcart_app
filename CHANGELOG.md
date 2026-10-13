@@ -7,6 +7,38 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — M5: the message meter and the AI budget; the admin build fixed
+
+Branch `feat/m5-usage-meter`. 27 test files, 288 tests (14 new). Both typechecks clean; `next
+build` compiles (after the fix below).
+
+Built: migration `0011_message_usage.sql` (one row per number per month, `bump_message_usage()`
+atomic increments with a per-day AI counter), `lib/usage.ts` (`bumpUsage`, 80%/100% warnings,
+`getUsage`, `outboundThisMonth`, the `withLlmBudget`/`chargeLlmCall` AsyncLocalStorage budget),
+`routes/usage.ts`, counting hooks in `client.ts` (successful sends only), `webhook.ts` (inbound, and
+the budget around voice transcription) and the orchestrator (before classify, compose and address
+extraction), the after-quota handoff for new conversations, `afterFreeQuota` and `llmDailyCap`
+settings with validation, the dashboard meter card, a "Messages and AI" card in Settings, and a
+"paid" badge next to Send in the inbox once the free 1,000 are used. The fake DB got the RPC twin.
+
+**Production incident found on the way.** The admin deploy after PR #21 (P2 part 2) **failed** at
+16:24 and Railway kept serving the previous admin build, so none of part 2's portal work was live
+although `main` looked fine: the PR exported `WhatsAppConnect` from `app/settings/whatsapp/page.tsx`
+for the onboarding wizard, and `next build` refuses extra exports from a page file ("does not
+match the required types of a Next.js Page") while `tsc` passes. Found because M5's own build check
+failed with that message before any M5 change touched the page. Fixed on
+`fix/admin-build-whatsapp-connect` by moving the component to `admin/components/WhatsAppConnect.tsx`;
+proven with a real `next build`; merged into this branch too. The rule is now in CLAUDE.md.
+
+One test slip: the after-quota flow test inserted a usage row after the checkout's AI charges had
+already created one, so two rows matched and the lookup returned nothing; the fixture now updates
+the existing row.
+
+Not done: migration 0011 is **not applied** (apply after merge). The first-day numbers will be
+small; the pilot number's sends count from the deploy onward, nothing is back-filled.
+
+---
+
 ## 2026-10-13 — P2, part 2: the seven panels, COD enforced, the greeting, the live-merchant back-fill
 
 **Outcome** — onboarding is complete end to end. Every panel of the wizard saves on its own
