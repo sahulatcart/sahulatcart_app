@@ -32,7 +32,10 @@ export function replySpecToPrompt(spec: ComposedSpec, ctx: ComposeContext): stri
   let s: string;
   switch (spec.kind) {
     case 'greeting':
-      s = `A customer just messaged. Greet them warmly (salaam) and ask how you can help / what they are looking for.`;
+      s = spec.greetingText
+        ? `A customer just messaged. The shop owner wrote this greeting; use it close to verbatim, then ask what they are looking for: ${JSON.stringify(spec.greetingText)}.`
+        : `A customer just messaged. Greet them warmly (salaam) and ask how you can help / what they are looking for.`;
+      if (spec.hoursText) s += ` Also mention the opening hours, exactly as given: ${JSON.stringify(spec.hoursText)}.`;
       break;
     case 'quote':
       s = `Tell the customer that "${spec.productName}" costs exactly Rs ${spec.priceRupees}. State this price clearly.` + qty(spec);
@@ -50,7 +53,9 @@ export function replySpecToPrompt(spec: ComposedSpec, ctx: ComposeContext): stri
       s = `The customer wants to order "${spec.productName}" at Rs ${spec.priceRupees}. Warmly acknowledge and say you'll take their order details shortly. Name this exact figure.`;
       break;
     case 'ask_payment_method':
-      s = `The order total is exactly Rs ${spec.priceRupees}. Tell them the total (this exact figure) and ask how they'd like to pay: Cash on Delivery ya bank transfer?`;
+      s = spec.methods.length === 1 && spec.methods[0] === 'cod'
+        ? `The order total is exactly Rs ${spec.priceRupees}. Tell them the total (this exact figure) and that payment is Cash on Delivery; ask them to confirm ("haan" / "theek hai"). Do not mention bank transfer.`
+        : `The order total is exactly Rs ${spec.priceRupees}. Tell them the total (this exact figure) and ask how they'd like to pay: Cash on Delivery ya bank transfer?`;
       break;
     case 'payment_verified':
       s = `Payment for order ${spec.orderNumber} is verified. Warmly confirm the order is placed and thank them.`;

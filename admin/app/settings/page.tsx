@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Landmark, MessageCircle, Plus, Save, Scale, Shield, Smile, Trash2, type LucideIcon } from 'lucide-react';
 import AppShell, { EmptyState, PageHead } from '../../components/AppShell';
+import DeliveryZones, { type Zone } from '../../components/DeliveryZones';
 import { api, apiError, apiJson } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 
@@ -16,6 +17,7 @@ interface Settings {
   settings: { botEnabled?: boolean; defaultDeliveryCharge?: number; upsellEnabled?: boolean; kb?: Kb };
   bot_persona: { name?: string; style?: string } | null;
   bankAccounts: { id: string; bank_name: string; account_title: string; account_number: string; is_default: boolean }[];
+  deliveryZones: Zone[];
   readiness?: { ready: boolean; failing: string[]; steps: Record<string, { ok: boolean; reason?: string }> };
 }
 
@@ -223,6 +225,13 @@ export default function SettingsPage() {
           </div>
         </div>
         <div className="card-foot"><button className="btn" onClick={saveKb}><Save aria-hidden /> Save knowledgebase</button></div>
+      </div>
+
+      <div className="eyebrow">Delivery</div>
+      <div className="card pad">
+        <h2>Delivery areas and charges</h2>
+        <p className="section-desc" style={{ marginBottom: 14 }}>The bot quotes these when a buyer gives an address. An area marked not serviceable is refused politely.</p>
+        <DeliveryZones s={s} onChange={load} />
       </div>
 
       <div className="eyebrow">Payments</div>

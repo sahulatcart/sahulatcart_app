@@ -1,10 +1,17 @@
 // Onboarding with readiness gates (SRS P2): the readiness endpoint and delivery-zone editing.
 // Its own route file with its own auth hook (Part 0.3); nothing here goes into routes/admin.ts.
+import crypto from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
+import { loadConfig } from '../config';
+import { logger } from '../lib/logger';
 import { getServiceClient } from '../lib/supabase';
 import { forbid, isManager, requireMerchant } from '../lib/auth';
 import { computeReadiness } from '../lib/readiness';
-import { invalidZoneField } from '../lib/validation';
+import { invalidProfileField, invalidZoneField } from '../lib/validation';
+import { validBusinessHours } from '../lib/hours';
+import { isPakistaniMobile, phoneDigits } from '../lib/phone';
+import { MAX_IMAGE_BYTES, productImageUrl } from '../lib/images';
+import { syncBusinessProfile } from '../whatsapp/connect';
 
 const ZONE_COLS = 'id, area_name, city, charge, is_serviceable, eta_text';
 const ZONE_FIELDS = ['area_name', 'city', 'charge', 'is_serviceable', 'eta_text'] as const;
@@ -77,5 +84,54 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
     if (!cur.data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'delivery zone not found' } });
     await db.from('delivery_zones').delete().eq('id', id).eq('merchant_id', mid);
     return reply.send({ ok: true });
+  });
+
+  // ── Shop profile (FR-P2.3 step 1): name, owner, phone, address, category, hours. ──
+  // Only the fields sent are written; the phone is stored digits-only (Part 0.3). After a save the
+  // WhatsApp business profile is synced best-effort (IC-9) — a no-op until a number is connected.
+  app.patch('/api/v1/admin/profile', async (req, reply) => {
+    if (!isManager(req.merchantCtx!)) return forbid(reply);
+    const mid = req.merchantCtx!.merchantId;
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const bad = invalidProfileField(b);
+    if (bad) return reply.code(400).send({ error: { code: 'BAD', message: `${bad} is missing or invalid` } });
+    if ('businessHours' in b && !validBusinessHours(b.businessHours)) return reply.code(400).send({ error: { code: 'BAD', message: 'businessHours is invalid: { mon: { open: "10:00", close: "22:00" } | { closed: true }, … }' } });
+    const patch: Record<string, unknown> = {};
+    if (typeof b.businessName === 'string') patch.business_name = b.businessName.trim();
+    if (typeof b.ownerName === 'string') patch.owner_name = b.ownerName.trim();
+    if ('address' in b) patch.address = typeof b.address === 'string' && b.address.trim() ? b.address.trim() : null;
+    if (typeof b.category === 'string') patch.category = b.category;
+    if ('businessHours' in b) patch.business_hours = b.businessHours;
+    if ('phone' in b) {
+      const digits = phoneDigits(b.phone);
+      if (!isPakistaniMobile(digits)) return reply.code(400).send({ error: { code: 'BAD', message: 'phone must be a Pakistani mobile number (+92 3xx xxxxxxx)' } });
+      patch.phone = digits;
+    }
+    if (Object.keys(patch).length) {
+      const { error } = await db.from('merchants').update(patch).eq('id', mid);
+      if (error) return reply.code(400).send({ error: { code: 'DB', message: error.message } });
+      void syncBusinessProfile(db, mid).catch((e: unknown) => logger.warn({ err: (e as Error).message, merchantId: mid }, 'profile sync after save failed'));
+    }
+    return reply.send({ ok: true, readiness: await computeReadiness(db, mid) });
+  });
+
+  // ── Shop logo (FR-P2.3 step 1): same shape as the product image upload; one key per shop. ──
+  app.post('/api/v1/admin/settings/logo', { bodyLimit: 8 * 1024 * 1024 }, async (req, reply) => {
+    if (!isManager(req.merchantCtx!)) return forbid(reply);
+    const mid = req.merchantCtx!.merchantId;
+    const b = (req.body ?? {}) as { dataBase64?: string; contentType?: string };
+    if (!b.dataBase64 || !b.contentType?.startsWith('image/')) return reply.code(400).send({ error: { code: 'BAD', message: 'dataBase64 and image contentType required' } });
+    const buf = Buffer.from(b.dataBase64, 'base64');
+    if (buf.length > MAX_IMAGE_BYTES) return reply.code(400).send({ error: { code: 'TOO_BIG', message: 'image over 5MB' } });
+    const ext = b.contentType.includes('png') ? 'png' : b.contentType.includes('webp') ? 'webp' : 'jpg';
+    // A new key each time, so a cached old logo never shows after a change.
+    const key = `merchants/${mid}/logo-${crypto.randomUUID().slice(0, 8)}.${ext}`;
+    const cfg = loadConfig();
+    const up = await db.storage.from(cfg.STORAGE_BUCKET_PRODUCT_IMAGES).upload(key, buf, { contentType: b.contentType, upsert: true });
+    if (up.error) return reply.code(500).send({ error: { code: 'STORAGE', message: up.error.message } });
+    const logoUrl = productImageUrl(cfg.SUPABASE_URL, key);
+    const { error } = await db.from('merchants').update({ logo_url: logoUrl }).eq('id', mid);
+    if (error) return reply.code(400).send({ error: { code: 'DB', message: error.message } });
+    return reply.send({ logoUrl });
   });
 }

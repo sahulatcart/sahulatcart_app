@@ -40,8 +40,20 @@ export const invalidSettingsField = firstInvalid({
   freeDeliveryThreshold: (v) => Number.isInteger(v) && (v as number) >= 0,
   deliveryConfigured: bool, // "one charge for everywhere" was chosen on purpose (readiness, P2)
   codEnabled: bool,
+  paymentInstructions: (v) => typeof v === 'string' && v.length <= 500, // shown under the bank details
   botEnabled: bool,
   upsellEnabled: bool,
+});
+
+/** The fixed category list the onboarding wizard offers (FR-P2.3 step 1). */
+export const CATEGORIES = ['clothing', 'electronics', 'grocery', 'cosmetics', 'home', 'other'] as const;
+
+/** PATCH /admin/profile (P2 step 1). Phone is normalised before this runs; hours are checked in lib/hours. */
+export const invalidProfileField = firstInvalid({
+  businessName: (v) => typeof v === 'string' && v.trim().length >= 2 && v.trim().length <= 80,
+  ownerName: (v) => typeof v === 'string' && v.trim().length >= 2 && v.trim().length <= 80,
+  address: optional((v) => typeof v === 'string' && v.trim().length <= 200),
+  category: (v) => (CATEGORIES as readonly string[]).includes(v as string),
 });
 
 /** delivery_zones rows (P2). area_name is matched by whole words in the bot, so keep it a real name. */

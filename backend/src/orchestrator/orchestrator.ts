@@ -15,6 +15,8 @@ import { pickUpsell, type UpsellCandidate } from './upsell';
 import { priceGuardOk, sanctionedNumbers } from './guard';
 import { matchZone, type Zone } from './delivery';
 import { confirmBankOrder, confirmCodOrder, createDraftOrder, OUT_OF_STOCK, switchBankOrderToCod, type DeliveryInfo } from './order-service';
+import { todayHoursText } from '../lib/hours';
+import type { PaymentMethodKind } from '../llm/types';
 
 export interface OrchestratorCtx {
   merchantId: string;
@@ -61,7 +63,7 @@ function qtySuffix(spec: { quantity?: number; totalRupees?: number }): string {
 
 function fallbackText(spec: ReplySpec): string {
   switch (spec.kind) {
-    case 'greeting': return 'Assalam-o-Alaikum! Kaise madad kar sakta hoon?';
+    case 'greeting': return `${spec.greetingText ?? 'Assalam-o-Alaikum! Kaise madad kar sakta hoon?'}${spec.hoursText ? ` ${spec.hoursText}` : ''}`;
     case 'quote': return `${spec.productName} ki price Rs ${spec.priceRupees} hai${qtySuffix(spec)}.`;
     case 'counter': return `${spec.productName} Rs ${spec.priceRupees} tak kar sakta hoon${qtySuffix(spec)}${spec.final ? ', ye last price hai' : ''}.`;
     case 'accept': return `Theek hai, ${spec.productName} Rs ${spec.priceRupees} final${qtySuffix(spec)}. Shukriya!`;
@@ -73,7 +75,9 @@ function fallbackText(spec: ReplySpec): string {
     case 'order_ack': return `Bohat khoob! ${spec.productName} Rs ${spec.priceRupees}. Ab order details leta hoon.`;
     case 'ask_delivery': return 'Bohat khoob! Order ke liye apna poora naam, address aur area/shehar bhej dein.';
     case 'ask_delivery_missing': return `Aapka ${spec.missing} bhi bata dein taake delivery ho sake.`;
-    case 'ask_payment_method': return `Aapke order ka total Rs ${spec.priceRupees} hai. Payment Cash on Delivery karenge ya bank transfer?`;
+    case 'ask_payment_method': return spec.methods.length === 1 && spec.methods[0] === 'cod'
+      ? `Aapke order ka total Rs ${spec.priceRupees} hai. Payment Cash on Delivery hogi — confirm karne ke liye "haan" likh dein.`
+      : `Aapke order ka total Rs ${spec.priceRupees} hai. Payment Cash on Delivery karenge ya bank transfer?`;
     case 'bank_await': return 'Amount transfer kar ke payment ka screenshot yahan bhej dein, shukriya.';
     case 'payment_received': return 'Screenshot mil gaya, verify kar ke abhi confirm karte hain.';
     case 'payment_verified': return `Order ${spec.orderNumber} confirm ho gaya. Shukriya!`;
@@ -184,7 +188,7 @@ function toPricing(p: CatalogItem): ProductPricing {
 export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, message: NormalizedMessage): Promise<void> {
   const merchantRes = await db
     .from('merchants')
-    .select('business_name, bot_persona, negotiation_defaults, settings')
+    .select('business_name, bot_persona, negotiation_defaults, settings, business_hours')
     .eq('id', ctx.merchantId)
     .single();
   const merchant = merchantRes.data;
@@ -196,7 +200,7 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
     return;
   }
 
-  const persona = (merchant.bot_persona ?? {}) as { name?: string; style?: string };
+  const persona = (merchant.bot_persona ?? {}) as { name?: string; style?: string; greeting?: string };
   const cc: ComposeContext = {
     businessName: merchant.business_name ?? 'Shop',
     botName: persona.name,
@@ -304,7 +308,13 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
 
   // A greeting or small talk is always just that — never quote a leftover active product.
   if (cls.intent === 'greet' || cls.intent === 'chitchat') {
-    const spec: ReplySpec = cls.intent === 'greet' ? { kind: 'greeting' } : { kind: 'chitchat' };
+    // The merchant's own greeting (P2 step 6) and today's hours (FR-P2.5) — both merchant text, so the guard allows their numbers.
+    const greeting: ReplySpec = {
+      kind: 'greeting',
+      ...(persona.greeting?.trim() ? { greetingText: persona.greeting.trim() } : {}),
+      ...(todayHoursText(merchant.business_hours) ? { hoursText: todayHoursText(merchant.business_hours)! } : {}),
+    };
+    const spec: ReplySpec = cls.intent === 'greet' ? greeting : { kind: 'chitchat' };
     await reply(db, ctx, await safeCompose(spec, cc), 'browsing', context);
     return;
   }
@@ -607,14 +617,59 @@ async function replyButtons(
 const PAY_COD = 'pay_cod';
 const PAY_BANK = 'pay_bank';
 
+interface BankRow { id: string; bank_name: string; account_title: string; account_number: string; iban?: string | null }
+/** "haan", "ji", "ok", "theek hai" — a yes to the COD-only question. Whole-message anchored (free-text rule). */
+const YES_RE = /^\s*(haan|han|ha|ji|g|ok|okay|theek|thik|yes|confirm|kar\s*do|kar\s*dein)\b/i;
+
 /**
- * Ask how the buyer wants to pay. With a bank account on file both methods exist, so the question
- * goes out as two buttons (one message, no "COD matlab?" round-trips); with COD only, as text.
+ * The ways this shop takes payment (P2 step 5, enforced): COD only while `settings.codEnabled` is
+ * not false, bank transfer only with an active bank account. The default account comes first.
+ */
+async function paymentMethods(db: SupabaseClient, merchantId: string): Promise<{ cod: boolean; bank: BankRow | null; instructions: string | null; kinds: PaymentMethodKind[] }> {
+  const [m, bank] = await Promise.all([
+    db.from('merchants').select('settings').eq('id', merchantId).maybeSingle(),
+    db.from('bank_accounts').select('*').eq('merchant_id', merchantId).eq('is_active', true).order('is_default', { ascending: false }).limit(1).maybeSingle(),
+  ]);
+  const settings = (m.data?.settings ?? {}) as { codEnabled?: boolean; paymentInstructions?: string };
+  const cod = settings.codEnabled !== false;
+  const kinds: PaymentMethodKind[] = [...(cod ? ['cod' as const] : []), ...(bank.data ? ['bank' as const] : [])];
+  return { cod, bank: (bank.data as BankRow | null) ?? null, instructions: settings.paymentInstructions?.trim() || null, kinds };
+}
+
+/** Place the bank-transfer order and send the details + screenshot ask as ONE message (M4 cost rule). */
+async function startBankPayment(db: SupabaseClient, ctx: OrchestratorCtx, cc: ComposeContext, orderId: string, bank: BankRow, instructions: string | null, context: Record<string, unknown>, prefix = ''): Promise<void> {
+  const res = await confirmBankOrder(db, { merchantId: ctx.merchantId }, orderId, bank.id, cc.businessName);
+  if (res === OUT_OF_STOCK) {
+    await reply(db, ctx, SOLD_OUT_MSG, 'browsing', {});
+    return;
+  }
+  if (!res) {
+    await reply(db, ctx, await safeCompose({ kind: 'clarify' }, cc), 'browsing', context);
+    return;
+  }
+  const bctx = { ...context, pendingOrderId: orderId, pendingPaymentId: res.paymentId, paymentMethod: 'bank_transfer' };
+  await reply(db, ctx, `${prefix}${bankDetailsText(bank, rupees(res.total), instructions)}\n\n${await safeCompose({ kind: 'bank_await' }, cc)}`, 'awaiting_payment_proof', bctx);
+}
+
+/**
+ * Ask how the buyer wants to pay — offering only the methods the merchant enabled. Both: two
+ * buttons (one message, no "COD matlab?" round-trips). COD only: a text confirm. Bank only: no
+ * question at all, straight to the details. Neither: the merchant has to sort it out (readiness
+ * blocks going live in this state, so this is a safety net).
  */
 async function askPaymentMethod(db: SupabaseClient, ctx: OrchestratorCtx, cc: ComposeContext, totalPaisa: number, context: Record<string, unknown>): Promise<void> {
-  const text = await safeCompose({ kind: 'ask_payment_method', priceRupees: rupees(totalPaisa) }, cc);
-  const bank = await db.from('bank_accounts').select('id').eq('merchant_id', ctx.merchantId).eq('is_active', true).limit(1).maybeSingle();
-  if (bank.data) {
+  const pm = await paymentMethods(db, ctx.merchantId);
+  const orderId = context.pendingOrderId as string | undefined;
+  if (pm.kinds.length === 0 || !orderId) {
+    await handoff(db, ctx, cc, context, 'selecting_payment', 'No payment method is enabled: turn on Cash on Delivery or add a bank account in Settings.');
+    return;
+  }
+  if (!pm.cod && pm.bank) {
+    await startBankPayment(db, ctx, cc, orderId, pm.bank, pm.instructions, context, `Aapke order ka total Rs ${rupees(totalPaisa)} hai. Payment bank transfer se hogi.\n\n`);
+    return;
+  }
+  const text = await safeCompose({ kind: 'ask_payment_method', priceRupees: rupees(totalPaisa), methods: pm.kinds }, cc);
+  if (pm.bank) {
     await replyButtons(db, ctx, text, [{ id: PAY_COD, title: 'Cash on Delivery' }, { id: PAY_BANK, title: 'Bank Transfer' }], 'selecting_payment', context);
   } else {
     await reply(db, ctx, text, 'selecting_payment', context);
@@ -757,14 +812,15 @@ async function getDeliveryCharge(db: SupabaseClient, merchantId: string, area: s
   return typeof s.defaultDeliveryCharge === 'number' ? s.defaultDeliveryCharge : 0;
 }
 
-function bankDetailsText(bank: { bank_name: string; account_title: string; account_number: string; iban?: string | null }, totalRupees: number): string {
+function bankDetailsText(bank: { bank_name: string; account_title: string; account_number: string; iban?: string | null }, totalRupees: number, instructions: string | null = null): string {
   return (
     `Payment ke liye humara account:\n` +
     `🏦 ${bank.bank_name}\n` +
     `👤 ${bank.account_title}\n` +
     `#️⃣ ${bank.account_number}` +
     (bank.iban ? `\nIBAN: ${bank.iban}` : '') +
-    `\n💰 Amount: Rs ${totalRupees}`
+    `\n💰 Amount: Rs ${totalRupees}` +
+    (instructions ? `\n\n${instructions}` : '') // the merchant's own note (settings.paymentInstructions, P2 step 5)
   );
 }
 
@@ -817,6 +873,7 @@ async function handlePayment(db: SupabaseClient, ctx: OrchestratorCtx, cc: Compo
   const txt = (message.text ?? '').toLowerCase();
   // A button tap carries its id only in the raw payload (parse.ts puts the title in `text`).
   const tapped = (message.raw as { interactive?: { button_reply?: { id?: string } } })?.interactive?.button_reply?.id;
+  const pm = await paymentMethods(db, ctx.merchantId);
   const codMention = tapped === PAY_COD || (!tapped && COD_RE.test(txt));
   const bankMention = tapped === PAY_BANK || (!tapped && BANK_RE.test(txt));
   // "cash nahi, bank se karonga" mentions BOTH — respect negation; if still ambiguous, ask again.
@@ -826,6 +883,15 @@ async function handlePayment(db: SupabaseClient, ctx: OrchestratorCtx, cc: Compo
     if (/(cash|cod)\s+(nahi|nai|nahin)/.test(txt)) wantsBank = true;
     else if (/(bank|transfer|online)\s+(nahi|nai|nahin)/.test(txt)) wantsCod = true;
     // otherwise both stay false → falls through to the re-ask below
+  }
+  // With COD the only method, the question was "confirm?" — a plain yes is a yes.
+  if (!wantsCod && !wantsBank && pm.cod && !pm.bank && YES_RE.test(txt)) wantsCod = true;
+
+  // Only the methods the merchant enabled (P2 step 5). A disabled method is explained, then the other is used.
+  if (wantsCod && !pm.cod) {
+    if (!pm.bank) { await handoff(db, ctx, cc, context, 'selecting_payment', 'No payment method is enabled: turn on Cash on Delivery or add a bank account in Settings.'); return; }
+    await startBankPayment(db, ctx, cc, orderId, pm.bank, pm.instructions, context, 'Maazrat, Cash on Delivery available nahi hai — payment bank transfer se hogi.\n\n');
+    return;
   }
 
   if (wantsCod) {
@@ -841,23 +907,12 @@ async function handlePayment(db: SupabaseClient, ctx: OrchestratorCtx, cc: Compo
     return;
   }
   if (wantsBank) {
-    const bank = await db.from('bank_accounts').select('*').eq('merchant_id', ctx.merchantId).eq('is_active', true).order('is_default', { ascending: false }).limit(1).maybeSingle();
-    if (!bank.data) {
+    if (!pm.bank) {
+      if (!pm.cod) { await handoff(db, ctx, cc, context, 'selecting_payment', 'No payment method is enabled: turn on Cash on Delivery or add a bank account in Settings.'); return; }
       await reply(db, ctx, 'Maazrat, abhi sirf Cash on Delivery available hai. COD karein?', 'selecting_payment', context);
       return;
     }
-    const res = await confirmBankOrder(db, { merchantId: ctx.merchantId }, orderId, bank.data.id, cc.businessName);
-    if (res === OUT_OF_STOCK) {
-      await reply(db, ctx, SOLD_OUT_MSG, 'browsing', {});
-      return;
-    }
-    if (!res) {
-      await reply(db, ctx, await safeCompose({ kind: 'clarify' }, cc), 'browsing', context);
-      return;
-    }
-    const bctx = { ...context, pendingOrderId: orderId, pendingPaymentId: res.paymentId, paymentMethod: 'bank_transfer' };
-    // One message, not two: the details and the ask (every message past the free 1,000 is charged, M4).
-    await reply(db, ctx, `${bankDetailsText(bank.data, rupees(res.total))}\n\n${await safeCompose({ kind: 'bank_await' }, cc)}`, 'awaiting_payment_proof', bctx);
+    await startBankPayment(db, ctx, cc, orderId, pm.bank, pm.instructions, context);
     return;
   }
   const o = await db.from('orders').select('total').eq('id', orderId).single();
@@ -869,6 +924,11 @@ async function handlePaymentProof(db: SupabaseClient, ctx: OrchestratorCtx, cc: 
   const orderId = context.pendingOrderId as string | undefined;
   // Customer changed their mind: "COD kar dein" (typed or voice) while we wait for a screenshot → switch the order.
   if (orderId && message.type !== 'image' && message.text && COD_RE.test(message.text.toLowerCase()) && !BANK_RE.test(message.text.toLowerCase())) {
+    if (!(await paymentMethods(db, ctx.merchantId)).cod) {
+      // COD is switched off for this shop (P2 step 5): the bank order stands.
+      await reply(db, ctx, 'Maazrat, Cash on Delivery available nahi hai. Bank transfer kar ke screenshot bhej dein.', 'awaiting_payment_proof', context);
+      return;
+    }
     const res = await switchBankOrderToCod(db, { merchantId: ctx.merchantId }, orderId, cc.businessName);
     if (res) {
       await sendCodConfirmed(db, ctx, cc, orderId, res, { ...context, pendingOrderId: undefined, pendingPaymentId: undefined, paymentMethod: 'cod' });
