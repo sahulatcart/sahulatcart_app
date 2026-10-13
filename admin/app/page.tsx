@@ -12,11 +12,17 @@ interface Dash {
 
 export default function Dashboard() {
   const [d, setD] = useState<Dash | null>(null);
-  const [needsSetup, setNeedsSetup] = useState(false);
+  // FR-P2.4: the card shows until every readiness check passes AND the bot is on; it links to the first open step.
+  const [setup, setSetup] = useState<{ done: number; next: string | null; ready: boolean } | null>(null);
   useEffect(() => {
     apiJson<Dash>('/api/v1/admin/dashboard').then(setD).catch(() => {});
-    apiJson<{ merchant: { settings?: { onboardingCompletedAt?: string | null } } }>('/api/v1/admin/me')
-      .then((r) => setNeedsSetup(!r.merchant?.settings?.onboardingCompletedAt)).catch(() => {});
+    Promise.all([
+      apiJson<{ ready: boolean; failing: string[] }>('/api/v1/admin/readiness'),
+      apiJson<{ merchant: { settings?: { botEnabled?: boolean } } }>('/api/v1/admin/me'),
+    ]).then(([r, me]) => {
+      const botOn = me.merchant?.settings?.botEnabled === true;
+      setSetup(r.ready && botOn ? null : { done: 7 - r.failing.length, next: r.failing[0] ?? null, ready: r.ready });
+    }).catch(() => {});
   }, []);
 
   const stat = (k: string, v: React.ReactNode, Icon: typeof ShoppingBag, warn = false) => (
@@ -31,13 +37,16 @@ export default function Dashboard() {
     <AppShell>
       <PageHead title="Dashboard" sub="Your shop at a glance — today, in Pakistan time" />
 
-      {needsSetup && (
+      {setup && (
         <div className="callout">
           <div className="row" style={{ flexWrap: 'nowrap' }}>
             <div className="ico"><Sparkles aria-hidden /></div>
-            <div><div className="strong">Finish setting up your shop</div><div className="hint">Business info, negotiation rules, bank account — then go live.</div></div>
+            <div>
+              <div className="strong">{setup.ready ? 'Everything is set — switch the bot on' : 'Finish setting up your shop'}</div>
+              <div className="hint">{setup.ready ? 'All seven steps are done. Go live and the bot starts selling.' : `${setup.done} of 7 steps done. The bot stays off until all seven are.`}</div>
+            </div>
           </div>
-          <Link href="/onboarding" className="btn">Complete setup <ArrowRight aria-hidden /></Link>
+          <Link href={setup.next ? `/onboarding?step=${setup.next}` : '/onboarding'} className="btn">{setup.ready ? 'Go live' : 'Continue setup'} <ArrowRight aria-hidden /></Link>
         </div>
       )}
 

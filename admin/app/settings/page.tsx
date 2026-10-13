@@ -16,6 +16,7 @@ interface Settings {
   settings: { botEnabled?: boolean; defaultDeliveryCharge?: number; upsellEnabled?: boolean; kb?: Kb };
   bot_persona: { name?: string; style?: string } | null;
   bankAccounts: { id: string; bank_name: string; account_title: string; account_number: string; is_default: boolean }[];
+  readiness?: { ready: boolean; failing: string[]; steps: Record<string, { ok: boolean; reason?: string }> };
 }
 
 // Bargaining personalities → concession-curve presets (fraction of the discount gap
@@ -58,7 +59,8 @@ export default function SettingsPage() {
   async function toggleBot(on: boolean) {
     if (!s) return;
     setS({ ...s, settings: { ...s.settings, botEnabled: on } });
-    await patch({ settings: { botEnabled: on } }, on ? 'Bot is now active' : 'Bot paused', on ? 'success' : 'info');
+    // The server refuses `on` (409 not_ready) until every readiness check passes; the switch snaps back.
+    if (!(await patch({ settings: { botEnabled: on } }, on ? 'Bot is now active' : 'Bot paused', on ? 'success' : 'info'))) load();
   }
   async function setStyle(style: string) {
     if (!s) return;
@@ -97,6 +99,8 @@ export default function SettingsPage() {
   const setTier = (i: number, patch: Partial<Tier>) => setNd({ bulkTiers: tiers.map((t, j) => (j === i ? { ...t, ...patch } : t)) });
   const faqs = kb.faqs ?? [];
   const botOn = s.settings.botEnabled !== false;
+  // FR-P2.2 / FR-P2.6: the toggle is disabled, with the reason, while a readiness check fails.
+  const notReady = !botOn && !!s.readiness && !s.readiness.ready;
   const currentStyle = s.bot_persona?.style ?? 'standard';
 
   return (
@@ -118,9 +122,13 @@ export default function SettingsPage() {
           <div className="setting-row" style={{ width: '100%' }}>
             <div>
               <div className="t">WhatsApp bot <span className={`pill ${botOn ? 'success' : 'neutral'}`} style={{ marginLeft: 6 }}><span className="dot" aria-hidden />{botOn ? 'Active' : 'Paused'}</span></div>
-              <div className="d">{botOn ? 'Replying to customers on WhatsApp' : 'Paused — customers get no automated replies'}</div>
+              <div className="d">
+                {botOn ? 'Replying to customers on WhatsApp' : notReady
+                  ? <>Paused — finish setup first: {s.readiness?.steps[s.readiness.failing[0]!]?.reason}. <Link href={`/onboarding?step=${s.readiness?.failing[0]}`} className="link">Continue setup</Link></>
+                  : 'Paused — customers get no automated replies'}
+              </div>
             </div>
-            <label className="switch"><input type="checkbox" aria-label="Bot active" checked={botOn} onChange={(e) => toggleBot(e.target.checked)} /><span className="track" /></label>
+            <label className="switch"><input type="checkbox" aria-label="Bot active" checked={botOn} disabled={notReady} onChange={(e) => toggleBot(e.target.checked)} /><span className="track" /></label>
           </div>
         </div>
         <div className="card-head" style={{ borderBottom: 0 }}>
