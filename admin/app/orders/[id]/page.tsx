@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Banknote, Check, Image as ImageIcon, MapPin, Phone, User, X } from 'lucide-react';
+import { Banknote, Check, Image as ImageIcon, MapPin, MessageCircle, Phone, User, X } from 'lucide-react';
 import AppShell, { BackLink, PageHead, PaymentPill, StatusPill, humanize } from '../../../components/AppShell';
 import { api, apiError, apiJson, dt, rs } from '../../../lib/api';
 import { useToast } from '../../../components/Toast';
@@ -9,6 +9,20 @@ import { useToast } from '../../../components/Toast';
 interface Detail {
   order: { id: string; order_number: string; status: string; payment_method: string; payment_status: string; subtotal: number; discount_total: number; delivery_charge: number; total: number; delivery_name: string; delivery_address: string; delivery_area: string; delivery_city: string; delivery_phone: string; placed_at: string | null; created_at: string };
   items: { name_snapshot: string; quantity: number; unit_price: number; discount: number; line_total: number }[];
+  windowExpiresAt: string | null;
+  pendingBuyerNotice: 'payment_update' | 'order_sent' | null;
+  noticePricePaisa: number;
+}
+
+/** "Free to confirm until 3:40 pm tomorrow" — the buyer's 24-hour window decides the price of a message. */
+function WindowNote({ until, pricePaisa }: { until: string | null; pricePaisa: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t); }, []);
+  if (!until) return null;
+  const left = new Date(until).getTime() - now;
+  if (left <= 0) return <div className="hint" style={{ marginTop: 8 }}>Buyer&rsquo;s window closed: confirming now sends nothing for free; a paid notice (about {rs(pricePaisa)}) appears below once you decide.</div>;
+  const h = Math.floor(left / 3_600_000); const m = Math.floor((left % 3_600_000) / 60_000);
+  return <div className="hint" style={{ marginTop: 8, color: 'var(--success)' }}>Free to confirm until {dt(until)} ({h}h {m}m left): the buyer wrote recently, so the confirmation goes out as a normal message.</div>;
 }
 
 export default function OrderDetail() {
@@ -109,6 +123,14 @@ export default function OrderDetail() {
               <button className="btn block" disabled={o.payment_status === 'cod_collected' || busy} onClick={() => act('payment/cod-collected', undefined, 'Marked collected')}><Check aria-hidden /> Mark cash collected</button>
             )}
             {o.payment_method === 'unset' && <div className="hint">The buyer hasn&apos;t chosen a payment method yet.</div>}
+            {o.payment_method === 'bank_transfer' && claimed && <WindowNote until={d.windowExpiresAt} pricePaisa={d.noticePricePaisa} />}
+            {d.pendingBuyerNotice && (
+              <>
+                <div className="divider" />
+                <div className="hint" style={{ marginBottom: 8 }}>The buyer&rsquo;s 24-hour window had closed, so their {d.pendingBuyerNotice === 'order_sent' ? 'dispatch notice' : 'payment update'} was not sent. Sending it now uses a pre-approved message and costs about {rs(d.noticePricePaisa)} (Meta&rsquo;s rate).</div>
+                <button className="btn block" disabled={busy} onClick={() => act('notify-buyer', { kind: d.pendingBuyerNotice }, 'Notice sent to the buyer')}><MessageCircle aria-hidden /> Send for about {rs(d.noticePricePaisa)}</button>
+              </>
+            )}
             {cancellable && (
               <>
                 <div className="divider" />

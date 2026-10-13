@@ -6,7 +6,7 @@ import { loadConfig } from '../config';
 const fake = { db: new FakeDb() };
 vi.mock('../lib/supabase', () => ({ getServiceClient: () => fake.db.client }));
 
-import { sendDocument, sendImage, sendText } from './client';
+import { sendButtons, sendDocument, sendImage, sendTemplate, sendText } from './client';
 import { forgetAllNumbers, storeToken } from './credentials';
 
 const cfg = loadConfig();
@@ -91,5 +91,28 @@ describe('sending with per-merchant credentials', () => {
   it('a non-JSON error body still yields a result', async () => {
     respond = () => ({ status: 502, body: 'Bad Gateway' });
     expect(await sendText('PN-A', '923001', 'hi')).toEqual({ waMessageId: null, errorCode: 502 });
+  });
+});
+
+describe('templates and buttons (M4)', () => {
+  it('a template send carries the name, language and body parameters in order', async () => {
+    expect(await sendTemplate('PN-A', '923001', 'payment_update', ['Ali', 'SK-1', 'verify ho gayi hai', 'shukriya'])).toEqual({ waMessageId: 'wamid.OK' });
+    expect(calls[0]!.body).toMatchObject({
+      type: 'template',
+      template: { name: 'payment_update', language: { code: 'en' }, components: [{ type: 'body', parameters: [{ type: 'text', text: 'Ali' }, { type: 'text', text: 'SK-1' }, { type: 'text', text: 'verify ho gayi hai' }, { type: 'text', text: 'shukriya' }] }] },
+    });
+  });
+
+  it('a template without parameters sends no components', async () => {
+    await sendTemplate('PN-A', '923001', 'hello_world', [], 'en_US');
+    expect(calls[0]!.body).toMatchObject({ template: { name: 'hello_world', language: { code: 'en_US' }, components: [] } });
+  });
+
+  it('buttons are capped at three with 20-character titles', async () => {
+    await sendButtons('PN-A', '923001', 'Payment kaise?', [{ id: 'a', title: 'Cash on Delivery' }, { id: 'b', title: 'A very long title that Meta would reject' }, { id: 'c', title: 'C' }, { id: 'd', title: 'D' }]);
+    const action = (calls[0]!.body!.interactive as { action: { buttons: { reply: { id: string; title: string } }[] } }).action;
+    expect(action.buttons.map((b) => b.reply.id)).toEqual(['a', 'b', 'c']);
+    expect(action.buttons[1]!.reply.title).toHaveLength(20);
+    expect(calls[0]!.body).toMatchObject({ type: 'interactive', interactive: { type: 'button', body: { text: 'Payment kaise?' } } });
   });
 });

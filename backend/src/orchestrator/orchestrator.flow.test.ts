@@ -6,10 +6,10 @@ import type { Classification, DeliveryDetails } from '../llm';
 import type { NormalizedMessage } from '../whatsapp/types';
 import { runOrchestrator } from './orchestrator';
 import { confirmCodOrder } from './order-service';
-import { verifyPayment } from './payment-service';
+import { notifyBuyerNow, rejectPayment, verifyPayment } from './payment-service';
 
 const h = vi.hoisted(() => ({
-  sent: [] as { to: string; body: string }[],
+  sent: [] as { to: string; body: string; type?: string; buttons?: string[]; template?: string; params?: string[] }[],
   next: {} as Record<string, unknown>, // the classification for the next message
   aiDown: false,
   delivery: { name: null, address: null, area: null, city: null, phone: null } as Record<string, string | null>,
@@ -31,11 +31,13 @@ vi.mock('../llm', async (importOriginal) => {
 });
 vi.mock('../whatsapp/client', () => {
   let n = 0;
-  const record = (to: string, body: string) => { h.sent.push({ to, body }); return { waMessageId: `wamid.${++n}` }; };
+  const record = (to: string, body: string, extra: Record<string, unknown> = {}) => { h.sent.push({ to, body, ...extra }); return { waMessageId: `wamid.${++n}` }; };
   return {
-    sendText: async (_p: string, to: string, body: string) => record(to, body),
-    sendImage: async (_p: string, to: string, _link: string, caption = '') => record(to, caption),
-    sendDocument: async (_p: string, to: string, _link: string, file: string, caption?: string) => record(to, caption ?? file),
+    sendText: async (_p: string, to: string, body: string) => record(to, body, { type: 'text' }),
+    sendImage: async (_p: string, to: string, _link: string, caption = '') => record(to, caption, { type: 'image' }),
+    sendDocument: async (_p: string, to: string, _link: string, file: string, caption?: string) => record(to, caption ?? file, { type: 'document' }),
+    sendTemplate: async (_p: string, to: string, name: string, params: string[]) => record(to, params.join(' | '), { type: 'template', template: name, params }),
+    sendButtons: async (_p: string, to: string, body: string, buttons: { id: string; title: string }[]) => record(to, body, { type: 'interactive', buttons: buttons.map((b) => b.id) }),
   };
 });
 vi.mock('../whatsapp/media', () => ({
@@ -72,6 +74,15 @@ async function say(text: string, cls: Partial<Classification> = {}, type: 'text'
   const id = `in.${++seq}`;
   const raw = { id, from: WA, type, ...(type === 'image' ? { image: { id: 'media-1' } } : {}) };
   await runOrchestrator(db.client, ctx, { waMessageId: id, from: WA, type, rawType: type, text: text || null, profileName: null, raw } as NormalizedMessage);
+  return h.sent.slice(from).map((m) => m.body).join('\n');
+}
+/** The buyer taps a reply button (Meta sends the title as text and the id in the raw payload). */
+async function tap(id: string, title: string): Promise<string> {
+  h.next = {};
+  const from = h.sent.length;
+  const mid = `in.${++seq}`;
+  const raw = { id: mid, from: WA, type: 'interactive', interactive: { button_reply: { id, title } } };
+  await runOrchestrator(db.client, ctx, { waMessageId: mid, from: WA, type: 'interactive', rawType: 'interactive', text: title, profileName: null, raw } as NormalizedMessage);
   return h.sent.slice(from).map((m) => m.body).join('\n');
 }
 const convo = () => db.rows('conversations')[0]!;
@@ -121,7 +132,8 @@ describe('order flow', () => {
 
     expect(await verifyPayment(db.client, { merchantId: M }, order().id)).toEqual({ ok: true });
     expect(order()).toMatchObject({ status: 'paid', payment_status: 'verified' });
-    expect(h.sent.at(-2)?.body).toContain('Payment mil gaya');
+    expect(h.sent.at(-1)?.body).toContain('Payment mil gaya'); // one send: the PDF with the text as caption (M4)
+    expect(h.sent.at(-1)?.type).toBe('document');
     expect(convo().current_state).toBe('completed');
     expect(await verifyPayment(db.client, { merchantId: M }, order().id)).toMatchObject({ ok: false, status: 409 });
   });
@@ -168,7 +180,7 @@ describe('order flow', () => {
     const before = h.sent.length;
     await verifyPayment(db.client, { merchantId: M }, order().id);
     expect(h.sent.length).toBe(before);
-    expect(db.rows('notifications').at(-1)?.title).toContain('Could not message the buyer');
+    expect(db.rows('notifications').at(-1)?.title).toContain("window closed"); // M4: a paid notice waits on the order page
   });
 });
 
@@ -223,5 +235,112 @@ describe('guard rails', () => {
     expect(order().order_number).toBeNull();
     expect(db.rows('payments')).toHaveLength(0);
     expect(stock()).toBe(3);
+  });
+});
+
+describe('M4: fewer messages, buttons, the window rule', () => {
+  it('the payment question is two buttons when a bank account exists, and a tap on COD confirms', async () => {
+    await toPayment();
+    const ask = h.sent.at(-1)!;
+    expect(ask.type).toBe('interactive');
+    expect(ask.buttons).toEqual(['pay_cod', 'pay_bank']);
+    expect(ask.body).toContain('Cash on Delivery');
+    expect(await tap('pay_cod', 'Cash on Delivery')).toContain('SK-1001');
+    expect(order().payment_method).toBe('cod');
+  });
+
+  it('a tap on Bank Transfer sends ONE message with the details and the screenshot ask', async () => {
+    await toPayment();
+    const before = h.sent.length;
+    const out = await tap('pay_bank', 'Bank Transfer');
+    expect(h.sent.length - before).toBe(1);
+    expect(out).toContain('Meezan Bank');
+    expect(out).toContain('screenshot');
+    expect(convo().current_state).toBe('awaiting_payment_proof');
+  });
+
+  it('typed "bank transfer" still sends one message (baseline was two)', async () => {
+    await toPayment();
+    const before = h.sent.length;
+    await say('bank transfer');
+    expect(h.sent.length - before).toBe(1);
+  });
+
+  it('without a bank account the question is plain text', async () => {
+    db.rows('bank_accounts')[0]!.is_active = false;
+    await toPayment();
+    expect(h.sent.at(-1)!.type).toBe('text');
+  });
+
+  it('a COD confirmation without a PDF is one message (baseline was two)', async () => {
+    await toPayment({ ...dha, name: 'علی' });
+    const before = h.sent.length;
+    await say('cash on delivery');
+    expect(h.sent.length - before).toBe(1);
+    expect(h.sent.at(-1)!.body).toContain('SK-1001');
+  });
+
+  it('payment verified inside the window: one free-form message (the slip PDF carries the text)', async () => {
+    await toPayment();
+    await say('bank transfer');
+    await say('', {}, 'image');
+    const before = h.sent.length;
+    await verifyPayment(db.client, { merchantId: M }, order().id);
+    expect(h.sent.length - before).toBe(1);
+    expect(h.sent.at(-1)!.type).toBe('document');
+    expect(h.sent.at(-1)!.body).toContain('Payment mil gaya');
+    expect(order().pending_buyer_notice ?? null).toBeNull();
+  });
+
+  it('payment verified after the window closed: nothing sent, the order waits for the paid button', async () => {
+    await toPayment();
+    await say('bank transfer');
+    await say('', {}, 'image');
+    convo().window_expires_at = new Date(Date.now() - 60_000).toISOString();
+    const before = h.sent.length;
+    await verifyPayment(db.client, { merchantId: M }, order().id);
+    expect(h.sent.length).toBe(before);
+    expect(order().pending_buyer_notice).toBe('payment_update');
+    const n = db.rows('notifications').at(-1)!;
+    expect(n.title).toContain("window closed");
+    expect(n.data.action).toBe('payment_update');
+    expect(n.body).toContain('Rs 4');
+  });
+
+  it('the paid button sends the approved template with the order params and clears the notice', async () => {
+    await toPayment({ ...dha, name: 'Ali' });
+    await say('bank transfer');
+    await say('', {}, 'image');
+    convo().window_expires_at = new Date(Date.now() - 60_000).toISOString();
+    await verifyPayment(db.client, { merchantId: M }, order().id);
+    expect((await notifyBuyerNow(db.client, { merchantId: M }, order().id, 'payment_update'))).toMatchObject({ ok: false, code: 'template_not_approved' });
+    db.add('message_templates', { merchant_id: M, waba_id: 'W', name: 'payment_update', language: 'en', status: 'approved', rejection_reason: null, wa_template_id: 't1' });
+    const r = await notifyBuyerNow(db.client, { merchantId: M }, order().id, 'payment_update');
+    expect(r).toMatchObject({ ok: true, template: 'payment_update' });
+    const s = h.sent.at(-1)!;
+    expect(s.type).toBe('template');
+    expect(s.params).toEqual(['Ali', 'SK-1001', 'verify ho gayi hai', 'Jald deliver karenge, shukriya!']);
+    expect(order().pending_buyer_notice).toBeNull();
+    expect(db.rows('messages').at(-1)).toMatchObject({ type: 'template', template_name: 'payment_update', sender: 'system' });
+  });
+
+  it('a rejection after the window closed uses the same template with the reason', async () => {
+    await toPayment({ ...dha, name: 'Ali' });
+    await say('bank transfer');
+    await say('', {}, 'image');
+    convo().window_expires_at = new Date(Date.now() - 60_000).toISOString();
+    await rejectPayment(db.client, { merchantId: M }, order().id, 'amount short');
+    expect(order().pending_buyer_notice).toBe('payment_update');
+    db.add('message_templates', { merchant_id: M, waba_id: 'W', name: 'payment_update_v2', language: 'en', status: 'approved', rejection_reason: null });
+    const r = await notifyBuyerNow(db.client, { merchantId: M }, order().id, 'payment_update');
+    expect(r).toMatchObject({ ok: true, template: 'payment_update_v2' });
+    expect(h.sent.at(-1)!.params![2]).toBe('verify nahi ho saki');
+    expect(h.sent.at(-1)!.params![3]).toContain('amount short');
+  });
+
+  it('the paid button refuses an order from another merchant and an unplaced order', async () => {
+    await toPayment();
+    expect(await notifyBuyerNow(db.client, { merchantId: 'someone-else' }, order().id, 'payment_update')).toMatchObject({ ok: false, status: 404 });
+    expect(await notifyBuyerNow(db.client, { merchantId: M }, order().id, 'order_sent')).toMatchObject({ ok: false, code: 'NOT_PLACED' });
   });
 });

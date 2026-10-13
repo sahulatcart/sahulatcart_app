@@ -1,7 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BotState } from '@app/shared';
+import { loadConfig } from '../config';
 import { logger } from '../lib/logger';
-import { sendDocument, sendText } from '../whatsapp/client';
+import { sendDocument, sendTemplate, sendText } from '../whatsapp/client';
+import { approvedTemplate, type TemplateKind } from '../whatsapp/templates';
 import { signedSlipUrl } from './slip';
 import { orderSlipText } from './order-service';
 
@@ -19,6 +21,7 @@ interface OrderRow {
   conversation_id: string | null;
   order_number: string | null;
   slip_url: string | null;
+  delivery_name?: string | null;
 }
 
 interface Transition {
@@ -38,7 +41,7 @@ async function transition(db: SupabaseClient, a: Actor, orderId: string, t: Tran
     .update(t.set)
     .match({ id: orderId, merchant_id: a.merchantId, ...t.match })
     .in('status', t.from)
-    .select('id, merchant_id, customer_id, conversation_id, order_number, slip_url')
+    .select('id, merchant_id, customer_id, conversation_id, order_number, slip_url, delivery_name')
     .maybeSingle();
   if (error) logger.error({ err: error.message, orderId }, 'order transition failed');
   if (data) return { order: data as OrderRow };
@@ -46,55 +49,116 @@ async function transition(db: SupabaseClient, a: Actor, orderId: string, t: Tran
   return exists.data ? { ok: false, status: 409, message: t.conflict } : { ok: false, status: 404, message: 'Order not found' };
 }
 
-/**
- * WhatsApp the buyer on the number their chat came in on (or the merchant's first number).
- * WhatsApp refuses free-form messages more than 24h after the buyer's last one (that needs an
- * approved template), so outside the window — or if the send fails — the merchant is told to
- * reach the buyer another way instead of the message silently vanishing.
- */
-async function notifyBuyer(db: SupabaseClient, order: OrderRow, text: string, slipKey?: string | null): Promise<void> {
+/** The buyer's chat, its number and whether their 24-hour window is still open. */
+async function buyerChannel(db: SupabaseClient, order: OrderRow): Promise<{ waId?: string; phoneNumberId?: string; windowOpen: boolean }> {
   const [cust, conv] = await Promise.all([
     db.from('customers').select('wa_id').eq('id', order.customer_id).single(),
     order.conversation_id ? db.from('conversations').select('whatsapp_number_id, window_expires_at').eq('id', order.conversation_id).single() : null,
   ]);
-  const waId = cust.data?.wa_id as string | undefined;
   const numberQuery = db.from('whatsapp_numbers').select('phone_number_id');
   const num = conv?.data?.whatsapp_number_id
     ? await numberQuery.eq('id', conv.data.whatsapp_number_id).maybeSingle()
     : await numberQuery.eq('merchant_id', order.merchant_id).limit(1).maybeSingle();
-  const phoneNumberId = num.data?.phone_number_id as string | undefined;
-  const windowOpen = !conv?.data?.window_expires_at || new Date(conv.data.window_expires_at).getTime() > Date.now();
+  return {
+    waId: cust.data?.wa_id as string | undefined,
+    phoneNumberId: num.data?.phone_number_id as string | undefined,
+    windowOpen: !conv?.data?.window_expires_at || new Date(conv.data.window_expires_at).getTime() > Date.now(),
+  };
+}
+
+async function recordOutbound(db: SupabaseClient, order: OrderRow, type: 'text' | 'document' | 'template', body: string, waMessageId: string, templateName?: string): Promise<void> {
+  if (!order.conversation_id) return;
+  await db.from('messages').insert({
+    conversation_id: order.conversation_id,
+    merchant_id: order.merchant_id,
+    direction: 'outbound',
+    sender: 'system',
+    type,
+    body,
+    wa_message_id: waMessageId,
+    status: 'sent',
+    ...(templateName ? { template_name: templateName } : {}),
+  });
+}
+
+/**
+ * WhatsApp the buyer on the number their chat came in on. Inside their 24-hour window this is a
+ * free-form message (free within the shop's monthly allowance, M5). Outside it only a template
+ * may be sent, and since 1 October 2026 every template is charged, so nothing is sent: the order
+ * is marked `pending_buyer_notice` and the merchant gets a button on the order page that shows the
+ * price (notifyBuyerNow). The slip PDF, when there is one, is the message itself (one send, the
+ * text as its caption), not a second message.
+ */
+async function notifyBuyer(db: SupabaseClient, order: OrderRow, text: string, slipKey?: string | null, notice: TemplateKind = 'payment_update'): Promise<void> {
+  const { waId, phoneNumberId, windowOpen } = await buyerChannel(db, order);
 
   let sent: { waMessageId: string | null } = { waMessageId: null };
+  let type: 'text' | 'document' = 'text';
   if (waId && phoneNumberId && windowOpen) {
-    sent = await sendText(phoneNumberId, waId, text);
-    const url = sent.waMessageId && slipKey ? await signedSlipUrl(db, slipKey) : null;
-    if (url) await sendDocument(phoneNumberId, waId, url, `Order-${order.order_number ?? 'slip'}.pdf`);
+    const url = slipKey ? await signedSlipUrl(db, slipKey) : null;
+    if (url) {
+      sent = await sendDocument(phoneNumberId, waId, url, `Order-${order.order_number ?? 'slip'}.pdf`, text);
+      type = 'document';
+    } else {
+      sent = await sendText(phoneNumberId, waId, text);
+    }
   }
-  if (!sent.waMessageId) {
-    const why = windowOpen ? 'The WhatsApp message could not be sent.' : 'The buyer last messaged over 24 hours ago, so WhatsApp blocks this message.';
-    await db.from('notifications').insert({
-      merchant_id: order.merchant_id,
-      type: 'system',
-      title: `Could not message the buyer — order ${order.order_number ?? ''}`.trim(),
-      body: `${why} Please contact ${waId ?? 'the buyer'} and tell them: "${text}"`,
-      data: { orderId: order.id },
-      channel: 'portal',
-    });
+  if (sent.waMessageId) {
+    await recordOutbound(db, order, type, text, sent.waMessageId);
     return;
   }
-  if (order.conversation_id) {
-    await db.from('messages').insert({
-      conversation_id: order.conversation_id,
-      merchant_id: order.merchant_id,
-      direction: 'outbound',
-      sender: 'system',
-      type: 'text',
-      body: text,
-      wa_message_id: sent.waMessageId,
-      status: 'sent',
-    });
+  const price = `Rs ${Math.round(loadConfig().META_UTILITY_RATE_PAISA / 100)}`;
+  const why = windowOpen
+    ? 'The WhatsApp message could not be sent.'
+    : `The buyer last messaged over 24 hours ago, so WhatsApp allows only a paid template now (about ${price}).`;
+  await db.from('orders').update({ pending_buyer_notice: notice }).eq('id', order.id);
+  await db.from('notifications').insert({
+    merchant_id: order.merchant_id,
+    type: 'system',
+    title: windowOpen ? `Could not message the buyer — order ${order.order_number ?? ''}`.trim() : `Buyer's window closed — order ${order.order_number ?? ''}`.trim(),
+    body: windowOpen ? `${why} Please contact ${waId ?? 'the buyer'} and tell them: "${text}"` : `${why} Open the order to send it, or contact ${waId ?? 'the buyer'} yourself.`,
+    data: { orderId: order.id, action: notice },
+    channel: 'portal',
+  });
+}
+
+/** The template parameters for a paid notice, from the order as it is now. */
+async function noticeParams(db: SupabaseClient, order: OrderRow, kind: TemplateKind): Promise<string[]> {
+  const name = (order.delivery_name ?? '').trim() || 'Customer';
+  const number = order.order_number ?? '';
+  if (kind === 'order_sent') {
+    const { data: o } = await db.from('orders').select('courier, eta_text').eq('id', order.id).maybeSingle();
+    const line = [o?.courier ? `Courier: ${o.courier}` : '', o?.eta_text ? String(o.eta_text) : ''].filter(Boolean).join('. ') || 'Jald pohanch jaye ga, shukriya!';
+    return [name, number, line];
   }
+  const { data: p } = await db.from('payments').select('status, rejection_reason').eq('order_id', order.id).maybeSingle();
+  const verified = p?.status === 'verified' || p?.status === 'cod_collected';
+  return verified
+    ? [name, number, 'verify ho gayi hai', 'Jald deliver karenge, shukriya!']
+    : [name, number, 'verify nahi ho saki', p?.rejection_reason ? `Wajah: ${p.rejection_reason}. Sahi screenshot dobara bhej dein.` : 'Sahi screenshot dobara bhej dein.'];
+}
+
+export type NoticeResult = { ok: true; waMessageId: string; template: string } | { ok: false; status: 400 | 404 | 409 | 502; code: string; message: string };
+
+/**
+ * FR-M4.6 — the merchant pressed the paid button: send the notice as a template, whatever the
+ * window state (a template is always allowed and always charged). Needs an approved template.
+ */
+export async function notifyBuyerNow(db: SupabaseClient, a: Actor, orderId: string, kind: TemplateKind): Promise<NoticeResult> {
+  const { data: o } = await db.from('orders').select('id, merchant_id, customer_id, conversation_id, order_number, slip_url, delivery_name, status').match({ id: orderId, merchant_id: a.merchantId }).maybeSingle();
+  if (!o) return { ok: false, status: 404, code: 'NOT_FOUND', message: 'Order not found' };
+  if (!o.order_number) return { ok: false, status: 409, code: 'NOT_PLACED', message: 'The order has not been placed yet' };
+  const tpl = await approvedTemplate(db, a.merchantId, kind);
+  if (!tpl) return { ok: false, status: 409, code: 'template_not_approved', message: `The ${kind.replace('_', ' ')} template is not approved by Meta yet. Check Settings → WhatsApp.` };
+  const order = o as OrderRow;
+  const { waId, phoneNumberId } = await buyerChannel(db, order);
+  if (!waId || !phoneNumberId) return { ok: false, status: 409, code: 'NO_CHANNEL', message: 'No WhatsApp number to send from' };
+  const params = await noticeParams(db, order, kind);
+  const sent = await sendTemplate(phoneNumberId, waId, tpl.name, params, tpl.language);
+  if (!sent.waMessageId) return { ok: false, status: 502, code: 'SEND_FAILED', message: `WhatsApp did not accept the message (${String(sent.errorCode ?? 'unknown')})` };
+  await recordOutbound(db, order, 'template', params.join(' | '), sent.waMessageId, tpl.name);
+  await db.from('orders').update({ pending_buyer_notice: null }).eq('id', order.id);
+  return { ok: true, waMessageId: sent.waMessageId, template: tpl.name };
 }
 
 /**
@@ -145,7 +209,7 @@ export async function rejectPayment(db: SupabaseClient, a: Actor, orderId: strin
     db.from('payments').update({ status: 'failed', rejection_reason: reason }).eq('order_id', orderId),
     db.from('payment_claims').update({ status: 'rejected', rejection_reason: reason, decided_at: now, decided_by_user_id: a.memberId ?? null }).eq('order_id', orderId).eq('status', 'claimed'),
   ]);
-  await notifyBuyer(db, r.order, `Maazrat, payment verify nahi ho saka (${reason}). Baraye meharbani sahi screenshot dobara bhej dein.`);
+  await notifyBuyer(db, r.order, `Maazrat, payment verify nahi ho saka (${reason}). Baraye meharbani sahi screenshot dobara bhej dein.`, null, 'payment_update');
   await setCheckoutState(db, r.order, 'awaiting_payment_proof'); // accept a new screenshot
   return { ok: true };
 }

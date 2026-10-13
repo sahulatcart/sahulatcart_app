@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../lib/logger';
 import { digitsOnly } from '../lib/phone';
 import { forgetNumber } from './credentials';
+import { applyTemplateStatus } from './templates';
 import type { AccountEvent } from './types';
 
 /**
@@ -113,13 +114,9 @@ async function onAccountUpdate(db: SupabaseClient, ev: AccountEvent): Promise<vo
   }
 }
 
-/** `message_template_status_update`: stored in M4; until then only a rejection reaches the merchant. */
+/** `message_template_status_update`: the row in message_templates, and a notification when the merchant must act (M4). */
 async function onTemplateStatus(db: SupabaseClient, ev: AccountEvent): Promise<void> {
-  const v = ev.value as { event?: string; message_template_name?: string; reason?: string };
-  if (v.event !== 'REJECTED' && v.event !== 'PAUSED' && v.event !== 'DISABLED') return;
-  const rows = await numbersForWaba(db, ev.wabaId);
-  if (!rows.length) return;
-  await notifyMerchants(db, rows.map((r) => r.merchant_id), 'template_status', `Template ${v.message_template_name ?? ''} ${v.event.toLowerCase()}`, v.reason ? `Meta's reason: ${v.reason}` : 'Meta did not give a reason.', { action: 'template_status', template: v.message_template_name, event: v.event, reason: v.reason });
+  await applyTemplateStatus(db, ev);
 }
 
 /** Dispatch one claimed account event. Never throws: an unknown field is logged and skipped. */

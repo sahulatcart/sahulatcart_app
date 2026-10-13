@@ -19,6 +19,7 @@ interface Status {
   qualityRating?: string; messagingTier?: string; verifiedNameStatus?: string | null;
   flagReason?: string | null; message?: string | null; lastTestAt?: string | null;
   awaitingHandshake?: boolean; pinRequired?: boolean; isTestNumber?: boolean; merchantPhone?: string | null;
+  templates?: { name: string; status: string; rejectionReason: string | null }[];
 }
 interface NumberChoice { id: string; displayPhone: string; verifiedName: string | null }
 
@@ -132,6 +133,13 @@ export default function WhatsAppPage() {
     setBusy(null);
   }
 
+  async function resubmit(kind: string) {
+    setBusy('Resubmitting…');
+    const r = await api(`/api/v1/admin/whatsapp/templates/${kind}/resubmit`, { method: 'POST' });
+    if (!r.ok) toast(await apiError(r), 'error'); else { toast('Template resubmitted to Meta', 'success'); load(); }
+    setBusy(null);
+  }
+
   async function retry() {
     setBusy('Retrying…');
     const r = await api('/api/v1/admin/whatsapp/retry', { method: 'POST', body: JSON.stringify(pin ? { pin } : {}) });
@@ -220,6 +228,19 @@ export default function WhatsAppPage() {
             <dt>Limit</dt><dd>{TIER[st.messagingTier ?? 'unverified'] ?? st.messagingTier}</dd>
             <dt>Last checked</dt><dd>{dt(st.lastTestAt)}</dd>
           </dl>
+          <h3 style={{ marginTop: 18 }}>Pre-approved messages</h3>
+          <p className="hint">Used only when a buyer&rsquo;s 24-hour window has closed and you press the paid button on an order. Meta reviews each one.</p>
+          {(st.templates ?? []).length === 0 && <div className="hint">Being created&hellip; they appear here within a minute of connecting.</div>}
+          <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+            {(st.templates ?? []).map((t) => (
+              <div key={t.name} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span className="mono">{t.name}</span>
+                <Pill kind={t.status === 'approved' ? 'success' : t.status === 'rejected' || t.status === 'disabled' ? 'danger' : 'warning'}>{t.status}</Pill>
+                {t.rejectionReason && <span className="hint">{t.rejectionReason}</span>}
+                {(t.status === 'rejected' || t.status === 'disabled') && <button className="btn sm ghost" disabled={!!busy} onClick={() => resubmit(t.name.replace(/_v\d+$/, ''))}>Resubmit</button>}
+              </div>
+            ))}
+          </div>
           <div className="card-foot" style={{ marginTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button className="btn ghost" onClick={sendTest} disabled={!!busy}><Send aria-hidden /> {busy ?? 'Send test message'}</button>
             <button className="btn ghost" onClick={connect} disabled={!!busy}><MessageCircle aria-hidden /> Reconnect</button>

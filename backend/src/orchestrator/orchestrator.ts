@@ -4,7 +4,7 @@ import { logger } from '../lib/logger';
 import { decide } from '../negotiation';
 import type { NegotiationDefaults, ProductPricing } from '../negotiation/types';
 import { getLlmClient, isTemplateOnly, LlmUnavailableError, type ComposeContext, type DeliveryDetails, type ReplySpec } from '../llm';
-import { sendDocument, sendImage, sendText } from '../whatsapp/client';
+import { sendButtons, sendDocument, sendImage, sendText } from '../whatsapp/client';
 import { productImageUrl } from '../lib/images';
 import { loadConfig } from '../config';
 import { downloadWhatsAppMedia, uploadScreenshot } from '../whatsapp/media';
@@ -458,7 +458,7 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
       if (order) {
         const dctx = { ...newContext, delivery, pendingOrderId: order.orderId };
         await reply(db, ctx, await safeCompose({ kind: 'accept', productName: product.name, priceRupees: rupees(decision.price!), ...withQty(decision.price!) }, cc), 'selecting_payment', dctx, false);
-        await reply(db, ctx, await safeCompose({ kind: 'ask_payment_method', priceRupees: rupees(order.total) }, cc), 'selecting_payment', dctx);
+        await askPaymentMethod(db, ctx, cc, order.total, dctx);
         return;
       }
     }
@@ -581,6 +581,46 @@ async function replyImage(
   }
 }
 
+/** Like reply(), but as reply buttons: one message instead of a question plus its clarifications (M4). */
+async function replyButtons(
+  db: SupabaseClient,
+  ctx: OrchestratorCtx,
+  body: string,
+  buttons: { id: string; title: string }[],
+  nextState: BotState,
+  context: Record<string, unknown>
+): Promise<void> {
+  const sent = await sendButtons(ctx.phoneNumberId, ctx.customerWaId, body, buttons);
+  await db.from('messages').insert({
+    conversation_id: ctx.conversationId,
+    merchant_id: ctx.merchantId,
+    direction: 'outbound',
+    sender: 'bot',
+    type: 'interactive',
+    body: `${body} [${buttons.map((b) => b.title).join(' / ')}]`,
+    wa_message_id: sent.waMessageId,
+    status: sent.waMessageId ? 'sent' : 'queued',
+  });
+  await db.from('conversations').update({ current_state: nextState, context }).eq('id', ctx.conversationId);
+}
+
+const PAY_COD = 'pay_cod';
+const PAY_BANK = 'pay_bank';
+
+/**
+ * Ask how the buyer wants to pay. With a bank account on file both methods exist, so the question
+ * goes out as two buttons (one message, no "COD matlab?" round-trips); with COD only, as text.
+ */
+async function askPaymentMethod(db: SupabaseClient, ctx: OrchestratorCtx, cc: ComposeContext, totalPaisa: number, context: Record<string, unknown>): Promise<void> {
+  const text = await safeCompose({ kind: 'ask_payment_method', priceRupees: rupees(totalPaisa) }, cc);
+  const bank = await db.from('bank_accounts').select('id').eq('merchant_id', ctx.merchantId).eq('is_active', true).limit(1).maybeSingle();
+  if (bank.data) {
+    await replyButtons(db, ctx, text, [{ id: PAY_COD, title: 'Cash on Delivery' }, { id: PAY_BANK, title: 'Bank Transfer' }], 'selecting_payment', context);
+  } else {
+    await reply(db, ctx, text, 'selecting_payment', context);
+  }
+}
+
 // ── Phase-4 state handlers ────────────────────────────────────────────────────
 
 // NOTE: these run on address/free-text too — keep patterns multi-word or unambiguous
@@ -606,8 +646,7 @@ async function sendCodConfirmed(
     await db.from('messages').insert({ conversation_id: ctx.conversationId, merchant_id: ctx.merchantId, direction: 'outbound', sender: 'bot', type: 'document', body: `[order slip] ${res.orderNumber}`, wa_message_id: sent.waMessageId, status: sent.waMessageId ? 'sent' : 'queued' });
     await db.from('conversations').update({ current_state: 'completed', context: done }).eq('id', ctx.conversationId);
   } else {
-    await reply(db, ctx, res.slip, 'completed', done, false);
-    await reply(db, ctx, caption, 'completed', done);
+    await reply(db, ctx, `${caption}\n\n${res.slip}`, 'completed', done); // one message, not two (M4)
   }
   // Upsell must never break the confirmation that was already sent.
   try {
@@ -765,7 +804,7 @@ async function handleDelivery(db: SupabaseClient, ctx: OrchestratorCtx, cc: Comp
     await reply(db, ctx, await safeCompose({ kind: 'clarify' }, cc), 'browsing', newCtx);
     return;
   }
-  await reply(db, ctx, await safeCompose({ kind: 'ask_payment_method', priceRupees: rupees(order.total) }, cc), 'selecting_payment', { ...newCtx, pendingOrderId: order.orderId });
+  await askPaymentMethod(db, ctx, cc, order.total, { ...newCtx, pendingOrderId: order.orderId });
 }
 
 async function handlePayment(db: SupabaseClient, ctx: OrchestratorCtx, cc: ComposeContext, context: Record<string, unknown>, message: NormalizedMessage): Promise<void> {
@@ -776,8 +815,10 @@ async function handlePayment(db: SupabaseClient, ctx: OrchestratorCtx, cc: Compo
     return;
   }
   const txt = (message.text ?? '').toLowerCase();
-  const codMention = COD_RE.test(txt);
-  const bankMention = BANK_RE.test(txt);
+  // A button tap carries its id only in the raw payload (parse.ts puts the title in `text`).
+  const tapped = (message.raw as { interactive?: { button_reply?: { id?: string } } })?.interactive?.button_reply?.id;
+  const codMention = tapped === PAY_COD || (!tapped && COD_RE.test(txt));
+  const bankMention = tapped === PAY_BANK || (!tapped && BANK_RE.test(txt));
   // "cash nahi, bank se karonga" mentions BOTH — respect negation; if still ambiguous, ask again.
   let wantsCod = codMention && !bankMention;
   let wantsBank = bankMention && !codMention;
@@ -815,12 +856,12 @@ async function handlePayment(db: SupabaseClient, ctx: OrchestratorCtx, cc: Compo
       return;
     }
     const bctx = { ...context, pendingOrderId: orderId, pendingPaymentId: res.paymentId, paymentMethod: 'bank_transfer' };
-    await reply(db, ctx, bankDetailsText(bank.data, rupees(res.total)), 'awaiting_payment_proof', bctx, false);
-    await reply(db, ctx, await safeCompose({ kind: 'bank_await' }, cc), 'awaiting_payment_proof', bctx);
+    // One message, not two: the details and the ask (every message past the free 1,000 is charged, M4).
+    await reply(db, ctx, `${bankDetailsText(bank.data, rupees(res.total))}\n\n${await safeCompose({ kind: 'bank_await' }, cc)}`, 'awaiting_payment_proof', bctx);
     return;
   }
   const o = await db.from('orders').select('total').eq('id', orderId).single();
-  await reply(db, ctx, await safeCompose({ kind: 'ask_payment_method', priceRupees: rupees(o.data?.total ?? 0) }, cc), 'selecting_payment', context);
+  await askPaymentMethod(db, ctx, cc, o.data?.total ?? 0, context);
 }
 
 async function handlePaymentProof(db: SupabaseClient, ctx: OrchestratorCtx, cc: ComposeContext, context: Record<string, unknown>, message: NormalizedMessage): Promise<void> {
