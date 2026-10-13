@@ -606,6 +606,17 @@ describe('billing mode (P7, FR-P7.6)', () => {
   });
 });
 
+describe('a stale payment button (review P2-19)', () => {
+  it('tapping "Cash on Delivery" after COD was switched off explains and sends the bank details instead', async () => {
+    await toPayment(); // both buttons were offered
+    db.rows('merchants')[0]!.settings.codEnabled = false;
+    const out = await tap('pay_cod', 'Cash on Delivery');
+    expect(out).toContain('Cash on Delivery available nahi');
+    expect(out).toContain('Meezan Bank');
+    expect(order().payment_method).toBe('bank_transfer');
+  });
+});
+
 describe('order-status questions (P8, FR-P8.3)', () => {
   it('"mera order kahan hai?" with no order: says so, no price, no classifier call for the keyword form', async () => {
     const calls = h.classifyCalls;

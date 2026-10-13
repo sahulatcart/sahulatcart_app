@@ -44,7 +44,7 @@ const STYLES: Record<string, { label: string; hint: string; Icon: LucideIcon; co
   sakht: { label: 'Sakht', hint: 'Tough — small concessions over 4 rounds.', Icon: Shield, concessionSteps: [0.25, 0.5, 0.75, 1.0], roundsMax: 4 },
 };
 const paisa = (v: string): number => Math.round(Number(v || 0) * 100);
-const pretty = (digits?: string | null) => (digits ? `+${digits}` : '—');
+const pretty = (phone?: string | null) => { const d = (phone ?? '').replace(/\D/g, ''); return d ? `+${d}` : '—'; }; // the pilot's row holds "+1555…" (review P2-14)
 
 export default function Onboarding() {
   const router = useRouter();
@@ -325,7 +325,7 @@ function PaymentPanel({ s, onChange }: { s: Settings; onChange: () => Promise<vo
                   <td className="strong">{b.bank_name} {b.is_default && <span className="pill brand" style={{ marginLeft: 6 }}>Default</span>}</td>
                   <td>{b.account_title}</td>
                   <td className="mono">{b.account_number}</td>
-                  <td className="num"><button type="button" className="btn subtle icon-btn sm" onClick={() => delBank(b.id)} disabled={busy === b.id} aria-label={`Remove ${b.bank_name} account`}><Trash2 /></button></td>
+                  <td className="num"><button type="button" className="btn subtle icon-btn sm" onClick={() => delBank(b.id)} disabled={busy === b.id} aria-label={`Remove ${b.bank_name} account`}><Trash2 aria-hidden /></button></td>
                 </tr>
               ))}
             </tbody>

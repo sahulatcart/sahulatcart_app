@@ -64,7 +64,7 @@ export default function SettingsPage() {
   }
   async function saveNeg() {
     if (!s) return;
-    await patch({ negotiationDefaults: s.negotiation_defaults, settings: { defaultDeliveryCharge: s.settings.defaultDeliveryCharge } }, 'Saved');
+    await patch({ negotiationDefaults: s.negotiation_defaults }, 'Saved'); // the delivery charge is saved by the Delivery card alone (review P2-7)
   }
   async function toggleBot(on: boolean) {
     if (!s) return;

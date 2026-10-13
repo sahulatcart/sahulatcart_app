@@ -5,11 +5,13 @@
 -- Everything else the wizard needs (category, hours, persona, test order) the owner fills in through
 -- the wizard itself, which is resumable.
 --
--- Replace the phone_number_id with META_DEFAULT_PHONE_NUMBER_ID from Railway before running.
+-- Keyed on the seed's email (db/seed.mjs), which needs no value from Railway (review P2-1).
 update merchants
 set settings = settings || jsonb_build_object(
   'attestations', jsonb_build_object('noProhibitedGoods', true, 'optInOnly', true, 'at', now())
 )
-where id = (select merchant_id from whatsapp_numbers where phone_number_id = '<META_DEFAULT_PHONE_NUMBER_ID>')
-  and (settings->'attestations') is null;
--- Expect: UPDATE 1. Record the date in CHANGELOG.
+where email = 'pilot@sahulatcart.test'
+  and (settings->'attestations') is null
+returning id;
+-- Expect: UPDATE 1 and one id. Record the date in CHANGELOG, then walk the pilot through the wizard.
+-- Until it has run, nobody presses Pause on the pilot: the gate could not let it back on.

@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **40 files, 438 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **40 files, 444 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -438,7 +438,11 @@ discriminated union of ~20 reply kinds) and only phrases it.
   (name, owner, phone, address, category, hours — then a best-effort `syncBusinessProfile()`) and the
   logo upload.
 - **The bot offers only the payment methods the merchant enabled.** `paymentMethods()` in the
-  orchestrator reads `settings.codEnabled` (default on) and the default active bank account. Both →
+  orchestrator reads `codOn(settings)` (`lib/validation.ts`: on unless `codEnabled === false`,
+  the one rule shared with readiness and the routes) and the default active bank account. A live
+  shop cannot drop its last method: the settings PATCH and the bank-account DELETE answer 409
+  `last_payment_method`. Switching the bot on is a request of its own (400 if the body also
+  changes `codEnabled`, `deliveryConfigured`, `attestations`, the persona or the name). Both →
   two buttons; COD only → a text confirm where a plain "haan" is a yes; bank only → no question, the
   details go straight out; neither → handoff. Every path that takes a payment choice, including the
   "COD kar dein" switch while waiting for a screenshot, goes through it. `settings.paymentInstructions`

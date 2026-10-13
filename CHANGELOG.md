@@ -7,6 +7,61 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — fix/p2-followups: Fazal's P2 review table, items 2–19
+
+Branch `fix/p2-followups`, from `main` at `3bcbe6d`. 38 test files, 430 tests (6 new, 3 extended).
+Both typechecks, `next lint` and `next build` clean. Migration **0018** (a unique index on
+`delivery_zones (merchant_id, lower(btrim(area_name)))`).
+
+**Item 1 (the blocker) is ops, not code.** The attestation back-fill
+`db/backfill/2026-10-13-live-merchant-attestations.sql` is now keyed on the seed's email as the
+review suggested, with `returning id`, so it needs no value from Railway. **It has still not been
+run.** Fazal runs it, records "UPDATE 1" and the date here, and walks the pilot through the wizard.
+Until then nobody presses Pause on the pilot.
+
+**What changed (review number in brackets).**
+- [2] A live shop keeps one way to pay: `PATCH settings {codEnabled:false}` and deleting the last
+  active bank account answer 409 `last_payment_method` when the bot is on and the other method is
+  absent. The portal shows the server's reason through the usual error toast.
+- [3] One `codOn(settings)` in `lib/validation.ts` (`codEnabled !== false`), used by readiness,
+  the orchestrator and the routes. Readiness used to need `=== true`, so a shop without the key
+  was "not ready" while its bot was already taking COD.
+- [4] `WhatsAppConnect`: the chrome is a function applied once, not a component declared inside
+  the render, so the PIN input keeps focus and AppShell stops refetching on every keystroke.
+- [5] Image uploads (product photos and the logo) accept only png, jpeg and webp
+  (`IMAGE_TYPES`); SVG is refused. A new logo removes the previous file from the bucket.
+- [6] `bot_persona` is validated server-side: name ≤ 40, style one of three, greeting ≤ 200.
+- [7] The duplicate "Default delivery" input is gone from the negotiation card; the Delivery card
+  is the only writer of `defaultDeliveryCharge`.
+- [9] Switching the bot on is a request of its own: a body that also changes a setting readiness
+  reads (`codEnabled`, `deliveryConfigured`, `attestations`), the persona or the name is 400. The
+  wizard's `{ botEnabled, onboardingCompletedAt }` still passes.
+- [10] Readiness's test-order check is two small lookups (the owner's customer row by `wa_id`,
+  then one placed order of theirs) instead of every placed order with its customer.
+- [11] Migration 0018; both zone writes map `23505` to the existing 409.
+- [12] The dashboard reads `botEnabled !== false` like the backend. A live shop that is not yet
+  "ready" is told to finish setup so it can pause and resume safely, not that its bot is off.
+- [13, 14, 15] `aria-hidden` on the two `Trash2` icons; `pretty()` strips non-digits before adding
+  "+"; the zone form refuses a blank charge and keeps its text after a 409.
+- [16] A missing draft order at the payment step hands off with its own note, not "no payment
+  method is enabled".
+- [17] The merchant's greeting is no longer a source for `sanctionedNumbers()`: "Rs 500 off this
+  week" in it would have let the bot repeat a discount the engine will not honour.
+- [18] Zone PATCH and profile PATCH with nothing to change are 400; the zone DELETE checks its
+  error; `charge` is capped at Rs 10,000.
+- [19] Tests: cross-tenant zone PATCH/DELETE are 404 and leave the row alone; the one-request rule;
+  a positive test-order match when the phone is already digits; a stale `pay_cod` tap after COD
+  was switched off explains and sends the bank details; `syncBusinessProfile` is called after a
+  profile save (mocked and counted); the SVG refusal and the old-logo removal; the two 409s; the
+  persona limits.
+
+**Hassles.** The first version of [9] refused any other key beside `botEnabled`, which broke the
+wizard's own go-live request (`onboardingCompletedAt` rides along). Narrowed to the keys readiness
+actually reads. The cross-tenant zone test left the other shop's row in the table and tripped a
+later count; it now removes it.
+
+**Open.** [1] (ops, above). [8] was done in P4. The PaymentPanel does not warn ahead of the 409; the
+server's message is shown when it happens.
 ## 2026-10-13 — P8: bot and catalog fixes (opening stance, inbox order, order status, chat memory, safe re-import)
 
 Branch `feat/p8-bot-fixes`, from `main` at `3bcbe6d` (after P7 #31). 40 test files, 438 tests

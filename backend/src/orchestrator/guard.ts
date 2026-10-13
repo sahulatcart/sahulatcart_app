@@ -20,8 +20,9 @@ export function priceNumbers(text: string): number[] {
 export function sanctionedNumbers(spec: ReplySpec): number[] {
   const s = spec as Partial<Record<'priceRupees' | 'totalRupees' | 'productName' | 'facts' | 'kb' | 'orderNumber' | 'greetingText' | 'hoursText', unknown>>;
   const engine = [s.priceRupees, s.totalRupees].filter((n): n is number => typeof n === 'number');
-  // Merchant-supplied text only — the greeting and hours are the merchant's words, never the buyer's.
-  const merchantText = [s.productName, s.facts, s.kb, s.orderNumber, s.greetingText, s.hoursText].filter((t) => typeof t === 'string').join(' ');
+  // Merchant-supplied text only, never the buyer's. The greeting is left out on purpose (review P2-17):
+  // "Rs 500 off this week" in it would let the bot repeat a discount the engine will not honour.
+  const merchantText = [s.productName, s.facts, s.kb, s.orderNumber, s.hoursText].filter((t) => typeof t === 'string').join(' ');
   return [...engine, ...priceNumbers(merchantText)];
 }
 
