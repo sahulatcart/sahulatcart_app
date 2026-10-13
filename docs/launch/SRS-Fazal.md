@@ -41,7 +41,7 @@ webhook handling, retention, backups. Live: 1 merchant, 5 products, 0 orders.
 | `merchant_id` always comes from verified auth (`resolveCtx()` in `backend/src/lib/auth.ts`), never from the request body or query. | Every admin route | Tenant isolation. |
 | By-id routes ownership-check and return **404**, not 403, when the row belongs to another merchant. | Every by-id route | Do not confirm another tenant's ids exist. |
 | New SQL functions end with `revoke execute on function … from public, anon, authenticated;`. | Every migration | Postgres grants EXECUTE to PUBLIC by default; `/rest/v1/rpc` would expose it. |
-| Every `ReplySpec` kind has a Roman-Urdu `fallbackText()`. | `backend/src/llm/types.ts`, orchestrator | It ships when the LLM is down or the price guard trips. |
+| Every `ReplySpec` kind has a Roman-Urdu `fallbackText()`. | `fallbackText()` in `backend/src/orchestrator/orchestrator.ts`; the kinds and `TEMPLATE_ONLY_KINDS` in `backend/src/llm/types.ts` | It ships when the LLM is down or the price guard trips. |
 | Every LLM-composed reply passes `priceGuardOk()`. New reply kinds that always say the same thing go in `TEMPLATE_ONLY_KINDS` (no LLM call). | `backend/src/orchestrator/guard.ts` | Invariant 1: the LLM never decides prices. |
 | Admin UI: plain CSS tokens from `admin/app/globals.css`; shared pieces from `admin/components/AppShell.tsx` (`PageHead`, `BackLink`, `EmptyState`, `StatusPill`, `humanize()`); lucide icons with `aria-hidden`; every input has a `<label>`; icon-only buttons have `aria-label`; money cells `td.num`; ids `.mono`. New colours need a token in **both** light and dark blocks. | Every admin page | Consistency and dark mode. |
 | Admin fetches go through `admin/lib/api.ts` (`api()`, `apiJson()`), never straight to the backend. Show failures with `toast(await apiError(r), 'error')`; never toast "Saved" without checking `r.ok`. | Every admin page | The portal proxies same-origin through `admin/app/api/[...path]/route.ts`. |
@@ -54,8 +54,9 @@ webhook handling, retention, backups. Live: 1 merchant, 5 products, 0 orders.
 - Branch names: `feat/<stream>-<id>-<slug>`, e.g. `feat/m2-embedded-signup`, `feat/p1-signup`.
 - One PR per feature id (M1, P3…). Small PRs inside a feature are welcome; name them `feat/p3-push-part1`.
 - A PR needs: tests green, both typechecks green, a CHANGELOG entry, and the other developer's
-  review. Merge to `main` deploys automatically: backend on `backend/**` or `shared/**` changes,
-  admin on `admin/**` or `shared/**`. A docs-only PR deploys nothing.
+  review. Merge to `main` deploys automatically: backend on `backend/**` changes, admin on `admin/**`, and
+  both on `shared/**` or the root `package.json`, `package-lock.json`, `tsconfig.base.json`. A
+  docs-only PR deploys nothing.
 - After a backend merge, confirm the deploy with `/healthz` (uptime resets) and `/readyz` (`db: ok`).
   `railway deployment list --service @app/backend` shows SUCCESS or FAILED; on FAILED read the build
   log before changing anything.
@@ -129,11 +130,11 @@ M3's status), and it is a read of one JSON field, so a stub is enough until M3 l
 |---|---|---|---|
 | IC-1 | M1 (Fazal) | everything that sends | `sendText(phoneNumberId, to, body)`, `sendImage(...)`, `sendDocument(...)` in `backend/src/whatsapp/client.ts` keep their signatures. Internally they resolve the merchant's token from `phoneNumberId`. Callers never pass a token. |
 | IC-2 | M4 (Fazal) | P4 (Uzair) | `sendTemplate(phoneNumberId, to, templateName, params: string[])` returns `SendResult`. `sendButtons(phoneNumberId, to, body, buttons: {id, title}[])` for interactive replies. |
-| IC-3 | P3 (Uzair) | M3, M4, M5 (Fazal) | `notify(db, merchantId, { type, title, body, data })` in `backend/src/lib/notify.ts` writes the portal row **and** fans out to push and email per the merchant's preferences. All new notifications go through it. |
+| IC-3 | P3 (Uzair) | M3, M4, M5 (Fazal) | `notify(db, merchantId, { type, title, body, data })` in `backend/src/lib/notify.ts` writes the portal row **and** fans out to push and email per the merchant's preferences. All new notifications go through it. Until P3 lands (week 4), M1 and M3 insert `notifications` rows directly, as `handoff()` does today (`orchestrator.ts:523-530`), and switch to `notify()` at the week-4 sync. |
 | IC-4 | M3 (Fazal) | P2 (Uzair) | `GET /api/v1/admin/whatsapp` returns `{ status: 'none'|'connecting'|'connected'|'needs_attention'|'disconnected', displayPhone, displayName, qualityRating, messagingTier, templates: [{name, status}], lastTestAt }`. Until M3 lands it returns `{ status: 'none' }`. |
 | IC-5 | P1 (Uzair) | M2 (Fazal) | After P1, every signed-in portal user has exactly one `merchants` row and one owner `merchant_users` row; `resolveCtx()` returns `merchantId`. M2 relies on nothing else. |
 | IC-6 | M5 (Fazal) | P7 (Uzair) | Table `message_usage(merchant_id, phone_number_id, period_month, outbound_count, inbound_count)` is written by the client on every send and read by billing. |
-| IC-7 | M6 (Fazal) | P7 (Uzair) | `isPlatformAdmin` in `MerchantCtx` becomes true for members of `platform_admins`; P7's "mark invoice paid" route checks it. |
+| IC-7 | M6 (Fazal) | P7, P1 (Uzair) | `isPlatformAdmin` in `MerchantCtx` becomes true for members of `platform_admins`; P7's "mark invoice paid" route checks it. A platform admin may have **no** merchant membership: `resolveCtx()` then returns `{ isPlatformAdmin: true, merchantId: null }`, and P1's `no_membership` redirect must not fire when `isPlatformAdmin` is true (otherwise the console owner gets a shop created for them). |
 | IC-8 | both | both | `backend/src/orchestrator/orchestrator.ts` is touched by M4 (message merging, buttons) and P5 (opt-out guard). Keep each change in its own small PR and merge M4's first; P5's guard sits at the top of `runOrchestrator()` and does not touch state handlers. |
 
 ---
@@ -154,10 +155,12 @@ merchant's own credentials, and a leaked database dump does not leak usable toke
 - FR-M1.1 A token is stored in `whatsapp_secrets` as AES-256-GCM ciphertext with a 12-byte random IV
   and the auth tag, under `key_id` naming the encryption key version (`'k1'`). Plaintext never
   touches the database, logs, or responses.
-- FR-M1.2 `whatsapp_numbers.access_token_ref` points at the `whatsapp_secrets.id`. A row with a null
-  ref uses the env token (the one pilot merchant, until reconnected through M2). After M2 is live and
-  the pilot merchant has reconnected, the env fallback is removed and `META_SYSTEM_USER_TOKEN` is
-  deleted from Railway.
+- FR-M1.2 `whatsapp_numbers.access_token_ref` points at the `whatsapp_secrets.id`. The env token is
+  used **only** for the row whose `phone_number_id === cfg.META_DEFAULT_PHONE_NUMBER_ID` (the one pilot
+  merchant), never for any other null ref: a null ref elsewhere means "no credentials" and the send is
+  refused. After M2 is live and the pilot merchant has reconnected through the button, the env
+  fallback is removed, `META_SYSTEM_USER_TOKEN` is deleted from Railway, and `db/seed.mjs` stops
+  creating `whatsapp_numbers` rows from env.
 - FR-M1.3 `sendText`, `sendImage`, `sendDocument` (and the new `sendTemplate`, `sendButtons` from M4)
   resolve the token from `phoneNumberId` through a cached lookup; signatures unchanged (IC-1).
 - FR-M1.4 `downloadWhatsAppMedia(mediaId)` gains a `phoneNumberId` argument so it uses the right token
@@ -167,25 +170,35 @@ merchant's own credentials, and a leaked database dump does not leak usable toke
   merchant's `waba_id`.
 - FR-M1.6 A Meta error with code 190 (invalid or expired token) on any send marks the number
   `status='needs_attention'`, `flag_reason='token'`, and raises a `notify()` of type `system`
-  ("WhatsApp disconnected, reconnect from Settings"). Sending stops for that number until reconnected.
+  ("WhatsApp disconnected, reconnect from Settings"). Sending stops for that number until reconnected:
+  `tokenForNumber()` **refuses** (returns null, the send returns `{ waMessageId: null, errorCode: 'no_credentials' }`)
+  when `status` is `disconnected`, or `needs_attention` with `flag_reason='token'`. Nothing else in
+  the SRS gates on status, so this one function is the whole guarantee; without it, M3's disconnect
+  would fall back to the env token and keep sending.
 - FR-M1.7 The decrypt cache holds at most 500 entries for 10 minutes; a reconnect or disconnect
   invalidates the entry.
 
-**Data.** No schema change: the tables exist (`whatsapp_secrets`, `whatsapp_numbers.access_token_ref`,
-`token_expires_at`, `token_rotated_at`, `flag_reason`). Migration 0009 (Appendix C) only adds an
-index `whatsapp_secrets(merchant_id, kind)`.
+**Data.** M1 needs no new columns: `whatsapp_secrets`, `whatsapp_numbers.access_token_ref`,
+`token_expires_at`, `token_rotated_at`, `flag_reason` exist. Migration 0009 (shared with M2 and M3,
+Appendix C) adds an index `whatsapp_secrets(merchant_id, kind)`. `ciphertext`, `iv`, `auth_tag` are
+`bytea`; supabase-js does not accept a `Buffer`, so write them as `\\x<hex>` strings and read them
+back with `Buffer.from(hex.slice(2), 'hex')`.
 
 **How it works**
 
 1. `backend/src/lib/crypto.ts` (new): `encrypt(plain: string): {ciphertext, iv, authTag, keyId}` and
    `decrypt({ciphertext, iv, authTag, keyId}): string` using `node:crypto` `createCipheriv('aes-256-gcm', key, iv)`.
-   The key is `TOKEN_ENCRYPTION_KEY` (32 bytes, base64) from `config.ts`, already declared and unused.
-   Boot fails if it is missing or not 32 bytes (add to the Zod schema as required in production).
+   The key is `TOKEN_ENCRYPTION_KEY` (32 bytes, base64) from `config.ts`, already declared
+   (`z.string().optional()`, no format check) and unused. Make it required **when
+   `NODE_ENV==='production'`** and validate the decoded length; `loadConfig()` calls `process.exit(1)`
+   on a schema failure, and `backend/vitest.config.ts` supplies only `NODE_ENV`, `LOG_LEVEL` and
+   `SUPABASE_*`, so add a dummy 32-byte key there in the same PR or every test dies at import.
 2. `backend/src/whatsapp/credentials.ts` (new):
    - `storeToken(db, merchantId, token): Promise<secretId>` → inserts `whatsapp_secrets`, returns id.
-   - `tokenForNumber(db, phoneNumberId): Promise<string>` → looks up `whatsapp_numbers` →
-     `access_token_ref` → `whatsapp_secrets` → `decrypt`. Null ref → `cfg.META_SYSTEM_USER_TOKEN`
-     (until FR-M1.2's removal). Cached per `phoneNumberId`.
+   - `tokenForNumber(db, phoneNumberId): Promise<string | null>` → looks up `whatsapp_numbers` →
+     refuses per FR-M1.6 → `access_token_ref` → `whatsapp_secrets` → `decrypt`. Env token only for
+     the default pilot number (FR-M1.2). Cached per `phoneNumberId`. Keep today's "no credentials →
+     `{ waMessageId: null }` without calling fetch" path (`client.ts:15-18`) for local development.
    - `forgetNumber(phoneNumberId)` → cache invalidation.
 3. `client.ts`: replace `cfg.META_SYSTEM_USER_TOKEN` with `await tokenForNumber(db, phoneNumberId)`.
    `client.ts` currently has no `db`; import `getServiceClient()` from `lib/supabase.ts` as the
@@ -193,13 +206,18 @@ index `whatsapp_secrets(merchant_id, kind)`.
 4. Error path: Meta returns `{ error: { code: 190, ... } }` → call `markTokenInvalid(db, phoneNumberId)`
    (sets status/flag, `forgetNumber`, `notify`). Existing `SendResult` gains `errorCode?: number`.
 
-**Security.** Logger redaction: add `access_token`, `ciphertext`, `token` to the pino `redact` list.
+**Security.** Logger redaction: `'*.access_token'` and `'*.token'` are already in the pino `redact`
+list (`lib/logger.ts:12`); add `'*.ciphertext'`, `'*.pin'` and the Meta response paths
+(`'*.response.access_token'`), since pino's `*` matches one level only.
 `whatsapp_secrets` is already service-role-only (RLS, migration 0002). Never return a secret row from
 any route.
 
 **Tests.** `crypto.test.ts`: round trip, wrong key fails, tampered tag fails. `credentials.test.ts`
-over `FakeDb`: null ref → env token; ref → decrypted token; cache invalidation on `forgetNumber`;
-190 error flags the number. Flow test: a send after a 190 error is refused with a clear error.
+over `FakeDb`: default pilot number → env token; other null ref → refused; ref → decrypted token;
+disconnected → refused; cache invalidation on `forgetNumber`; 190 error flags the number. A new
+`client.test.ts` with a mocked global `fetch` asserts the `Authorization` header per number. Note
+the flow harness (`orchestrator.flow.test.ts:32-40`) replaces `../whatsapp/client` wholesale, so
+nothing inside `client.ts` runs there; `client.test.ts` is where client behaviour is tested.
 
 **Done when.** With two merchants in the fake DB holding different tokens, a send from each number
 carries that merchant's token in the `Authorization` header (assert in a mocked `fetch`), and a dump of
@@ -234,26 +252,51 @@ connected and a test message on my phone.
   blocked the message event), the backend uses the single granted WABA and its single number; two or
   more → 409 `choose_number` with the list, and the page lets the merchant pick, then re-posts with
   `phone_number_id`.
-- FR-M2.6 The backend subscribes the app to the WABA (A.4), registers the number with a generated
-  6-digit PIN (A.5), stored encrypted as a second `whatsapp_secrets` row of a new kind `'pin'`.
-  Registration errors "already registered" (code 133005 or message containing "already") are treated
-  as success. Any other registration error → status `needs_attention`, `flag_reason='manual'`, and the
-  page shows Meta's error text.
+- FR-M2.6 The backend subscribes the app to the WABA (A.4), then registers the number with a
+  generated 6-digit PIN (A.5), stored encrypted as a second `whatsapp_secrets` row of a new kind
+  `'pin'`. Registration outcomes:
+  - `{ success: true }` → fine, including for a number that was already registered with this PIN.
+  - **133005, two-step PIN mismatch** (the number already has a two-step PIN the merchant set earlier)
+    → the page asks "Enter the two-step verification PIN you set for this number" and re-posts to
+    `POST /api/v1/admin/whatsapp/retry { pin }`; the merchant's PIN replaces the generated one.
+  - **133006, re-verification needed** → `needs_attention`, `flag_reason='manual'`, message "Verify
+    this number again in WhatsApp Manager (Phone numbers → Verify), then press Retry".
+  - **133016, registration limit** → `needs_attention`, message "Meta limits how often a number can be
+    registered; try again in a few hours".
+  - Anything else → `needs_attention`, `flag_reason='manual'`, Meta's message shown verbatim.
+  Steps A.2–A.5 run **before** the `whatsapp_numbers` row exists, so they use the raw token from the
+  exchange, not `tokenForNumber()`; only sends after the upsert (FR-M2.7) go through the client.
+  `debug_token`'s `expires_at` (0 = never) is written to `token_expires_at` (null for 0).
 - FR-M2.7 The backend upserts `whatsapp_numbers` on `phone_number_id` with `merchant_id`, `waba_id`,
   `display_name` (`verified_name`), `phone_e164` (`display_phone_number` normalised), `status='connecting'`,
   `access_token_ref`. A `phone_number_id` already owned by **another** merchant → 409 `number_in_use`,
   the new token is discarded, and the attempt is logged. One merchant may own one number (decision 2);
-  a second connect replaces the first after a confirm dialog.
-- FR-M2.8 The backend sends a test text (A.6) to the merchant's **personal** phone (the number they
-  typed in onboarding step 1, `merchants.phone`) saying "Sahulatcart connected ✓" and marks the number
-  `connected` only if the send returns a message id. A send failure with code 131042 (payment method
-  missing) or 131047 / 131026 → status `needs_attention`, `flag_reason='policy'`, and the page says
-  "Add a payment method to your WhatsApp Business account in Meta Business Manager, then press Retry".
+  a second connect replaces the first after a confirm dialog: the old row is set `disconnected` and
+  its secrets deleted, but the row is kept (conversations reference it with `on delete set null`).
+- FR-M2.8 **Connected is proven by a handshake, not by an outbound test.** A free-form text to the
+  merchant's personal phone would be refused by Meta (error 131047): no customer-service window is
+  open, because that phone has never messaged the shop number, and a new WABA has no approved
+  template yet. So after the upsert the page shows "Now send any message from your phone (+92…) to
+  your shop number" and polls `GET /api/v1/admin/whatsapp` every 3 s. When the webhook receives an
+  inbound from `merchants.phone` on this `phone_number_id` (which also proves the WABA subscription
+  and routing work), the backend replies "Sahulatcart connected ✓" through `sendText` and sets
+  `connected` only when that send returns a message id. A reply failure with 131042 (payment method
+  missing) → `needs_attention`, `flag_reason='policy'`, message "Add a payment method to your WhatsApp
+  Business account in Meta Business Manager, then press Retry"; 131026 → "this number cannot message
+  that phone (check it is a WhatsApp number)". The handshake also records `last_test_at`. During
+  development mode with Meta's **test** number, `merchants.phone` must be one of the five test
+  recipients, or Meta refuses the reply; say so on the page when `phone_number_id` is the test number.
 - FR-M2.9 Abandoning the popup (event `CANCEL`) leaves nothing written. A backend failure after the
   token was stored deletes the secret row and leaves status unchanged.
-- FR-M2.10 The connect route is idempotent per `code`: the same code posted twice returns the first
+- FR-M2.10 The connect route is idempotent per `code`: `whatsapp_connect_attempts.code_hash`
+  (SHA-256 of the code, unique) is written first; a second post with the same code returns the stored
   result (Meta codes are single-use; the second exchange would fail anyway).
-- FR-M2.11 Only `isManager()` roles can connect or disconnect.
+- FR-M2.11 Owners and managers (`isManager()`) can connect, disconnect and resubmit templates. Spec 09
+  §2.3's matrix (CD-37) says only the platform admin may "connect numbers"; that row predates
+  self-service (PLAN decision 2). The M2 PR amends spec 09 §2.3 so the matrix and the route agree.
+- FR-M2.12 Every server-side Graph call carries `appsecret_proof` (HMAC-SHA256 of the token with
+  `META_APP_SECRET`), and "Require App Secret" is switched on in the app's Advanced Settings (M7), so
+  a leaked token alone cannot call the API.
 
 **Data (migration 0009)**
 
@@ -263,20 +306,26 @@ create table whatsapp_connect_attempts (
   id uuid primary key default gen_random_uuid(),
   merchant_id uuid not null references merchants(id) on delete cascade,
   member_id uuid references merchant_users(id) on delete set null,
-  status text not null default 'started',   -- started|token_ok|verified|subscribed|registered|connected|failed
-  waba_id text, phone_number_id text,
+  status text not null default 'started',   -- started|token_ok|verified|subscribed|registered|awaiting_handshake|connected|failed
+  code_hash text unique, waba_id text, phone_number_id text,
   error_code text, error_message text,
   created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
 create index on whatsapp_connect_attempts(merchant_id, created_at desc);
+alter type webhook_item_type add value 'event';   -- M3: account-level webhook fields
+alter table whatsapp_numbers add column last_test_at timestamptz, add column attention_message text;
+create index on whatsapp_secrets(merchant_id, kind);
 ```
-(New tables are locked for anon/authenticated by default privileges; nothing else needed.)
+New tables are locked for anon/authenticated by default privileges. `db/migrate.mjs` wraps each
+file in one transaction, and Postgres forbids **using** a new enum value in the transaction that
+added it, so 0009 must not insert `'pin'` or `'event'` rows itself.
 
 **API**
 
 `POST /api/v1/admin/whatsapp/connect`
 Request: `{ code: string, hints?: { wabaId?: string, phoneNumberId?: string }, phoneNumberId?: string }`
-Response 200: `{ status: 'connected'|'needs_attention', phoneNumberId, displayPhone, displayName, flagReason?, message? }`
+Response 200: `{ status: 'awaiting_handshake'|'needs_attention', phoneNumberId, displayPhone, displayName, flagReason?, message? }`
+`POST /api/v1/admin/whatsapp/retry { pin? }` re-runs subscribe → register → (handshake wait) without a new popup.
 Errors: 400 `code_exchange_failed` (Meta's message included), 400 `waba_not_granted`, 400
 `phone_not_in_waba`, 409 `choose_number` `{ numbers: [{id, displayPhone, verifiedName}] }`, 409
 `number_in_use`, 403 for non-managers.
@@ -291,7 +340,7 @@ Errors: 400 `code_exchange_failed` (Meta's message included), 400 `waba_not_gran
 - Registers `window.addEventListener('message', …)` filtering `event.origin` to `https://www.facebook.com` or `https://web.facebook.com` and `data.type === 'WA_EMBEDDED_SIGNUP'`; on `event === 'FINISH'` keeps `data.data.phone_number_id` and `waba_id` as hints.
 - Button → `FB.login(cb, { config_id, response_type: 'code', override_default_response_type: true, extras: { sessionInfoVersion: '3', setup: {} } })`.
 - `cb` receives `response.authResponse.code` → `api('/api/v1/admin/whatsapp/connect', { method: 'POST', body })`.
-- States: idle → "Opening Meta…" → "Connecting your number…" (progress list: token, verify, subscribe, register, test message) → connected view (M3) or needs-attention view with the message from the backend and a **Retry** button (re-runs steps 6–8 without a new popup, `POST /api/v1/admin/whatsapp/retry`).
+- States: idle → "Opening Meta…" → "Connecting your number…" (progress list: token, verify, subscribe, register) → "Send any message from your phone to +92… to finish" (polling, with the number shown large and a WhatsApp deep link `https://wa.me/<shop number>?text=hi`) → connected view (M3) or needs-attention view with the message from the backend, a PIN field when the error was 133005, and a **Retry** button (`POST /api/v1/admin/whatsapp/retry`).
 - A plain-words explainer above the button: what the merchant needs (a Facebook login that manages their business, a phone number not already on the WhatsApp app, a payment method added in Meta), and the display-name rule (must be the real shop name).
 
 **How it works (sequence)**
@@ -310,9 +359,12 @@ Browser                    Backend                         Meta
   │                          │ POST /{waba}/subscribed_apps ─►│
   │                          │ POST /{phone}/register {pin} ─►│
   │                          │ upsert whatsapp_numbers (connecting)
-  │                          │ POST /{phone}/messages (test) ─►│ → merchant's phone
+  │◄── 200 {status: awaiting_handshake, displayPhone}
+  │ (merchant texts the shop number from their phone)
+  │                          │◄── webhook: inbound from merchants.phone ─┤
+  │                          │ POST /{phone}/messages "connected ✓" ─►│ → merchant's phone
   │                          │ status = connected
-  │◄── 200 {status, displayPhone}
+  │ GET /whatsapp (poll) ──► │ {status: connected}
 ```
 
 **Security.** The code is single-use and exchanged server-side with `META_APP_SECRET`; the token never
@@ -320,14 +372,16 @@ reaches the browser. The `message` listener checks `event.origin`. Hints are ver
 token. The route is rate-limited (P6) to 5 per minute per merchant.
 
 **Tests.** `connect.test.ts` with a mocked `fetch` for Meta: happy path writes secret + number + attempt
-`connected`; hint mismatch → 400 and no rows; number owned by another merchant → 409 and the stored
-secret is deleted; registration "already registered" is success; test-send 131042 → `needs_attention`
-with `policy`. UI: manual test with the Meta test WABA and a tester login (the app is in development
+`awaiting_handshake`; hint mismatch → 400 and no rows; number owned by another merchant → 409 and the
+stored secret is deleted; 133005 → `pin_required`; same code twice → same result, one exchange call;
+handshake: an inbound from `merchants.phone` flips `connected` and sends the reply; reply 131042 →
+`needs_attention` with `policy`; every Graph call carries `appsecret_proof`. UI: manual test with the Meta test WABA and a tester login (the app is in development
 mode; testers are added under App Roles).
 
-**Done when.** A tester account connects the Meta test number end to end on the deployed portal; the
-merchant's phone receives "Sahulatcart connected ✓"; a message sent to the test number gets a bot
-reply; `whatsapp_secrets` holds ciphertext only; the backend log contains no token.
+**Done when.** A tester account connects the Meta test number end to end on the deployed portal,
+texts it from their phone, and receives "Sahulatcart connected ✓"; the page flips to connected
+without a reload; a second message gets a bot reply; `whatsapp_secrets` holds ciphertext only; the
+backend log contains no token.
 
 ---
 
@@ -335,14 +389,19 @@ reply; `whatsapp_secrets` holds ciphertext only; the backend log contains no tok
 
 **Purpose.** The merchant must always see whether their number works, and Meta's warnings (quality
 drop, template rejection, account restriction) must reach them. Today only the `messages` webhook
-field is subscribed, so those events are invisible.
+field is subscribed, and `parseWebhook()` silently **drops** any change without
+`value.metadata.phone_number_id` (`parse.ts:52-53`), which is exactly what the account-level fields
+look like, so those events are invisible twice over.
 
 **Functional requirements**
 
 - FR-M3.1 `GET /api/v1/admin/whatsapp` (IC-4) returns the number's status, display phone, display
   name, `quality_rating`, `messaging_tier`, `verified_name_status`, the template list with statuses
   (M4), `lastTestAt`, and `flagReason` with a plain-words `message`.
-- FR-M3.2 The webhook route handles three more fields, routed by `waba_id` or `phone_number_id`:
+- FR-M3.2 The webhook route handles three more fields. They carry no `metadata`; the WABA id is
+  `entry[].id`, and quality updates name the number by `value.display_phone_number`. Route
+  `phone_number_quality_update` by WABA + display phone (`phone_e164`), the other two by WABA (a
+  WABA-level event applies to every number row with that `waba_id`):
   - `phone_number_quality_update` → update `quality_rating` (GREEN/YELLOW/RED → enum), `messaging_tier`
     from `current_limit` (TIER_250 → `unverified`, TIER_1K → `tier_1`, TIER_10K → `tier_2`, TIER_100K →
     `tier_3`, TIER_UNLIMITED → `tier_4`); on `event: FLAGGED` set `status='needs_attention'`,
@@ -354,16 +413,26 @@ field is subscribed, so those events are invisible.
   `lastTestAt`; it is what the Retry button and onboarding step 7 (P2) call.
 - FR-M3.4 `POST /api/v1/admin/whatsapp/disconnect`: sets `status='disconnected'`, deletes the
   secret rows, nulls `access_token_ref`, `forgetNumber()`. It does **not** call Meta to deregister
-  (the merchant keeps their number and WABA). Bot replies for that merchant stop (the webhook still
-  routes inbound by `phone_number_id`, so inbound messages are stored and the merchant is told once
-  per day that the bot is off).
+  (the merchant keeps their number and WABA). Bot replies stop because `tokenForNumber()` refuses
+  (FR-M1.6). The webhook still routes inbound by `phone_number_id`, so buyers' messages are stored and
+  appear in the inbox, but **no auto-reply of any kind is possible** (there is no token), and the
+  merchant is reminded once a day through `notify()` (portal, push, email; never WhatsApp) that the
+  bot is off and buyers are waiting.
 - FR-M3.5 Reconnect is M2's button again; it replaces the secret and resets flags.
-- FR-M3.6 `parse.ts` must not throw on these new payloads: `parseWebhook()` returns `messages`,
-  `statuses`, and new `events: {field, value}[]` for non-message fields; `claimWebhookPayload()` claims
-  them with event id `${field}:${waba_id}:${timestamp}` so a redelivery is deduped.
+- FR-M3.6 `parseWebhook()` gains `events: { field, wabaId, entryTime, value }[]`: for every change
+  whose `field !== 'messages'` it reads `change.field`, `entry.id` and `entry.time` (add `time` to
+  `WebhookEntry` in `types.ts`; `field` and `id` exist but are unused) instead of dropping it.
+  `claimWebhookPayload()` claims each event with `item_type='event'` (new enum value, migration
+  0009; widen `claimEvent()`'s `'message' | 'status'` union) and event id
+  `${field}:${wabaId}:${sha256(JSON.stringify(value))}` so a redelivery is deduped; it needs no
+  tenant lookup, since the handler resolves rows by WABA. `processClaimed()` dispatches events to
+  `account-events.ts`.
 
-**Data.** `whatsapp_numbers` has every column needed. Migration 0009 adds `last_test_at timestamptz`
-and `attention_message text`.
+**Data.** `whatsapp_numbers` has every column needed except `last_test_at` and `attention_message`,
+which 0009 adds (SQL in M2). `status` is plain `text` with the comment `connecting|connected|flagged|
+disconnected` (0001:100) and no check constraint; this SRS uses `needs_attention` instead of
+`flagged`: update the column comment in 0009, the `WhatsAppNumberStatus` type in `shared/`, and
+`db/seed.mjs:57`.
 
 **API.** As above, plus `GET /api/v1/admin/whatsapp/attempts` (last 10 connect attempts, for support).
 
@@ -401,63 +470,81 @@ merchant chose to pay, and still create templates because App Review requires a 
 *Templates*
 - FR-M4.1 At connect (M2 step after `connected`) the backend creates two **UTILITY** templates on the
   merchant's WABA (A.7): `payment_update` and `order_sent`, language `en` (Roman Urdu is Latin script;
-  Meta's language code list has no Roman Urdu, and `en` is what Pakistani businesses use for it). Body
+  Meta's language code list has no Roman Urdu, and `en` is what Pakistani businesses use for it; if a
+  reviewer rejects for "language mismatch", resubmit as `en_US` with a shorter, more English body
+  before anything else). PLAN decision 3 said three templates; it is two, and the PLAN is corrected. Body
   texts and parameters are fixed in `backend/src/whatsapp/templates.ts`:
   - `payment_update`: "Assalam o alaikum {{1}}! Aapke order {{2}} ki payment {{3}}. {{4}}" with
     `{{3}}` = "verify ho gayi hai" or "verify nahi ho saki" and `{{4}}` = the slip text or the reason.
   - `order_sent`: "{{1}}, aapka order {{2}} bhej diya gaya hai. {{3}}" with `{{3}}` = courier/ETA line.
-- FR-M4.2 Each template is stored in `message_templates` (new table) with Meta's id, status, category,
-  language, and `rejected_reason`. The `message_template_status_update` webhook updates it and, on
-  REJECTED or PAUSED, notifies the merchant with Meta's reason.
-- FR-M4.3 Portal `/settings/whatsapp` lists templates with status; **Resubmit** re-creates a rejected
-  one (Meta requires a new name on resubmission if the old one is rejected within 30 days: append
-  `_v2`, `_v3`).
+- FR-M4.2 Each template is stored in `message_templates` (new table, columns follow spec 02:
+  `wa_template_id`, `status` lowercase `pending|approved|rejected|paused|disabled`, `rejection_reason`,
+  `body_json`). The `message_template_status_update` webhook maps Meta's uppercase event to the
+  lowercase status and, on rejected or paused, writes a notification of type **`template_status`**
+  (the enum value exists; the notifications page maps it to a row, today it falls back to a plain
+  bell) with Meta's reason. Create and resubmit each write an `audit_log` row (`entity='template'`,
+  spec 09 §5).
+- FR-M4.3 Portal `/settings/whatsapp` lists templates with status; **Resubmit** (managers only,
+  spec 09 §2.3 "Templates manage") re-creates a rejected one (Meta requires a new name on
+  resubmission if the old one is rejected within 30 days: append `_v2`, `_v3`).
 - FR-M4.4 `sendTemplate(phoneNumberId, to, name, params)` (IC-2) sends `type: 'template'` (A.8) and
   records a `messages` row with `type='template'`, `template_name`.
 
 *The window rule*
-- FR-M4.5 `notifyBuyer()` in `payment-service.ts` becomes: window open → free-form `sendText` as now;
-  window closed → **do not send**; write a notification of type `system` to the merchant: "Buyer's
-  window closed; sending costs about Rs 4" with `data: { orderId, action: 'payment_update' }`, and
-  mark the order with `pending_buyer_notice = 'payment_update'` (new column) so the order page shows
-  the button.
+- FR-M4.5 `notifyBuyer()` in `payment-service.ts` **already** does most of this: it computes
+  `windowOpen` from `conversations.window_expires_at` (:66), sends only when open (:69), and writes a
+  `system` notification when closed (:74-85). What changes: the notification `data` gains
+  `{ orderId, action: 'payment_update' }`, the order is marked `pending_buyer_notice='payment_update'`
+  (new column) so the order page shows the paid button, and the wording becomes "Buyer's window
+  closed; sending costs about Rs 4". Also: when the window is open and a PDF slip exists,
+  `verifyPayment` sends **two** messages today (text :70, then the PDF :72); make it one by sending
+  the document with the text as its caption, as `sendCodConfirmed` already does (`orchestrator.ts:602-607`).
 - FR-M4.6 `POST /api/v1/admin/orders/:id/notify-buyer` `{ kind: 'payment_update'|'order_sent' }` sends
-  the template (always charged), clears `pending_buyer_notice`, and returns 402-style error
-  `template_not_approved` if the template is not `APPROVED`. The order page button shows the price
+  the template (always charged), clears `pending_buyer_notice`, and returns 409
+  `template_not_approved` if the template is not `approved`. The order page button shows the price
   from `cfg.META_UTILITY_RATE_PAISA` (Appendix B; default 420 = Rs 4.20) and the free-quota state from
   M5.
 - FR-M4.7 The payment claim view shows "Free to confirm until <time>" computed from
   `conversations.window_expires_at`, with a countdown; after expiry the label flips to "Window closed —
-  confirming now sends nothing; the buyer notice becomes a paid button".
-- FR-M4.8 A buyer message "status" / "order status" / "mera order" in any state answers with the latest
-  order's status line (free-form, inside the new window the buyer just opened) without an LLM call:
-  add `STATUS_RE` beside `CANCEL_RE` (multi-word, per the convention) and a `ReplySpec` kind
-  `order_status` in `TEMPLATE_ONLY_KINDS` with its fallback text.
+  confirming now sends nothing; the buyer notice becomes a paid button". When the shop is past its
+  free 1,000 for the month (M5), the label says "Confirm until <time> (about Rs 4; free quota used)"
+  instead, because an in-window reply is then paid too.
+- FR-M4.8 A buyer message that is **only** "status", "order status", "mera order" or "order kahan
+  hai" (whole-message regex `STATUS_RE` beside `CANCEL_RE`) answers with the latest placed order's
+  status line without an LLM call, when the customer has at least one placed order; otherwise it
+  falls through to the normal flow. The check sits **before** `classify()` (`orchestrator.ts:254-256`)
+  and inside `handleEscape()` (:666) for the order-flow states. `BotIntent` already has `ask_status`
+  but no branch handles it (:284-415); add one that gives the same answer, or the LLM path still
+  misroutes. New `ReplySpec` kind `order_status` goes in `TEMPLATE_ONLY_KINDS` with its fallback.
 
 *Fewer messages per sale*
-- FR-M4.9 Merge sends that are always sequential: in `handlePayment()` the bank details text and the
-  `bank_await` reply become one message; in `sendCodConfirmed()` the confirmation and the slip text
-  become one message (the PDF, when sent, is one more message; keep it but skip the separate text).
+- FR-M4.9 Merge sends that are always sequential: in `handlePayment()` the bank details text (:817)
+  and the `bank_await` reply (:818) become one message. In `sendCodConfirmed()` the PDF path is
+  already one message (the confirmation is the document's caption, :602-607); merge the **no-PDF**
+  path, which sends the slip text and then the caption as two (:609-610). Before changing anything,
+  record today's message count for the scripted COD and bank flows in the CHANGELOG as the baseline.
 - FR-M4.10 Payment method choice uses interactive buttons: `ask_payment_method` sends `sendButtons`
-  with `[{id:'cod', title:'Cash on Delivery'}, {id:'bank', title:'Bank Transfer'}]` when `codEnabled`
-  and a bank account exist; the webhook already parses `interactive.button_reply` into text (`parse.ts`),
-  so `COD_RE`/`BANK_RE` keep working on the button title; also match the ids `cod`/`bank` exactly.
-- FR-M4.11 Product photos: `sendImage` once per product ask, the first image only, caption carries
-  the price line; never one message per image.
-- FR-M4.12 Every outbound send increments `message_usage` (M5) — implemented in `client.ts` so no
-  caller can forget.
+  with `[{id:'cod', title:'Cash on Delivery'}, {id:'bank', title:'Bank Transfer'}]` (max 3 buttons,
+  titles ≤ 20 characters), offering only the enabled methods (P2 enforces `codEnabled`). `parse.ts`
+  puts the button **title** into `NormalizedMessage.text` (:35-36), which today's `\bcash\b` / `\bbank\b`
+  regexes match; the **id** is only in `message.raw.interactive.button_reply.id` (`RawMessage` type,
+  `types.ts:30-33`), so `handlePayment()` reads the id from `raw` first and falls back to the text.
+- FR-M4.11 Product photos: already one `replyImage` per product ask with the first image and a
+  price-guarded caption (`orchestrator.ts:350-353`, `398-400`). Keep; no change.
+- FR-M4.12 Every **successful** outbound send (a message id came back) increments `message_usage`
+  (M5), implemented in `client.ts` so no caller can forget; failed sends are not counted.
 
 **Data (migration 0010)**
 
 ```sql
-create table message_templates (
+create table message_templates (                 -- names per docs/spec/02-data-model.md
   id uuid primary key default gen_random_uuid(),
   merchant_id uuid not null references merchants(id) on delete cascade,
   waba_id text not null,
-  meta_template_id text,
-  name text not null, language text not null default 'en', category text not null default 'UTILITY',
-  status text not null default 'PENDING',       -- PENDING|APPROVED|REJECTED|PAUSED|DISABLED
-  rejected_reason text, body text not null, param_count int not null default 0,
+  wa_template_id text,
+  name text not null, language text not null default 'en', category text not null default 'utility',
+  status text not null default 'pending',       -- pending|approved|rejected|paused|disabled
+  rejection_reason text, body_json jsonb not null, param_count int not null default 0,
   created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
   unique (merchant_id, name)
 );
@@ -476,11 +563,13 @@ stored; status flips arrive by webhook. `sendTemplate` builds `components: [{typ
 [{type:'text', text}]}]` in parameter order.
 
 **Tests.** `templates.test.ts`: creation stores rows; REJECTED webhook updates and notifies; resubmit
-uses a new name. Flow tests: verify 20 h after the screenshot → free-form send; verify 30 h after →
+uses a new name. Flow tests: verify 20 h after the screenshot → one free-form send; verify 30 h after →
 no send, `pending_buyer_notice='payment_update'`, notification written; notify-buyer route → template
-send with the right params; `status` keyword → status line, no LLM call; bank flow sends one message
-instead of two (assert `h.sent.length`); payment choice is an interactive send and a `button_reply`
-with id `cod` confirms COD.
+send with the right params; `status` keyword → status line, no LLM call (assert the fake `classify`
+was not called); bank flow sends one message instead of two (assert `h.sent.length`); payment choice
+is an interactive send and a `button_reply` with id `cod` confirms COD. The flow harness's client mock
+(`orchestrator.flow.test.ts:32-40`) must gain `sendTemplate` and `sendButtons` and record a `type`
+per send, or these tests fail with "not a function".
 
 **Done when.** A template created from the portal shows APPROVED in WhatsApp Manager; the flow tests
 above pass; the message count for a scripted COD sale drops from today's count (measure it first and
@@ -495,17 +584,21 @@ choose what happens after the free quota.
 
 **Functional requirements**
 
-- FR-M5.1 `message_usage` (IC-6) is incremented on every outbound send (text, image, document,
-  template, interactive) and every inbound message, keyed by `merchant_id`, `phone_number_id`, and
-  `period_month` (`'2026-10'`, Asia/Karachi). Use an upsert RPC `bump_message_usage(p_merchant,
-  p_phone, p_month, p_outbound, p_inbound)` so concurrent sends do not lose counts.
+- FR-M5.1 `message_usage` (IC-6) is incremented on every **successful** outbound send (text, image,
+  document, template, interactive) and every inbound message, keyed by `merchant_id`,
+  `phone_number_id`, and `period_month` (`'2026-10'`, Asia/Karachi). Use an upsert RPC
+  `bump_message_usage(p_merchant, p_phone, p_month, p_outbound, p_inbound)` so concurrent sends do not
+  lose counts. The meter is an estimate: Meta counts *delivered* messages on its own calendar, and
+  WhatsApp Manager's figure is authoritative; say so on the card.
 - FR-M5.2 `GET /api/v1/admin/usage` returns `{ month, outbound, inbound, freeQuota: 1000,
   paidOutbound: max(0, outbound-1000), estimatedCostPaisa, afterQuota: 'continue'|'handoff' }`.
 - FR-M5.3 Dashboard card: "Messages this month: 412 of 1,000 free" with a bar; at ≥80% the bar turns
   amber and a notification is written once per month; at 100% once more. The copy says what happens next.
-- FR-M5.4 Setting `settings.afterFreeQuota` (`'continue'` default | `'handoff'`): when `'handoff'`
-  and `outbound ≥ 1000`, the orchestrator hands new conversations to the merchant (`handoff()` with
-  reply kind `handoff`, one free-form message) instead of selling; existing order-flow states finish
+- FR-M5.4 Setting `settings.afterFreeQuota` (`'continue'` default | `'handoff'`; add the rule to
+  `invalidSettingsField()` in `lib/validation.ts`, which today checks only three keys): when
+  `'handoff'` and `outbound ≥ 1000`, the orchestrator hands new conversations to the merchant
+  (`handoff()` with reply kind `handoff`: one free-form message, which is itself one paid message,
+  about Rs 4, and the settings copy says so) instead of selling; existing order-flow states finish
   their flow (a buyer mid-checkout is never dropped).
 - FR-M5.5 Human replies from the inbox count and are shown in the same meter; the inbox composer shows
   "paid" next to Send when the quota is used.
@@ -515,12 +608,14 @@ choose what happens after the free quota.
 **Data (migration 0011).** `message_usage` table with `unique (merchant_id, phone_number_id,
 period_month)`; the `bump_message_usage` function with the revoke line.
 
-**Tests.** Concurrent 50 sends in the flow harness produce a count of 50; the 80% notification is
-written once; `afterFreeQuota='handoff'` at 1000 hands off a new chat but lets an in-progress checkout
-finish.
+**Tests.** `client.test.ts` (mocked `fetch`, FakeDb twin of `bump_message_usage`): 50 concurrent
+successful sends produce a count of 50 and a failed send adds nothing; the 80% notification is
+written once; flow test: `afterFreeQuota='handoff'` at 1000 hands off a new chat but lets an
+in-progress checkout finish.
 
-**Done when.** The dashboard of the pilot merchant shows a count that matches `select count(*) from
-messages where direction='outbound' and created_at >= date_trunc('month', now())` for the same month.
+**Done when.** The dashboard of the pilot merchant shows a count that matches, for the same month,
+the number of outbound `messages` rows with a `wa_message_id` (not every send writes a `messages`
+row today; the comparison is a sanity check, and any gap is listed in the CHANGELOG).
 
 ---
 
@@ -533,13 +628,20 @@ messages where direction='outbound' and created_at >= date_trunc('month', now())
 **Functional requirements**
 
 - FR-M6.1 `jwtCtx()` looks up `platform_admins` by `auth_user_id` and sets `isPlatformAdmin` true
-  when a row exists and is active. The default-merchant pinning for the admin token is unchanged.
-- FR-M6.2 Routes under `/api/v1/platform/*`, all requiring `isPlatformAdmin`:
+  when a row exists and is active, **also when the user has no merchant membership** (today
+  `jwtCtx()` returns null without one, `lib/auth.ts:72`): the ctx is then `{ isPlatformAdmin: true,
+  merchantId: null, … }`, and every merchant route still 401s it (IC-7; P1's `no_membership` redirect
+  must check this flag first). `adminCtx()` already sets `isPlatformAdmin: true` for the shared
+  `ADMIN_API_TOKEN` (:56-59); that stays for the pilot and is removed when M6 ships.
+- FR-M6.2 Routes under `/api/v1/platform/*`, all requiring `isPlatformAdmin`. They are registered
+  **inside** the `adminRoutes` plugin (`routes/admin.ts:28-34`): its auth `preHandler` is encapsulated
+  there, so a separate plugin would get no auth at all. Routes:
   `GET /merchants` (id, business name, owner email, status, plan, connection status, last inbound at,
   orders this month, usage this month), `POST /merchants/:id/suspend` `{reason}`,
   `POST /merchants/:id/unsuspend`, `GET /merchants/:id/attempts` (connect attempts).
 - FR-M6.3 `merchants.status='suspended'` is enforced: the webhook stores inbound messages but the
-  orchestrator sends nothing; every admin route for that merchant returns 403 `merchant_suspended`
+  orchestrator sends nothing (`runOrchestrator()` must add `status` to its merchants select,
+  `orchestrator.ts:185-188`, and return before any reply); every admin route for that merchant returns 403 `merchant_suspended`
   except `GET /me` and `GET /settings` so the portal can show the suspension notice.
 - FR-M6.4 Page `/platform` in the admin, visible only when `GET /me` returns `isPlatformAdmin`; a
   table with search, a suspend/unsuspend action with a reason dialog, and a link to view the shop's
@@ -572,15 +674,21 @@ review material.
    "WhatsApp Embedded Signup" type, assets: WhatsApp Business accounts, permissions
    `whatsapp_business_management`, `whatsapp_business_messaging`. Copy the **Configuration ID** into
    Railway as `META_EMBEDDED_SIGNUP_CONFIG_ID`. Add both developers and the pilot merchants' Facebook
-   accounts under **App Roles → Testers** (required while the app is in development mode).
+   accounts under **App Roles → Testers** (required while the app is in development mode). Tell
+   pilot merchants to verify their own business in Meta Business Manager: an unverified business is
+   capped at 250 messages a day and its display name stays "pending", which the connect page should
+   say in plain words.
 3. **Webhook.** WhatsApp → Configuration → Callback URL
    `https://appbackend-production-dae8.up.railway.app/api/v1/webhook/whatsapp`, Verify token = the
    current `META_WEBHOOK_VERIFY_TOKEN`. Subscribe fields: `messages`,
    `message_template_status_update`, `phone_number_quality_update`, `account_update`. Press Test on
    each and confirm the backend log shows a claim.
 4. **Graph version.** Set `META_GRAPH_API_VERSION` on Railway to the newest version listed in the
-   dashboard's API version drop-down; note its retirement date in CLAUDE.md. Remove the `v21.0`
-   default from `config.ts` (make the variable required) so a stale default can never silently return.
+   dashboard's API version drop-down (`.env.example` already says `v25.0`; `config.ts` still defaults
+   to `v21.0`); note its retirement date in CLAUDE.md. Make the variable required **in production**
+   (same pattern as `TOKEN_ENCRYPTION_KEY`, M1) and add a dummy to `backend/vitest.config.ts`, so a
+   stale default can never silently return and the test suite still boots. Also switch on **Require
+   App Secret** in the app's Advanced Settings (FR-M2.12).
 5. **Tech Provider enrolment** (owner clicks; Fazal beside them).
 6. **App Review submission.** Permissions and Features → request Advanced Access for exactly
    `whatsapp_business_messaging` and `whatsapp_business_management`. For each, a written description
@@ -673,8 +781,8 @@ when M2 starts; the dashboard's API version drop-down shows which versions are l
 
 | Variable | Service | Set by | Purpose |
 |---|---|---|---|
-| `TOKEN_ENCRYPTION_KEY` | backend | Fazal (exists, unused) | 32-byte base64 key for M1; required in production |
-| `META_APP_ID` | backend, admin (public via `/config`) | Fazal | Embedded Signup and token exchange |
+| `TOKEN_ENCRYPTION_KEY` | backend | Fazal (exists in config.ts and railway.ts, unused) | 32-byte base64 key for M1; required in production; dummy in vitest.config.ts |
+| `META_APP_ID` | backend, admin (public via `/config`) | Fazal (exists in config.ts:21 and railway.ts; only the `/config` exposure is new) | Embedded Signup and token exchange |
 | `META_EMBEDDED_SIGNUP_CONFIG_ID` | backend (public via `/config`) | Fazal | Embedded Signup configuration |
 | `META_GRAPH_API_VERSION` | backend | Fazal | made required (no default) in M7 |
 | `META_UTILITY_RATE_PAISA` | backend | Fazal | shown wherever a paid message is offered; default 420 |
@@ -692,8 +800,8 @@ Every variable is added to `.env.example` with a comment, and declared as `prese
 
 | File | Stream | Contents |
 |---|---|---|
-| `0009_whatsapp_connect.sql` | M | `whatsapp_secret_kind` + `'pin'`; `whatsapp_connect_attempts`; `whatsapp_numbers.last_test_at`, `.attention_message`; index on `whatsapp_secrets(merchant_id, kind)` |
-| `0010_message_templates.sql` | M | `message_templates`; `orders.pending_buyer_notice` |
+| `0009_whatsapp_connect.sql` | M | `whatsapp_secret_kind` + `'pin'`; `webhook_item_type` + `'event'`; `whatsapp_connect_attempts` (with `code_hash`); `whatsapp_numbers.last_test_at`, `.attention_message`, status comment updated; index on `whatsapp_secrets(merchant_id, kind)`. Must not use the new enum values itself (one transaction) |
+| `0010_message_templates.sql` | M | `message_templates` (spec 02 column names, lowercase statuses); `orders.pending_buyer_notice` |
 | `0011_message_usage.sql` | M | `message_usage`; `bump_message_usage()` with revoke |
 | `0012_self_signup.sql` | P | `create_merchant_for_user()` with revoke; `merchants.settings` default `botEnabled:false` |
 | `0013_onboarding.sql` | P | `merchants.logo_url` |

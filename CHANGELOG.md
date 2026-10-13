@@ -7,6 +7,47 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — Fazal's SRS reviewed against the code: 4 blockers, 23 factual errors, 2 design flaws fixed
+
+The owner asked for Fazal's SRS to be checked the way Uzair's had been. Two passes: an agent verified
+every file:line, signature, column and enum claim against HEAD, and a separate read looked for logic
+and Meta-API problems the code can't reveal. All line references were correct; the problems were in
+what the SRS asked the code to do.
+
+The two design flaws, both in M2, would have broken "Connect WhatsApp" for every merchant:
+- The "test message" was an outbound free-form text to the merchant's personal phone. Meta refuses
+  that (131047): no customer-service window is open because that phone has never messaged the shop,
+  and a brand-new WABA has no approved template. Replaced with a handshake: the merchant texts their
+  shop number, the webhook receives it (which also proves the WABA subscription works), and the bot's
+  reply is the proof of outbound, token and payment method.
+- Error 133005 was described as "already registered"; it is **two-step PIN mismatch**. A number the
+  merchant had already protected with a PIN would have been marked broken. Now the page asks for the
+  existing PIN and retries; 133006 and 133016 get their own messages.
+
+The four blockers from the code check: (1) `webhook_item_type` is a two-value enum, so claiming
+account-level webhook events would have failed the insert, answered 500 and made Meta redeliver
+forever; 0009 now adds `'event'`. (2) A disconnected number would have fallen back to the env token
+and kept sending, because "null ref = env token" and "disconnect nulls the ref" combined; the env
+token now applies only to the pilot's `META_DEFAULT_PHONE_NUMBER_ID`, and `tokenForNumber()` refuses
+disconnected or token-flagged numbers. (3) Spec 09 §2.3 lets only the platform admin connect numbers;
+the M2 PR amends the spec for self-service. (4) `parseWebhook()` silently drops changes without
+`metadata.phone_number_id`, which is what account-level events look like; FR-M3.6 now reads
+`change.field`, `entry.id`, `entry.time`.
+
+Factual fixes: `notifyBuyer()` already implements the window rule (the SRS presented it as new);
+`sendCodConfirmed` is already one message on the PDF path; `replyImage` already sends one photo;
+the button id lives only in `message.raw`; `META_APP_ID` and `TOKEN_ENCRYPTION_KEY` already exist in
+config and railway.ts; making config vars required kills the test suite unless vitest.config.ts gets
+dummies; platform routes must sit inside the `adminRoutes` plugin or they get no auth; a platform
+admin without a shop membership would have been bounced by P1's redirect (IC-7 updated in both
+files); `message_templates` now follows spec 02's column names; template events use the existing
+`template_status` notification type; `fallbackText()` lives in orchestrator.ts, not types.ts;
+`bytea` columns need hex strings through supabase-js; new enum values can't be used in the migration
+that adds them; `appsecret_proof` added to every server-side Graph call. PLAN decision 3 said three
+templates; it is two. Both PDFs rebuilt.
+
+---
+
 ## 2026-10-12 — SRS: the plan split between Fazal and Uzair
 
 The owner asked for the plan as a detailed SRS divided between two developers, then for one file per

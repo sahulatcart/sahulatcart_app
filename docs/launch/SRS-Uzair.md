@@ -43,7 +43,7 @@ webhook handling, retention, backups. Live: 1 merchant, 5 products, 0 orders.
 | `merchant_id` always comes from verified auth (`resolveCtx()` in `backend/src/lib/auth.ts`), never from the request body or query. | Every admin route | Tenant isolation. |
 | By-id routes ownership-check and return **404**, not 403, when the row belongs to another merchant. | Every by-id route | Do not confirm another tenant's ids exist. |
 | New SQL functions end with `revoke execute on function … from public, anon, authenticated;`. | Every migration | Postgres grants EXECUTE to PUBLIC by default; `/rest/v1/rpc` would expose it. |
-| Every `ReplySpec` kind has a Roman-Urdu `fallbackText()`. | `backend/src/llm/types.ts`, orchestrator | It ships when the LLM is down or the price guard trips. |
+| Every `ReplySpec` kind has a Roman-Urdu `fallbackText()`. | `fallbackText()` in `backend/src/orchestrator/orchestrator.ts`; the kinds and `TEMPLATE_ONLY_KINDS` in `backend/src/llm/types.ts` | It ships when the LLM is down or the price guard trips. |
 | Every LLM-composed reply passes `priceGuardOk()`. New reply kinds that always say the same thing go in `TEMPLATE_ONLY_KINDS` (no LLM call). | `backend/src/orchestrator/guard.ts` | Invariant 1: the LLM never decides prices. |
 | Admin UI: plain CSS tokens from `admin/app/globals.css`; shared pieces from `admin/components/AppShell.tsx` (`PageHead`, `BackLink`, `EmptyState`, `StatusPill`, `humanize()`); lucide icons with `aria-hidden`; every input has a `<label>`; icon-only buttons have `aria-label`; money cells `td.num`; ids `.mono`. New colours need a token in **both** light and dark blocks. | Every admin page | Consistency and dark mode. |
 | Admin fetches go through `admin/lib/api.ts` (`api()`, `apiJson()`), never straight to the backend. Show failures with `toast(await apiError(r), 'error')`; never toast "Saved" without checking `r.ok`. | Every admin page | The portal proxies same-origin through `admin/app/api/[...path]/route.ts`. |
@@ -56,8 +56,9 @@ webhook handling, retention, backups. Live: 1 merchant, 5 products, 0 orders.
 - Branch names: `feat/<stream>-<id>-<slug>`, e.g. `feat/m2-embedded-signup`, `feat/p1-signup`.
 - One PR per feature id (M1, P3…). Small PRs inside a feature are welcome; name them `feat/p3-push-part1`.
 - A PR needs: tests green, both typechecks green, a CHANGELOG entry, and the other developer's
-  review. Merge to `main` deploys automatically: backend on `backend/**` or `shared/**` changes,
-  admin on `admin/**` or `shared/**`. A docs-only PR deploys nothing.
+  review. Merge to `main` deploys automatically: backend on `backend/**` changes, admin on `admin/**`, and
+  both on `shared/**` or the root `package.json`, `package-lock.json`, `tsconfig.base.json`. A
+  docs-only PR deploys nothing.
 - After a backend merge, confirm the deploy with `/healthz` (uptime resets) and `/readyz` (`db: ok`).
   `railway deployment list --service @app/backend` shows SUCCESS or FAILED; on FAILED read the build
   log before changing anything.
@@ -131,11 +132,11 @@ M3's status), and it is a read of one JSON field, so a stub is enough until M3 l
 |---|---|---|---|
 | IC-1 | M1 (Fazal) | everything that sends | `sendText(phoneNumberId, to, body)`, `sendImage(...)`, `sendDocument(...)` in `backend/src/whatsapp/client.ts` keep their signatures. Internally they resolve the merchant's token from `phoneNumberId`. Callers never pass a token. |
 | IC-2 | M4 (Fazal) | P4 (Uzair) | `sendTemplate(phoneNumberId, to, templateName, params: string[])` returns `SendResult`. `sendButtons(phoneNumberId, to, body, buttons: {id, title}[])` for interactive replies. |
-| IC-3 | P3 (Uzair) | M3, M4, M5 (Fazal) | `notify(db, merchantId, { type, title, body, data })` in `backend/src/lib/notify.ts` writes the portal row **and** fans out to push and email per the merchant's preferences. All new notifications go through it. |
+| IC-3 | P3 (Uzair) | M3, M4, M5 (Fazal) | `notify(db, merchantId, { type, title, body, data })` in `backend/src/lib/notify.ts` writes the portal row **and** fans out to push and email per the merchant's preferences. All new notifications go through it. Until P3 lands (week 4), M1 and M3 insert `notifications` rows directly, as `handoff()` does today (`orchestrator.ts:523-530`), and switch to `notify()` at the week-4 sync. |
 | IC-4 | M3 (Fazal) | P2 (Uzair) | `GET /api/v1/admin/whatsapp` returns `{ status: 'none'|'connecting'|'connected'|'needs_attention'|'disconnected', displayPhone, displayName, qualityRating, messagingTier, templates: [{name, status}], lastTestAt }`. Until M3 lands it returns `{ status: 'none' }`. |
 | IC-5 | P1 (Uzair) | M2 (Fazal) | After P1, every signed-in portal user has exactly one `merchants` row and one owner `merchant_users` row; `resolveCtx()` returns `merchantId`. M2 relies on nothing else. |
 | IC-6 | M5 (Fazal) | P7 (Uzair) | Table `message_usage(merchant_id, phone_number_id, period_month, outbound_count, inbound_count)` is written by the client on every send and read by billing. |
-| IC-7 | M6 (Fazal) | P7 (Uzair) | `isPlatformAdmin` in `MerchantCtx` becomes true for members of `platform_admins`; P7's "mark invoice paid" route checks it. |
+| IC-7 | M6 (Fazal) | P7, P1 (Uzair) | `isPlatformAdmin` in `MerchantCtx` becomes true for members of `platform_admins`; P7's "mark invoice paid" route checks it. A platform admin may have **no** merchant membership: `resolveCtx()` then returns `{ isPlatformAdmin: true, merchantId: null }`, and P1's `no_membership` redirect must not fire when `isPlatformAdmin` is true (otherwise the console owner gets a shop created for them). |
 | IC-8 | both | both | `backend/src/orchestrator/orchestrator.ts` is touched by M4 (message merging, buttons) and P5 (opt-out guard). Keep each change in its own small PR and merge M4's first; P5's guard sits at the top of `runOrchestrator()` and does not touch state handlers. |
 
 ---
@@ -562,8 +563,8 @@ CHANGELOG is the shared log; disagreements on an interface are settled by editin
 
 | Variable | Service | Set by | Purpose |
 |---|---|---|---|
-| `TOKEN_ENCRYPTION_KEY` | backend | Fazal (exists, unused) | 32-byte base64 key for M1; required in production |
-| `META_APP_ID` | backend, admin (public via `/config`) | Fazal | Embedded Signup and token exchange |
+| `TOKEN_ENCRYPTION_KEY` | backend | Fazal (exists in config.ts and railway.ts, unused) | 32-byte base64 key for M1; required in production; dummy in vitest.config.ts |
+| `META_APP_ID` | backend, admin (public via `/config`) | Fazal (exists in config.ts:21 and railway.ts; only the `/config` exposure is new) | Embedded Signup and token exchange |
 | `META_EMBEDDED_SIGNUP_CONFIG_ID` | backend (public via `/config`) | Fazal | Embedded Signup configuration |
 | `META_GRAPH_API_VERSION` | backend | Fazal | made required (no default) in M7 |
 | `META_UTILITY_RATE_PAISA` | backend | Fazal | shown wherever a paid message is offered; default 420 |
@@ -581,8 +582,8 @@ Every variable is added to `.env.example` with a comment, and declared as `prese
 
 | File | Stream | Contents |
 |---|---|---|
-| `0009_whatsapp_connect.sql` | M | `whatsapp_secret_kind` + `'pin'`; `whatsapp_connect_attempts`; `whatsapp_numbers.last_test_at`, `.attention_message`; index on `whatsapp_secrets(merchant_id, kind)` |
-| `0010_message_templates.sql` | M | `message_templates`; `orders.pending_buyer_notice` |
+| `0009_whatsapp_connect.sql` | M | `whatsapp_secret_kind` + `'pin'`; `webhook_item_type` + `'event'`; `whatsapp_connect_attempts` (with `code_hash`); `whatsapp_numbers.last_test_at`, `.attention_message`, status comment updated; index on `whatsapp_secrets(merchant_id, kind)`. Must not use the new enum values itself (one transaction) |
+| `0010_message_templates.sql` | M | `message_templates` (spec 02 column names, lowercase statuses); `orders.pending_buyer_notice` |
 | `0011_message_usage.sql` | M | `message_usage`; `bump_message_usage()` with revoke |
 | `0012_self_signup.sql` | P | `create_merchant_for_user()` with revoke; `merchants.settings` default `botEnabled:false` |
 | `0013_onboarding.sql` | P | `merchants.logo_url` |

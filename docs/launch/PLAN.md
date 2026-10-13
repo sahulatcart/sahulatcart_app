@@ -363,7 +363,7 @@ Made so that nobody is waiting on them. Any can be reversed, but each has a reas
    Signup covers the Facebook part.
 2. **One owner, one shop, one number per account** for launch. Team members and multiple numbers come
    after billing.
-3. **Three utility templates per shop, created automatically.** Merchants do not write templates.
+3. **Two utility templates per shop, created automatically.** Merchants do not write templates.
 4. **Merchants pay Meta directly** for conversations; we are a Tech Provider, not a Solution Partner,
    and cannot carry their Meta bills.
 5. **Roman Urdu only** at launch.
