@@ -7,6 +7,24 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — Fix: the go-live gate could never be passed; "ji nahi" confirmed COD orders
+
+Found by the lead's review of PR #21 (P2 part 2). Two customer-facing bugs, fixed on
+`fix/go-live-test-order` with flow tests; 26 files, 276 tests.
+
+**The deadlock.** A self-signup shop starts with `botEnabled:false` (0012), and `runOrchestrator()`
+returned early for everyone while the bot is off. The go-live gate's step 7 needs a test order from
+the owner's phone, and only the bot can place an order. So the owner texted their shop, got
+silence, and no new shop could ever go live; the readiness tests inserted order rows directly and
+never saw it. Now the owner's own phone (`merchants.phone`, compared as digits) gets the bot while
+it is off; everyone else still gets silence.
+
+**The yes regex.** `YES_RE` was anchored only at the start, so "ji nahi", "ok pehle size batao" and
+"han lekin kitne din?" all placed a COD order on a COD-only shop. It is now anchored at both ends
+and refuses any negation word.
+
+---
+
 ## 2026-10-13 — P2, part 2: the seven panels, COD enforced, the greeting, the live-merchant back-fill
 
 **Outcome** — onboarding is complete end to end. Every panel of the wizard saves on its own

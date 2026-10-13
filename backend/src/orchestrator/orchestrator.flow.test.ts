@@ -413,3 +413,32 @@ describe('P2: only the payment methods the merchant enabled; the greeting', () =
     expect(out).toBe('Assalam-o-Alaikum! Kaise madad kar sakta hoon?');
   });
 });
+
+describe('go-live: the owner can test while the bot is off; a plain yes places a COD order, a qualified one does not', () => {
+  it("bot off: buyers get silence, the owner's own phone still gets the bot (the test order for step 7)", async () => {
+    db.rows('merchants')[0]!.settings = { ...db.rows('merchants')[0]!.settings, botEnabled: false };
+    db.rows('merchants')[0]!.phone = '+92 ' + WA.slice(2); // the owner's phone, saved in a different format
+    const before = h.sent.length;
+    // A stranger: stored, no reply.
+    await runOrchestrator(db.client, ctx, { waMessageId: 'in.x', from: '923009999999', type: 'text', rawType: 'text', text: 'salam', profileName: null, raw: { id: 'in.x', from: '923009999999', type: 'text' } } as NormalizedMessage);
+    expect(h.sent.length).toBe(before);
+    // The owner, from the phone on the shop profile: the bot answers and an order can be placed.
+    expect(await say('mug?', { intent: 'ask_price', productQuery: 'coffee mug' })).toContain('Rs 800');
+    await toPayment();
+    await tap('pay_cod', 'Cash on Delivery');
+    expect(order().status).toBe('confirmed');
+  });
+
+  it('COD-only shop: "haan" confirms, "ji nahi" / "ok pehle size batao" / "han lekin kitne din?" do not', async () => {
+    db.rows('bank_accounts')[0]!.is_active = false;
+    await toPayment();
+    expect(h.sent.at(-1)!.type).toBe('text');
+    await say('ji nahi');
+    await say('ok pehle size batao');
+    await say('han lekin kitne din?');
+    expect(order().status).toBe('draft');
+    expect(convo().current_state).toBe('selecting_payment');
+    expect(await say('haan')).toContain('SK-1001');
+    expect(order().status).toBe('confirmed');
+  });
+});
