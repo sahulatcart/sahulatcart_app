@@ -567,3 +567,38 @@ describe('stock double-order guard (P5, FR-P5.7)', () => {
     expect(db.rows('orders').filter((o) => o.status === 'confirmed')).toHaveLength(1);
   });
 });
+
+describe('billing mode (P7, FR-P7.6)', () => {
+  const sub = (patch: Record<string, unknown>) => db.add('subscriptions', { merchant_id: M, plan: 'pilot', status: 'trial', trial_ends_at: new Date(Date.now() + 86_400_000).toISOString(), ...patch });
+
+  it('a trial shop sells', async () => {
+    sub({});
+    expect(await say('coffee mug kitne ka hai', { intent: 'ask_price', productQuery: 'coffee mug' })).toContain('Rs 800');
+  });
+
+  it('past_due: a new chat is handed to the merchant, with the reason, and the message is kept', async () => {
+    sub({ status: 'past_due' });
+    const calls = h.classifyCalls;
+    expect(await say('coffee mug kitne ka hai', { intent: 'ask_price', productQuery: 'coffee mug' })).not.toContain('Rs 800');
+    expect(convo().status).toBe('human_takeover');
+    expect(h.classifyCalls).toBe(calls);
+    expect(db.rows('notifications').some((n) => String(n.body).includes('unpaid invoice'))).toBe(true);
+  });
+
+  it('a buyer already in checkout finishes before the mode applies', async () => {
+    const s = sub({});
+    await toPayment();
+    s.status = 'past_due';
+    expect(await say('cash on delivery')).toContain('confirm');
+    expect(order().status).toBe('confirmed');
+  });
+
+  it('the conversation allowance: the 300th chat of a pilot month hands off until the period resets', async () => {
+    sub({});
+    const now = new Date().toISOString();
+    for (let i = 0; i < 300; i++) db.add('conversations', { merchant_id: M, status: 'bot_active', current_state: 'completed', last_message_at: now, context: {} });
+    await say('hi', { intent: 'greet' });
+    expect(convo().status).toBe('human_takeover');
+    expect(db.rows('notifications').some((n) => String(n.body).includes('conversation allowance'))).toBe(true);
+  });
+});

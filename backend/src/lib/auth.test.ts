@@ -128,6 +128,10 @@ describe('POST /api/v1/signup/bootstrap', () => {
     expect(m[0]!.settings.attestations).toMatchObject({ noProhibitedGoods: true, optInOnly: true });
     expect(fake.rows('merchant_users')).toHaveLength(1);
     expect(fake.rows('merchant_users')[0]).toMatchObject({ auth_user_id: 'user-ali', role: 'owner', merchant_id: m[0]!.id });
+    // P7: 30 free days start at bootstrap.
+    expect(fake.rows('subscriptions')).toHaveLength(1);
+    expect(fake.rows('subscriptions')[0]).toMatchObject({ merchant_id: m[0]!.id, plan: 'pilot', status: 'trial' });
+    expect(new Date(fake.rows('subscriptions')[0]!.trial_ends_at).getTime() - Date.now()).toBeGreaterThan(29 * 86_400_000);
   });
 
   it('a second bootstrap returns the same shop and creates nothing (idempotent)', async () => {

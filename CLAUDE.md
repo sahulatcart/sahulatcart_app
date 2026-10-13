@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **36 files, 406 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **38 files, 424 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -453,6 +453,13 @@ discriminated union of ~20 reply kinds) and only phrases it.
   `order_items` reference the row. Product reads filter `deleted_at is null`; the bot filters on
   `is_active`. The dashboard's "today" starts at 00:00 Pakistan time (`startOfTodayKarachi()`
   in `lib/hours.ts`), not UTC.
+- **Billing** (P7, since 2026-10-13, [lib/billing.ts](backend/src/lib/billing.ts), migration 0017):
+  `subscriptions` (one per shop: trial → active → past_due) and `invoices` (due → paid, by hand in
+  the platform console). Plans and limits are `shared/src/plans.ts`; prices and the bank account are
+  config. `botMode()` returns `sell` | `handoff` | `off`; the orchestrator hands new chats over
+  while an invoice is past due or the month's conversation allowance is used, never mid-checkout,
+  and a shop with no subscription row sells. The job runs every 6 h in production and is idempotent.
+  A lapsed pilot is invoiced for Basic. Nothing in billing ever moves money (invariant 2).
 - **Order stages** (P4, since 2026-10-13): [orchestrator/order-stages.ts](backend/src/orchestrator/order-stages.ts)
   moves an order confirmed/paid → preparing → dispatched → delivered, one step at a time (`STAGE_FROM`),
   through the same `transition()`; anything else is 409. Routes are in

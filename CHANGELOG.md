@@ -7,6 +7,53 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — P7: plans, trial, invoices, soft enforcement
+
+Branch `feat/p7-billing`, from `main` at `b9eeea3` (after P6 #30). 38 test files, 424 tests
+(18 new). Both typechecks, `next lint` and `next build` clean. Migration **0017** creates
+`subscriptions` and `invoices` and gives every existing shop (the live pilot included) a
+30-day trial from the moment it is applied. No new dependency.
+
+**What landed (SRS-Uzair v1.1 week 8, FR-P7.1–7.7).** Invariant 2 holds: nothing here moves
+money. The merchant transfers to Nubrix; the platform console marks the invoice paid.
+- [shared/src/plans.ts](shared/src/plans.ts): pilot (30 free days, 300 conversations), basic
+  (1,000), pro (5,000). Prices are config (`PLAN_BASIC_PRICE_PAISA`, `PLAN_PRO_PRICE_PAISA`,
+  defaults Rs 2,999 / Rs 7,999) and so are the bank details (`PLATFORM_BANK_DETAILS`, multi-line
+  with literal `\n`). All three are declared in `.railway/railway.ts`; Fazal sets the values.
+- [lib/billing.ts](backend/src/lib/billing.ts): `botMode()` (`sell` | `handoff` | `off`),
+  `ensureTrial()` (called from `bootstrapMerchant`), `runBillingJob()` (every 6 h in
+  production: the "7 days left" notice once, trial end → `past_due` + first invoice, next invoice
+  7 days before an active period ends, `past_due` 7 days after it ends with the invoice still due),
+  `markInvoicePaid()` (invoice paid, plan active to the invoice's `period_end`, merchant told).
+  Every step is idempotent on a column it sets, so the job can run as often as it likes.
+- **A lapsed pilot is invoiced for Basic.** Pilot has no price, so "the first invoice due" at
+  trial end has to be for a paid plan; the subscription's plan follows the invoice when it is
+  marked paid. Assumption, flagged in the PR.
+- **Enforcement** in the orchestrator, after the M5 quota check and only outside the three
+  order-flow states: `billingMode()` → `handoff()` with the reason (unpaid invoice, or the
+  month's conversation allowance). A buyer mid-checkout finishes. Messages are stored as always.
+  A shop with no subscription row sells; the mode never fails closed.
+- **Conversations this month** = chats with `last_message_at` in the period month (a shortcut,
+  marked in code: it also counts a merchant's reply to an old chat; a SQL count of distinct inbound
+  `conversation_id`s is the upgrade when a shop nears its limit).
+- Routes: [routes/billing.ts](backend/src/routes/billing.ts) (`GET /admin/billing`, claim a
+  reference, request a plan, managers only for writes) and three on `routes/platform.ts`
+  (`GET /platform/invoices`, mark paid, change plan). A plan request is a
+  `subscriptions.requested_plan` plus an audit row that the console lists; there is no
+  "platform admin" notification channel, so that is the notification.
+- Portal: `/billing` (plan, dates, two meters, invoices with "I've paid" + reference, plan
+  request, bank details), a Billing nav link, a dashboard banner while in hand-over mode, and an
+  Invoices card on the platform console (due invoices with the claimed reference, Mark paid, plan
+  requests, a plan select per shop).
+
+**Hassles.** None worth the name: the flow tests seed 300 conversation rows to hit the pilot
+limit, which is fine at FakeDb speed. The `PLATFORM_BANK_DETAILS` transform turns a literal
+`\n` into a newline because Railway's variable editor keeps single-line values.
+
+**Open.** Migration 0017 (Fazal). Env values for the prices and bank details. The live pilot
+merchant's 30 days start when 0017 is applied; if that is not wanted, set its row `active` with a
+far `current_period_end` by hand and record it here.
+
 ## 2026-10-13 — P6: Sentry, rate limits, per-IP lockout, the missing tests, CI
 
 Branch `feat/p6-reliability`, from `main` at `9cee8b4` (after P5 #29). 36 test files, 406 tests

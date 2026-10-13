@@ -6,6 +6,7 @@ import type { NegotiationDefaults, ProductPricing } from '../negotiation/types';
 import { getLlmClient, isTemplateOnly, LlmUnavailableError, type ComposeContext, type DeliveryDetails, type ReplySpec } from '../llm';
 import { sendButtons, sendDocument, sendImage, sendText } from '../whatsapp/client';
 import { chargeLlmCall, DEFAULT_LLM_DAILY_CAP, FREE_QUOTA, outboundThisMonth, withLlmBudget } from '../lib/usage';
+import { billingMode } from '../lib/billing';
 import { productImageUrl } from '../lib/images';
 import { loadConfig } from '../config';
 import { downloadWhatsAppMedia, uploadScreenshot } from '../whatsapp/media';
@@ -218,7 +219,7 @@ async function runTurn(db: SupabaseClient, ctx: OrchestratorCtx, message: Normal
 
   const merchantRes = await db
     .from('merchants')
-    .select('business_name, bot_persona, negotiation_defaults, settings, business_hours, phone, status')
+    .select('id, business_name, bot_persona, negotiation_defaults, settings, business_hours, phone, status')
     .eq('id', ctx.merchantId)
     .single();
   const merchant = merchantRes.data;
@@ -302,6 +303,18 @@ async function runTurn(db: SupabaseClient, ctx: OrchestratorCtx, message: Normal
   if (settings.afterFreeQuota === 'handoff' && !ORDER_FLOW_STATES.includes(state) && (await outboundThisMonth(db, ctx.phoneNumberId)) >= FREE_QUOTA) {
     await handoff(db, ctx, cc, context, state, `This shop's free ${FREE_QUOTA} WhatsApp messages for the month are used up and Settings → Messages is set to "hand off", so the bot handed this chat to you.`);
     return;
+  }
+
+  // P7 (FR-P7.6): an unpaid plan or a used-up conversation allowance puts the shop in hand-over
+  // mode the same way: new chats go to the merchant, a buyer already in checkout finishes.
+  if (!ORDER_FLOW_STATES.includes(state)) {
+    const billing = await billingMode(db, merchant);
+    if (billing.mode === 'handoff') {
+      await handoff(db, ctx, cc, context, state, billing.reason === 'limit'
+        ? "This shop's conversation allowance for the month is used up, so the bot handed this chat to you. Billing has the details."
+        : 'This shop has an unpaid invoice, so the bot hands new chats to you until it is paid. Billing has the details.');
+      return;
+    }
   }
 
   // ── Phase-4 order-flow states are handled WITHOUT a classify call (fewer LLM calls) ──
