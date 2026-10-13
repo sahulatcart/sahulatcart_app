@@ -7,6 +7,33 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — Uzair's review of his SRS answered; both SRS files reconciled
+
+Uzair reviewed SRS-Uzair v1.0 against `main` (which had no SRS yet) and sent a 7-issue, 6-difference,
+5-question, 8-gap review plus a proposed feature P8. Nearly all of it was right. Accepted and applied:
+digits-only phone comparisons (now a rule for both streams), a unique index on
+`merchant_users(auth_user_id)` so a double-click can't make two shops, the live merchant going
+through the wizard with an attestation back-fill, iOS 16.4+ for push, the expiry job reading
+`unpaidExpiryHours`, no WhatsApp alerts to merchants at all (FR-P3.5 dropped), the shop address in
+onboarding with a profile sync from the M side (IC-9), an interim "has a number row = connected"
+rule until M3 (IC-10), one route file per feature with the auth hook extracted in P1 (his C2), and
+P8 as a real feature (goodwill-stance bug, inbox order, order-status replies, chat memory, safe
+re-import).
+
+Two collisions with this morning's fixes to Fazal's file, resolved: order-status replies were in both
+M4 (FR-M4.8) and P8.3; they are P8's alone now, and the IC-8 merge order is M4 → P5 → P8. And his D2
+("no order_sent template, the merchant messages the buyer themselves") was half accepted: the
+template and paid button stay, because a Cloud API number has no phone app to message from and
+`sendTemplate()` exists anyway, but P4 no longer blocks on M4; it sets `pending_buyer_notice` and
+M4's button consumes it. His "three templates" was the stale PLAN wording; it is two.
+
+Answers to his five questions are in `docs/launch/SRS-REVIEW-RESPONSE-2026-10-13.md`, including two
+things he could not see from `main`: IC-7's platform-admin-without-a-shop case that his P1 redirect
+must respect, and the changed M2 handshake his onboarding copy should match. The per-merchant LLM cap
+he found in neither stream is now FR-M5.7. Both PDFs rebuilt.
+
+---
+
 ## 2026-10-13 — Fazal's SRS reviewed against the code: 4 blockers, 23 factual errors, 2 design flaws fixed
 
 The owner asked for Fazal's SRS to be checked the way Uzair's had been. Two passes: an agent verified

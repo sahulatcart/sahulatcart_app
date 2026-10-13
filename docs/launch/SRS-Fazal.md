@@ -53,6 +53,17 @@ webhook handling, retention, backups. Live: 1 merchant, 5 products, 0 orders.
 
 - Branch names: `feat/<stream>-<id>-<slug>`, e.g. `feat/m2-embedded-signup`, `feat/p1-signup`.
 - One PR per feature id (M1, P3…). Small PRs inside a feature are welcome; name them `feat/p3-push-part1`.
+- **One route file per feature group**, never more lines in `routes/admin.ts`: `routes/whatsapp.ts`,
+  `routes/platform.ts`, `routes/onboarding.ts`, `routes/orders.ts`, `routes/billing.ts`… The admin auth
+  `preHandler` is encapsulated inside the `adminRoutes` plugin today (`routes/admin.ts:28-34`), so P1
+  (week 1) extracts it to `requireMerchant()` in `lib/auth.ts` and each new route file applies it
+  itself, registered from `server.ts`. Platform routes apply `requirePlatformAdmin()` instead.
+- **Phone numbers are digits only**, everywhere they are stored or compared: `923001234567`, never
+  `+92 300…`. `customers.wa_id` is already digits; `merchants.phone` (signup, P1) and
+  `whatsapp_numbers.phone_e164` (connect, M2) are normalised with `replace(/\D/g, '')` on write, and
+  every comparison strips non-digits from both sides.
+- **CHANGELOG entries go under a dated heading for that day**, newest first; a merge conflict there is
+  resolved by keeping both entries.
 - A PR needs: tests green, both typechecks green, a CHANGELOG entry, and the other developer's
   review. Merge to `main` deploys automatically: backend on `backend/**` changes, admin on `admin/**`, and
   both on `shared/**` or the root `package.json`, `package-lock.json`, `tsconfig.base.json`. A
@@ -104,7 +115,7 @@ the calendar is about **9 weeks** instead of 14.
 | Stream | Owner | Features | Weeks |
 |---|---|---|---|
 | **M — Meta and messaging** | **Fazal** | M1 per-merchant credentials and client · M2 Connect WhatsApp (Embedded Signup) · M3 connection page, quality webhooks, reconnect/disconnect · M4 templates, the window rule, fewer messages per sale · M5 message meter and cost controls · M6 platform owner console · M7 Meta dashboard and App Review | 1–8 |
-| **P — Portal and operations** | **Uzair** | P1 self-service signup, password reset, automatic shop · P2 onboarding with readiness gates, delivery zones, COD toggle, greeting, attestations · P3 merchant alerts (Web Push + email) · P4 order stages and unpaid-order expiry · P5 opt-out enforcement and small gaps · P6 reliability: Sentry, rate limits, tests, CI · P7 billing | 1–8 |
+| **P — Portal and operations** | **Uzair** | P1 self-service signup, password reset, automatic shop · P2 onboarding with readiness gates, delivery zones, COD toggle, greeting, attestations · P3 merchant alerts (Web Push + email) · P4 order stages and unpaid-order expiry · P5 opt-out enforcement and small gaps · P6 reliability: Sentry, rate limits, tests, CI · P7 billing · P8 bot fixes (goodwill stance, inbox order, order-status replies, chat memory, safe re-import) | 1–8 |
 
 Fazal also owns Track A of the plan (Meta paperwork) because only the account holder can act there;
 M7 is the engineering half of it.
@@ -129,13 +140,15 @@ M3's status), and it is a read of one JSON field, so a stub is enough until M3 l
 | # | Provided by | Used by | Contract |
 |---|---|---|---|
 | IC-1 | M1 (Fazal) | everything that sends | `sendText(phoneNumberId, to, body)`, `sendImage(...)`, `sendDocument(...)` in `backend/src/whatsapp/client.ts` keep their signatures. Internally they resolve the merchant's token from `phoneNumberId`. Callers never pass a token. |
-| IC-2 | M4 (Fazal) | P4 (Uzair) | `sendTemplate(phoneNumberId, to, templateName, params: string[])` returns `SendResult`. `sendButtons(phoneNumberId, to, body, buttons: {id, title}[])` for interactive replies. |
-| IC-3 | P3 (Uzair) | M3, M4, M5 (Fazal) | `notify(db, merchantId, { type, title, body, data })` in `backend/src/lib/notify.ts` writes the portal row **and** fans out to push and email per the merchant's preferences. All new notifications go through it. Until P3 lands (week 4), M1 and M3 insert `notifications` rows directly, as `handoff()` does today (`orchestrator.ts:523-530`), and switch to `notify()` at the week-4 sync. |
+| IC-2 | M4 (Fazal) | P4 (Uzair) | `sendTemplate(phoneNumberId, to, templateName, params: string[])` returns `SendResult`. `sendButtons(phoneNumberId, to, body, buttons: {id, title}[])` for interactive replies. **P4 does not block on it:** dispatch sends a free-form text when the window is open and otherwise only sets `orders.pending_buyer_notice='order_sent'`; the paid button that consumes it is M4's, and the order page shows "window closed" until M4 lands. |
+| IC-3 | P3 (Uzair) | M3, M4, M5 (Fazal) | `notify(db, merchantId, { type, title, body, data })` in `backend/src/lib/notify.ts` writes the portal row **and** fans out to push and email per the merchant's preferences. **Never WhatsApp** (decided 2026-10-13: merchant alerts are push and email only at launch). All new notifications go through it. Until P3 lands (week 4), M1 and M3 insert `notifications` rows directly, as `handoff()` does today (`orchestrator.ts:523-530`), and switch to `notify()` at the week-4 sync. |
 | IC-4 | M3 (Fazal) | P2 (Uzair) | `GET /api/v1/admin/whatsapp` returns `{ status: 'none'|'connecting'|'connected'|'needs_attention'|'disconnected', displayPhone, displayName, qualityRating, messagingTier, templates: [{name, status}], lastTestAt }`. Until M3 lands it returns `{ status: 'none' }`. |
 | IC-5 | P1 (Uzair) | M2 (Fazal) | After P1, every signed-in portal user has exactly one `merchants` row and one owner `merchant_users` row; `resolveCtx()` returns `merchantId`. M2 relies on nothing else. |
 | IC-6 | M5 (Fazal) | P7 (Uzair) | Table `message_usage(merchant_id, phone_number_id, period_month, outbound_count, inbound_count)` is written by the client on every send and read by billing. |
 | IC-7 | M6 (Fazal) | P7, P1 (Uzair) | `isPlatformAdmin` in `MerchantCtx` becomes true for members of `platform_admins`; P7's "mark invoice paid" route checks it. A platform admin may have **no** merchant membership: `resolveCtx()` then returns `{ isPlatformAdmin: true, merchantId: null }`, and P1's `no_membership` redirect must not fire when `isPlatformAdmin` is true (otherwise the console owner gets a shop created for them). |
-| IC-8 | both | both | `backend/src/orchestrator/orchestrator.ts` is touched by M4 (message merging, buttons) and P5 (opt-out guard). Keep each change in its own small PR and merge M4's first; P5's guard sits at the top of `runOrchestrator()` and does not touch state handlers. |
+| IC-9 | M3 (Fazal) | P2 (Uzair) | `syncBusinessProfile(db, merchantId)` in `backend/src/whatsapp/profile.ts` pushes name, address, description and hours to the number's WhatsApp business profile (A.12). M2 calls it on connect; P2 calls it after onboarding step 1 saves (no-op when no number is connected). |
+| IC-10 | M3 (Fazal) | P2 (Uzair) | **Interim rule until M3 lands (week 3):** P2's `whatsapp` readiness step counts as connected when the shop has a `whatsapp_numbers` row. M3 replaces it with the real status; the live pilot shop has a row from the seed. |
+| IC-8 | both | both | `backend/src/orchestrator/orchestrator.ts` is touched by M4 (message merging, buttons), P5 (opt-out guard) and P8 (order-status replies, chat memory). Keep each change in its own small PR; merge order **M4 → P5 → P8**. P5's guard sits at the top of `runOrchestrator()` and does not touch state handlers. Order-status replies (`ask_status`, `claim_paid`, the `status` keyword) belong to **P8 only**; M4 does not implement them. |
 
 ---
 
@@ -278,8 +291,8 @@ connected and a test message on my phone.
   open, because that phone has never messaged the shop number, and a new WABA has no approved
   template yet. So after the upsert the page shows "Now send any message from your phone (+92…) to
   your shop number" and polls `GET /api/v1/admin/whatsapp` every 3 s. When the webhook receives an
-  inbound from `merchants.phone` on this `phone_number_id` (which also proves the WABA subscription
-  and routing work), the backend replies "Sahulatcart connected ✓" through `sendText` and sets
+  inbound whose `from` equals `merchants.phone` **compared as digits only** (Part 0.3) on this
+  `phone_number_id` (which also proves the WABA subscription and routing work), the backend replies "Sahulatcart connected ✓" through `sendText` and sets
   `connected` only when that send returns a message id. A reply failure with 131042 (payment method
   missing) → `needs_attention`, `flag_reason='policy'`, message "Add a payment method to your WhatsApp
   Business account in Meta Business Manager, then press Retry"; 131026 → "this number cannot message
@@ -428,6 +441,14 @@ look like, so those events are invisible twice over.
   tenant lookup, since the handler resolves rows by WABA. `processClaimed()` dispatches events to
   `account-events.ts`.
 
+- FR-M3.7 `syncBusinessProfile(db, merchantId)` (IC-9) pushes `business_name`, the shop address,
+  a one-line description and `business_hours` to the number's WhatsApp business profile
+  (`POST /{phone_number_id}/whatsapp_business_profile`, A.12). Called at the end of connect (M2) and by
+  P2 after onboarding step 1 saves; a no-op when no connected number exists. The profile picture is
+  **not** pushed at launch (Meta needs the resumable-upload API for it); the logo stays portal-only.
+- FR-M3.8 Until M3 lands, P2 treats "has a `whatsapp_numbers` row" as connected (IC-10). M3's
+  `GET /api/v1/admin/whatsapp` replaces that in the same week it ships.
+
 **Data.** `whatsapp_numbers` has every column needed except `last_test_at` and `attention_message`,
 which 0009 adds (SQL in M2). `status` is plain `text` with the comment `connecting|connected|flagged|
 disconnected` (0001:100) and no check constraint; this SRS uses `needs_attention` instead of
@@ -509,13 +530,10 @@ merchant chose to pay, and still create templates because App Review requires a 
   confirming now sends nothing; the buyer notice becomes a paid button". When the shop is past its
   free 1,000 for the month (M5), the label says "Confirm until <time> (about Rs 4; free quota used)"
   instead, because an in-window reply is then paid too.
-- FR-M4.8 A buyer message that is **only** "status", "order status", "mera order" or "order kahan
-  hai" (whole-message regex `STATUS_RE` beside `CANCEL_RE`) answers with the latest placed order's
-  status line without an LLM call, when the customer has at least one placed order; otherwise it
-  falls through to the normal flow. The check sits **before** `classify()` (`orchestrator.ts:254-256`)
-  and inside `handleEscape()` (:666) for the order-flow states. `BotIntent` already has `ask_status`
-  but no branch handles it (:284-415); add one that gives the same answer, or the LLM path still
-  misroutes. New `ReplySpec` kind `order_status` goes in `TEMPLATE_ONLY_KINDS` with its fallback.
+- FR-M4.8 *(moved to P8.3, Uzair, 2026-10-13.)* Order-status replies ("status", "mera order kahan
+  hai", the `ask_status` and `claim_paid` intents) are built in P8, after M4 merges (IC-8). M4 only
+  makes sure the buyer's confirmation message tells them they can ask for "status" at any time, so the
+  free, buyer-initiated path exists before P8 lands.
 
 *Fewer messages per sale*
 - FR-M4.9 Merge sends that are always sequential: in `handlePayment()` the bank details text (:817)
@@ -604,9 +622,17 @@ choose what happens after the free quota.
   "paid" next to Send when the quota is used.
 - FR-M5.6 The utility rate is config (`META_UTILITY_RATE_PAISA`), shown wherever a price is shown, with
   the text "Meta's rate; check the current card".
+- FR-M5.7 **Per-merchant LLM cap** (PLAN B5; assigned to M5 on 2026-10-13). One Gemini key serves every
+  shop, so one busy shop can exhaust it for all. `message_usage` gains `llm_calls int` (same row, same
+  RPC, bumped in `llm/gemini.ts` on every call); `settings.llmDailyCap` (default 2,000 calls a day,
+  validated in `lib/validation.ts`) is checked before each call; past the cap the orchestrator takes
+  the existing "AI down" path (`handoff()` with a "Bot needs help" notification), never silence. The
+  usage endpoint and dashboard card show "AI calls today: N of 2,000". Gemini billing must be on
+  first (Track A1); the free tier's 20 calls a day makes the cap meaningless.
 
-**Data (migration 0011).** `message_usage` table with `unique (merchant_id, phone_number_id,
-period_month)`; the `bump_message_usage` function with the revoke line.
+**Data (migration 0011).** `message_usage` table (`outbound_count`, `inbound_count`, `llm_calls`,
+`llm_calls_day date`) with `unique (merchant_id, phone_number_id, period_month)`; the
+`bump_message_usage` function with the revoke line.
 
 **Tests.** `client.test.ts` (mocked `fetch`, FakeDb twin of `bump_message_usage`): 50 concurrent
 successful sends produce a count of 50 and a failed send adds nothing; the 80% notification is
@@ -633,9 +659,9 @@ row today; the comparison is a sanity check, and any gap is listed in the CHANGE
   merchantId: null, … }`, and every merchant route still 401s it (IC-7; P1's `no_membership` redirect
   must check this flag first). `adminCtx()` already sets `isPlatformAdmin: true` for the shared
   `ADMIN_API_TOKEN` (:56-59); that stays for the pilot and is removed when M6 ships.
-- FR-M6.2 Routes under `/api/v1/platform/*`, all requiring `isPlatformAdmin`. They are registered
-  **inside** the `adminRoutes` plugin (`routes/admin.ts:28-34`): its auth `preHandler` is encapsulated
-  there, so a separate plugin would get no auth at all. Routes:
+- FR-M6.2 Routes under `/api/v1/platform/*` in `routes/platform.ts`, applying
+  `requirePlatformAdmin()` (Part 0.3; the admin auth hook is encapsulated in `adminRoutes`, so a new
+  file must apply its own). Routes:
   `GET /merchants` (id, business name, owner email, status, plan, connection status, last inbound at,
   orders this month, usage this month), `POST /merchants/:id/suspend` `{reason}`,
   `POST /merchants/:id/unsuspend`, `GET /merchants/:id/attempts` (connect attempts).
@@ -710,13 +736,13 @@ ids are recorded in the CHANGELOG.
 
 | Week | Fazal (M) | Uzair (P) | Sync |
 |---|---|---|---|
-| 1 | M1 crypto + credentials + client refactor; M7 steps 1–4 as soon as Track A1–A3 allow | P1 signup, confirm, reset, bootstrap RPC | Mon: agree IC-1..IC-8 line by line. Fri: both PRs reviewed. |
-| 2 | M2 connect route + page (mocked Meta first, then the test WABA) | P2 readiness endpoint, delivery-zone CRUD, wizard shell | IC-4 stub agreed (`{status:'none'}`). |
-| 3 | M3 status page, account/quality webhooks, disconnect | P2 wizard panels 1–7, COD enforcement, greeting | P2 step 2 embeds M2's component: pair for an hour. |
+| 1 | M1 crypto + credentials + client refactor; M7 steps 1–4 as soon as Track A1–A3 allow | P1 signup, confirm, reset, bootstrap RPC, `requireMerchant()` extraction | Mon: agree IC-1..IC-10 line by line. Fri: both PRs reviewed. |
+| 2 | M2 connect route + page (mocked Meta first, then the test WABA) | P2 readiness endpoint, delivery-zone CRUD, wizard shell | IC-4 stub returns `{status:'none'}`; P2 uses the IC-10 interim rule. |
+| 3 | M3 status page, account/quality webhooks, disconnect, profile sync | P2 wizard panels 1–7, COD enforcement, greeting, live-merchant back-fill | P2 step 2 embeds M2's component: pair for an hour. M3 replaces the interim rule. |
 | 4 | M4 templates, window rule, message merging, buttons; **record videos, submit App Review** (M7 step 6) | P3 `notify()`, push, email, settings page | M3/M4 switch their notifications to `notify()` (IC-3). |
-| 5 | M5 meter, usage endpoint, dashboard card, after-quota mode | P4 order stages, dispatch notice, unpaid expiry job | P4's dispatch uses `sendTemplate` (IC-2). |
-| 6 | M6 platform console; suspension enforcement | P5 opt-out, STOP, small gaps; P6 Sentry, rate limits, lockout fix | IC-8: M4's orchestrator PR merged before P5's. |
-| 7 | Pilot shops onboarded as testers; M7 approval-day prep; fix-up | P6 tests + CI; P7 schema, trial, invoices | IC-6/IC-7: billing reads the meter; console gets Invoices tab. |
+| 5 | M5 meter, usage endpoint, dashboard card, after-quota mode, LLM cap | P4 order stages, dispatch notice, unpaid expiry job | P4 sets `pending_buyer_notice`; M4's button consumes it (IC-2, non-blocking). |
+| 6 | M6 platform console; suspension enforcement | P5 opt-out, STOP, small gaps; P6 Sentry, rate limits, lockout fix; P8 starts | IC-8: M4's orchestrator PR merged before P5's, P8 after both. |
+| 7 | Pilot shops onboarded as testers; M7 approval-day prep; fix-up | P6 tests + CI; P8 finishes; P7 schema, trial, invoices | IC-6/IC-7: billing reads the meter; console gets Invoices tab. |
 | 8 | Pilot support; Meta review follow-ups | P7 billing page, enforcement, jobs | Pilot stop rules reviewed daily (PLAN.md B6). |
 | 9–10 | Pilot (both). Zero wrong prices, zero duplicate orders, zero cross-shop leaks, or onboarding pauses. | | Weekly: measure messages per sale and cost per shop. |
 
@@ -762,6 +788,7 @@ merchant's token from M1. Error bodies are `{ error: { message, type, code, erro
 | A.9 | `POST /{phone_number_id}/messages` (buttons) | business token | `{ messaging_product:'whatsapp', to, type:'interactive', interactive:{ type:'button', body:{ text }, action:{ buttons:[{ type:'reply', reply:{ id, title } }] } } }` (max 3, titles ≤ 20 chars) | `{ messages:[{ id }] }` |
 | A.10 | `GET /{media_id}` then `GET {url}` | business token | — | media download (existing `media.ts`) |
 | A.11 | `GET /{waba_id}/message_templates?fields=name,status,language,category,id` | business token | — | reconcile statuses on demand |
+| A.12 | `POST /{phone_number_id}/whatsapp_business_profile` | business token | `{ messaging_product:'whatsapp', about, address, description, email?, websites?[] }` (about ≤ 139 chars, description ≤ 512, address ≤ 256) | `{ success: true }` |
 
 Webhook payloads (field → `entry[].changes[].value`):
 - `messages`: as parsed today.
@@ -802,9 +829,9 @@ Every variable is added to `.env.example` with a comment, and declared as `prese
 |---|---|---|
 | `0009_whatsapp_connect.sql` | M | `whatsapp_secret_kind` + `'pin'`; `webhook_item_type` + `'event'`; `whatsapp_connect_attempts` (with `code_hash`); `whatsapp_numbers.last_test_at`, `.attention_message`, status comment updated; index on `whatsapp_secrets(merchant_id, kind)`. Must not use the new enum values itself (one transaction) |
 | `0010_message_templates.sql` | M | `message_templates` (spec 02 column names, lowercase statuses); `orders.pending_buyer_notice` |
-| `0011_message_usage.sql` | M | `message_usage`; `bump_message_usage()` with revoke |
-| `0012_self_signup.sql` | P | `create_merchant_for_user()` with revoke; `merchants.settings` default `botEnabled:false` |
-| `0013_onboarding.sql` | P | `merchants.logo_url` |
+| `0011_message_usage.sql` | M | `message_usage` (incl. `llm_calls`); `bump_message_usage()` with revoke |
+| `0012_self_signup.sql` | P | unique index `merchant_users(auth_user_id)`; `create_merchant_for_user()` with revoke; `merchants.settings` default `botEnabled:false` |
+| `0013_onboarding.sql` | P | `merchants.logo_url`, `merchants.address` |
 | `0014_push_subscriptions.sql` | P | `push_subscriptions` |
 | `0015_order_stages.sql` | P | `orders.courier`, `.tracking_ref`, `.eta_text` |
 | `0016_products_soft_delete.sql` | P | `products.deleted_at` |

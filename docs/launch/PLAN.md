@@ -276,11 +276,12 @@ setting up" card disappears exactly then.
 - **Alerts outside the portal, without paying Meta.** New order, payment claim, handoff and "bot
   needs help" reach the merchant by **portal push notifications** (Web Push with a service worker;
   works on Android and on iPhone when the portal is added to the home screen) and by **email**. Both
-  are free. WhatsApp alerts to the merchant's own phone are available but **off by default**: since
-  1 October 2026 they count as paid messages like any other, and a busy shop would pay for every
-  one. Today a merchant only learns of an order while the portal tab is open.
+  are free. **No WhatsApp alerts to merchants at launch** (decided 2026-10-13): since 1 October 2026
+  they count as paid messages like any other, and a busy shop would pay for every one. Today a
+  merchant only learns of an order while the portal tab is open.
 - **Order stages.** Preparing → dispatched → delivered, from the order page, with the buyer told at
-  dispatch (template if outside the window). The enum exists; the transitions do not.
+  dispatch: free-form if the window is open, otherwise a paid button the merchant may press. The enum
+  exists; the transitions do not.
 - **Unpaid bank orders expire.** After 24 hours without a screenshot: order cancelled, stock
   released, buyer and merchant told. Today they sit open forever.
 - **Opt-out enforced.** The bot already records "bandh karo" as opt-out and then keeps replying.
@@ -370,7 +371,7 @@ Made so that nobody is waiting on them. Any can be reversed, but each has a reas
 6. **No payment gateway** for our own subscription at first; bank transfer and manual marking.
 7. **COD and bank transfer only** for buyers, as today. No Raast, no gateway. Nothing in the product
    touches buyer money.
-8. **Unpaid bank orders expire at 24 hours.**
+8. **Unpaid bank orders expire at 24 hours** by default; a merchant can set 6–72 hours.
 9. **Stock is reduced at order placement and restored on cancellation**, as the code does now.
    Merchants record outside sales by editing stock.
 10. **Prohibited-goods and opt-in attestation at signup**, enforced by a checkbox and the suspension
