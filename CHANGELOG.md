@@ -7,6 +7,34 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — M1: per-merchant WhatsApp credentials
+
+First feature of the SRS (Stream M). Branch `feat/m1-credentials`. 19 test files, 149 tests.
+
+What changed: `lib/crypto.ts` (AES-256-GCM, `TOKEN_ENCRYPTION_KEY`), `whatsapp/credentials.ts`
+(`storeToken`, `lookupToken`/`tokenForNumber`, `forgetNumber`, `markTokenInvalid`), `client.ts`
+rewritten around one `send()` that resolves the token per number and reports `errorCode`,
+`media.ts` takes the `phoneNumberId`, catalog sync uses the merchant's own token, migration
+`0009_whatsapp_connect.sql` (the whole M1–M3 schema, as Appendix C defines it, so M2/M3 add no
+file). `TOKEN_ENCRYPTION_KEY` is now required when `NODE_ENV=production` and validated.
+
+The one thing that would have taken production down: the SRS said the key is "32 bytes, base64",
+and the first validation accepted only base64. The key on Railway (and in `.env`) is 64 characters,
+which is **hex** from `openssl rand -hex 32`; base64-decoding it gives 48 bytes and the refine would
+have failed, so the backend would have exited at boot on the next deploy while Railway kept serving
+the old container. Found by checking variable *lengths* on Railway (never values) before committing.
+`parseKey()` now accepts both encodings, and `loadConfig()` was run locally with
+`NODE_ENV=production` against the real `.env` to prove it boots.
+
+Two test slips fixed on the way: `Buffer[i] ^= …` trips `noUncheckedIndexedAccess`, and the 190
+test left the stubbed `fetch` answering 401 when it sent from the second merchant.
+
+Not yet done: migration 0009 is **not applied** to the live database (apply after merge, in
+order), the pilot merchant still sends on the env token (until M2), and `notify()` does not exist
+so `markTokenInvalid` writes the `notifications` row directly, as `handoff()` does.
+
+---
+
 ## 2026-10-12 — One plan to replace eight, built so Meta approval is a settings change
 
 The owner wasn't satisfied with the 10-05/10-06 launch plans and wanted a product that is complete

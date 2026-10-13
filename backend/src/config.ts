@@ -32,7 +32,8 @@ const schema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default('claude-opus-4-8'),
 
-  // Secrets
+  // Secrets. TOKEN_ENCRYPTION_KEY seals whatsapp_secrets (lib/crypto.ts): 32 bytes, hex or base64.
+  // Required in production (refined below); tests get a dummy from vitest.config.ts.
   TOKEN_ENCRYPTION_KEY: z.string().optional(),
   SERVICE_HMAC_SECRET: z.string().optional(),
   // Temporary pilot merchant-action auth (until the Phase-5 portal + JWT). Gates verify/reject.
@@ -46,6 +47,16 @@ const schema = z.object({
   STORAGE_BUCKET_CATALOG_IMPORTS: z.string().default('catalog-imports'),
 
   WEBHOOK_MAX_BODY_BYTES: z.coerce.number().int().positive().default(131072),
+}).superRefine((env, ctx) => {
+  if (env.NODE_ENV === 'production' && !env.TOKEN_ENCRYPTION_KEY) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['TOKEN_ENCRYPTION_KEY'], message: 'required in production' });
+  }
+  if (env.TOKEN_ENCRYPTION_KEY) {
+    // Same rule as lib/crypto.ts parseKey(): 64 hex characters or base64, decoding to 32 bytes.
+    const raw = env.TOKEN_ENCRYPTION_KEY;
+    const key = /^[0-9a-f]{64}$/i.test(raw) ? Buffer.from(raw, 'hex') : Buffer.from(raw, 'base64');
+    if (key.length !== 32) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['TOKEN_ENCRYPTION_KEY'], message: 'must be 32 bytes: 64 hex characters or base64' });
+  }
 });
 
 export type Config = z.infer<typeof schema>;

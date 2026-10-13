@@ -179,6 +179,28 @@ Nothing Meta was told we received may be lost:
 Tenant routing: one backend, one webhook endpoint; inbound is routed to a merchant by looking up
 `phone_number_id` in `whatsapp_numbers`. Unknown numbers are logged and ignored.
 
+### Outbound credentials (M1, since 2026-10-13)
+
+Every send and media download uses the credentials of the **number it acts for**:
+[whatsapp/credentials.ts](backend/src/whatsapp/credentials.ts) `lookupToken()` goes
+`whatsapp_numbers.access_token_ref` → `whatsapp_secrets` → AES-256-GCM decrypt
+([lib/crypto.ts](backend/src/lib/crypto.ts), key `TOKEN_ENCRYPTION_KEY`, 32 bytes as hex or
+base64, **required in production**). Callers (`sendText`, `sendImage`, `sendDocument`,
+`downloadWhatsAppMedia`, catalog sync) never see a token. Rules that are easy to break:
+- **The env token `META_SYSTEM_USER_TOKEN` is used only for `META_DEFAULT_PHONE_NUMBER_ID`** (the
+  pilot number) until that merchant reconnects through Embedded Signup (M2). Any other number
+  without a secret is refused (`errorCode: 'no_credentials'`), never sent with the platform token.
+- A number that is `disconnected`, or `needs_attention` with `flag_reason='token'`, is refused.
+  This one function is the whole guarantee that a disconnected shop stops sending.
+- Meta error **190** (dead token) on any send calls `markTokenInvalid()`: the number is flagged, the
+  cache dropped, and a `system` notification written. `SendResult.errorCode` carries Meta's code.
+- Lookups are cached 10 minutes per number; `forgetNumber()` after connect, reconnect, disconnect.
+- `whatsapp_secrets` bytea columns go through supabase-js as `\x<hex>` strings (`toBytea`/`fromBytea`).
+- The flow test harness mocks `whatsapp/client` wholesale; client behaviour is tested in
+  `client.test.ts` with a mocked `fetch` and `credentials.test.ts` over `FakeDb`.
+- Migration **0009** (`whatsapp_connect`) adds `attention_message`, `last_test_at`, the connect
+  attempts table and two enum values; it must be applied before a 190 error can be recorded.
+
 ### Conversation orchestrator
 
 [backend/src/orchestrator/orchestrator.ts](backend/src/orchestrator/orchestrator.ts) is the state machine
