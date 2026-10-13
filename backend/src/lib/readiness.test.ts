@@ -12,6 +12,11 @@ const USERS: Record<string, { id: string; email: string; user_metadata: Record<s
   'jwt.staff.sig': { id: 'u-staff', email: 'staff@shop.pk', user_metadata: {} },
 };
 
+const sync = vi.hoisted(() => ({ calls: 0 }));
+vi.mock('../whatsapp/connect', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../whatsapp/connect')>();
+  return { ...real, syncBusinessProfile: async () => { sync.calls++; return { ok: true }; } };
+});
 vi.mock('./supabase', () => ({
   getServiceClient: () => fake.client,
   getAnonClient: () => ({
@@ -112,6 +117,14 @@ describe('computeReadiness — a bare shop fails every check, each flips on its 
     expect((await computeReadiness(fake.client, M)).steps.persona.ok).toBe(true);
   });
 
+  it('testOrder: a phone already stored as digits matches too (review P2-19)', async () => {
+    merchant().phone = '923007777777';
+    const me = fake.add('customers', { merchant_id: M, wa_id: '923007777777' });
+    fake.add('orders', { merchant_id: M, customer_id: me.id, status: 'dispatched' });
+    expect((await computeReadiness(fake.client, M)).steps.testOrder.ok).toBe(true);
+    fake.rows('orders').pop(); fake.rows('customers').pop();
+  });
+
   it('testOrder: only a placed order from the owner\'s own phone, matched as digits', async () => {
     const stranger = fake.add('customers', { merchant_id: M, wa_id: '923009999999' });
     const me = fake.add('customers', { merchant_id: M, wa_id: '923001234567' });
@@ -149,6 +162,37 @@ describe('GET /api/v1/admin/readiness and the go-live gate', () => {
     const r = await app.inject({ method: 'PATCH', url: '/api/v1/admin/settings', headers: owner, payload: { settings: { botEnabled: true } } });
     expect(r.statusCode).toBe(200);
     expect(merchant().settings.botEnabled).toBe(true);
+  });
+
+  it('switching the bot on must be a request of its own (review P2-9)', async () => {
+    const r = await app.inject({ method: 'PATCH', url: '/api/v1/admin/settings', headers: owner, payload: { settings: { botEnabled: true, codEnabled: false } } });
+    expect(r.statusCode).toBe(400);
+  });
+
+  it('a live shop keeps at least one way to pay (review P2-2)', async () => {
+    merchant().settings = { ...merchant().settings, botEnabled: true, codEnabled: true };
+    for (const b of fake.rows('bank_accounts')) b.is_active = false;
+    let r = await app.inject({ method: 'PATCH', url: '/api/v1/admin/settings', headers: owner, payload: { settings: { codEnabled: false } } });
+    expect(r.statusCode).toBe(409);
+    expect(r.json().error.code).toBe('last_payment_method');
+    const bank = fake.add('bank_accounts', { merchant_id: M, bank_name: 'HBL', account_number: '9', is_active: true });
+    r = await app.inject({ method: 'PATCH', url: '/api/v1/admin/settings', headers: owner, payload: { settings: { codEnabled: false } } });
+    expect(r.statusCode).toBe(200);
+    r = await app.inject({ method: 'DELETE', url: `/api/v1/admin/bank-accounts/${bank.id}`, headers: owner });
+    expect(r.statusCode).toBe(409);
+    merchant().settings.codEnabled = true;
+    r = await app.inject({ method: 'DELETE', url: `/api/v1/admin/bank-accounts/${bank.id}`, headers: owner });
+    expect(r.statusCode).toBe(200);
+    merchant().settings.botEnabled = false;
+  });
+
+  it('bot_persona is validated on the server (review P2-6)', async () => {
+    let r = await app.inject({ method: 'PATCH', url: '/api/v1/admin/settings', headers: owner, payload: { botPersona: { greeting: 'x'.repeat(201) } } });
+    expect(r.statusCode).toBe(400);
+    r = await app.inject({ method: 'PATCH', url: '/api/v1/admin/settings', headers: owner, payload: { botPersona: { style: 'rude' } } });
+    expect(r.statusCode).toBe(400);
+    r = await app.inject({ method: 'PATCH', url: '/api/v1/admin/settings', headers: owner, payload: { botPersona: { name: 'Sana', style: 'narm', greeting: 'Salam!' } } });
+    expect(r.statusCode).toBe(200);
   });
 
   it('switching the bot off never needs readiness', async () => {
@@ -207,6 +251,17 @@ describe('delivery zones CRUD', () => {
     expect(r.json().zones.map((z: { area_name: string }) => z.area_name)).toEqual(['Gulberg', 'Model Town']);
   });
 
+  it('another shop\'s zone cannot be edited or deleted: 404, row untouched (review P2-19)', async () => {
+    fake.add('merchants', { id: 'M-other', business_name: 'Other', settings: {} });
+    const z = fake.add('delivery_zones', { merchant_id: 'M-other', area_name: 'Clifton', charge: 100, is_serviceable: true });
+    expect((await app.inject({ method: 'PATCH', url: `/api/v1/admin/delivery-zones/${z.id}`, headers: owner, payload: { charge: 5 } })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'DELETE', url: `/api/v1/admin/delivery-zones/${z.id}`, headers: owner })).statusCode).toBe(404);
+    expect(fake.rows('delivery_zones').find((r) => r.id === z.id)).toMatchObject({ charge: 100 });
+    fake.rows('delivery_zones').splice(fake.rows('delivery_zones').indexOf(z), 1); // leave the other shop's row out of the counts below
+    expect((await app.inject({ method: 'PATCH', url: `/api/v1/admin/delivery-zones/${id}`, headers: owner, payload: {} })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'POST', url: '/api/v1/admin/delivery-zones', headers: owner, payload: { area_name: 'Far Away', charge: 5_000_000 } })).statusCode).toBe(400);
+  });
+
   it('deletes a zone and answers 404 for one that is not yours or gone', async () => {
     let r = await app.inject({ method: 'DELETE', url: `/api/v1/admin/delivery-zones/${id}`, headers: owner });
     expect(r.statusCode).toBe(200);
@@ -232,6 +287,8 @@ describe('PATCH /api/v1/admin/profile and the logo (P2 step 1)', () => {
     expect(merchant()).toMatchObject({ owner_name: 'Ali Raza', phone: '923001234567', address: 'Shop 4, Liberty Market', category: 'clothing' });
     expect(merchant().business_hours).toEqual({ mon: { open: '09:00', close: '21:00' }, fri: { closed: true } });
     expect(r.json().readiness.steps.profile.ok).toBe(true);
+    expect(sync.calls).toBeGreaterThan(0); // the WhatsApp profile is synced after a save (review P2-19)
+    expect((await app.inject({ method: 'PATCH', url: '/api/v1/admin/profile', headers: owner, payload: {} })).statusCode).toBe(400);
   });
 
   it('staff may not edit the profile', async () => {
@@ -246,5 +303,10 @@ describe('PATCH /api/v1/admin/profile and the logo (P2 step 1)', () => {
     expect(merchant().logo_url).toBe(r.json().logoUrl);
     const bad = await app.inject({ method: 'POST', url: '/api/v1/admin/settings/logo', headers: owner, payload: { dataBase64: 'x', contentType: 'text/plain' } });
     expect(bad.statusCode).toBe(400);
+    const svg = await app.inject({ method: 'POST', url: '/api/v1/admin/settings/logo', headers: owner, payload: { dataBase64: 'x', contentType: 'image/svg+xml' } });
+    expect(svg.statusCode).toBe(400); // review P2-5: no SVG into a public bucket
+    const first = merchant().logo_url as string;
+    await app.inject({ method: 'POST', url: '/api/v1/admin/settings/logo', headers: owner, payload: { dataBase64: Buffer.from('png2').toString('base64'), contentType: 'image/png' } });
+    expect(fake.removed).toContain(first.split('/object/public/product-images/')[1]); // the old file is gone
   });
 });

@@ -148,13 +148,15 @@ export function WhatsAppConnect({ embedded = false }: { embedded?: boolean }) {
     setBusy(null);
   }
 
-  const Frame = ({ children }: { children: React.ReactNode }) => embedded
-    ? <>{children}</>
-    : <AppShell><BackLink href="/settings" label="Settings" /><PageHead title="WhatsApp" sub="Connect the number the bot answers from" />{children}</AppShell>;
-  if (!st) return <Frame><div className="card pad"><div className="skeleton" style={{ height: 120 }} /></div></Frame>;
+  // Review P2-4: the chrome is chosen once below, never a component declared per render (that remounted
+  // the whole subtree on every keystroke: the PIN box lost focus and AppShell refetched each time).
+  const frame = (body: React.ReactNode) => embedded
+    ? <>{body}</>
+    : <AppShell><BackLink href="/settings" label="Settings" /><PageHead title="WhatsApp" sub="Connect the number the bot answers from" />{body}</AppShell>;
+  if (!st) return frame(<div className="card pad"><div className="skeleton" style={{ height: 120 }} /></div>);
 
-  return (
-    <Frame>
+  return frame(
+    <>
 
       {choices && (
         <div className="card pad" style={{ marginBottom: 16 }}>
@@ -249,6 +251,6 @@ export function WhatsAppConnect({ embedded = false }: { embedded?: boolean }) {
           </div>
         </div>
       )}
-    </Frame>
+    </>
   );
 }

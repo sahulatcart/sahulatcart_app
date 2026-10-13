@@ -60,12 +60,26 @@ export const invalidProfileField = firstInvalid({
   category: (v) => (CATEGORIES as readonly string[]).includes(v as string),
 });
 
+/** Cash on delivery is on unless the merchant switched it off (review P2-3: one rule for readiness, the bot and the portal). */
+export const codOn = (settings: unknown): boolean => (settings as { codEnabled?: unknown } | null)?.codEnabled !== false;
+
+/** bot_persona (review P2-6): the greeting goes to buyers and into the prompt, so the limits live here, not only in the browser. */
+export const invalidPersonaField = firstInvalid({
+  name: (v) => typeof v === 'string' && v.trim().length <= 40,
+  style: (v) => v === 'narm' || v === 'standard' || v === 'sakht',
+  greeting: (v) => typeof v === 'string' && v.length <= 200,
+});
+
+/** Portal image uploads (review P2-5): SVG can carry scripts and the bucket is public, so only raster types. */
+export const IMAGE_TYPES: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
+
 /** delivery_zones rows (P2). area_name is matched by whole words in the bot, so keep it a real name. */
+export const MAX_DELIVERY_CHARGE = 1_000_000; // Rs 10,000 — a typo of 50000 rupees would otherwise be quoted to buyers
 const shortText = (max: number) => (v: unknown): boolean => typeof v === 'string' && v.trim().length >= 2 && v.trim().length <= max;
 export const invalidZoneField = firstInvalid({
   area_name: shortText(60),
   city: optional((v) => v === '' || shortText(60)(v)),
-  charge: (v) => Number.isInteger(v) && (v as number) >= 0, // paisa; 0 = free
+  charge: (v) => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= MAX_DELIVERY_CHARGE, // paisa; 0 = free
   is_serviceable: bool,
   eta_text: optional((v) => v === '' || (typeof v === 'string' && v.length <= 80)),
 });

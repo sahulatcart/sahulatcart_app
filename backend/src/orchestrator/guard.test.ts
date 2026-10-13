@@ -46,6 +46,8 @@ describe('guard on replies that are not meant to quote a price', () => {
   it('blocks any price in a reply that has no numbers to state', () => {
     expect(priceGuardOk('Assalam-o-Alaikum! Aaj sab kuch Rs 999 mein!', null, sanctionedNumbers({ kind: 'greeting' }))).toBe(false);
     expect(priceGuardOk('Assalam-o-Alaikum! Kaise madad karoon?', null, sanctionedNumbers({ kind: 'greeting' }))).toBe(true);
+    // Review P2-17: a number in the merchant's own greeting is still not a sanctioned price.
+    expect(priceGuardOk('Salam! Is hafte Rs 500 off!', null, sanctionedNumbers({ kind: 'greeting', greetingText: 'Salam! Is hafte Rs 500 off!' }))).toBe(false);
   });
   it('allows the order number and numbers in the product name', () => {
     expect(priceGuardOk('Order SK-1042 confirm ho gaya!', null, sanctionedNumbers({ kind: 'payment_verified', orderNumber: 'SK-1042' }))).toBe(true);

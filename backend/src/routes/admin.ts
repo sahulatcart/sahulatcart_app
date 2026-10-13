@@ -13,7 +13,7 @@ import { sendText } from '../whatsapp/client';
 import { parseCsv } from '../lib/csv';
 import { isTrustedImageUrl, MAX_IMAGE_BYTES, productImageUrl } from '../lib/images';
 import { parsePaisa } from '../lib/money';
-import { invalidNegotiationField, invalidProductField, invalidSettingsField } from '../lib/validation';
+import { codOn, IMAGE_TYPES, invalidNegotiationField, invalidPersonaField, invalidProductField, invalidSettingsField } from '../lib/validation';
 import { getLlmClient } from '../llm';
 import { isShopifyCsv, mapShopifyRows } from '../lib/shopify';
 import { importRow, loadExisting } from '../lib/catalog-import';
@@ -295,14 +295,14 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const mid = req.merchantCtx!.merchantId;
     const { id } = req.params as { id: string };
     const b = req.body as { dataBase64?: string; contentType?: string };
-    if (!b.dataBase64 || !b.contentType?.startsWith('image/')) {
-      return reply.code(400).send({ error: { code: 'BAD', message: 'dataBase64 and image contentType required' } });
+    const ext = b.contentType ? IMAGE_TYPES[b.contentType] : undefined;
+    if (!b.dataBase64 || !ext) {
+      return reply.code(400).send({ error: { code: 'BAD', message: 'dataBase64 and a png, jpeg or webp contentType required' } });
     }
     const prod = await db.from('products').select('id, images').eq('id', id).eq('merchant_id', mid).maybeSingle();
     if (!prod.data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'product not found' } });
     const buf = Buffer.from(b.dataBase64, 'base64');
     if (buf.length > MAX_IMAGE_BYTES) return reply.code(400).send({ error: { code: 'TOO_BIG', message: 'image over 5MB' } });
-    const ext = b.contentType.includes('png') ? 'png' : b.contentType.includes('webp') ? 'webp' : 'jpg';
     const key = `${mid}/${id}/${crypto.randomUUID()}.${ext}`;
     const cfg2 = loadConfig();
     const up = await db.storage.from(cfg2.STORAGE_BUCKET_PRODUCT_IMAGES).upload(key, buf, { contentType: b.contentType, upsert: false });
@@ -491,14 +491,23 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     if (!isManager(req.merchantCtx!)) return forbid(reply);
     const mid = req.merchantCtx!.merchantId;
     const b = (req.body ?? {}) as { businessName?: string; negotiationDefaults?: Record<string, unknown>; settings?: Record<string, unknown>; botPersona?: Record<string, unknown> };
-    const bad = (b.negotiationDefaults && invalidNegotiationField(b.negotiationDefaults)) || (b.settings && invalidSettingsField(b.settings));
+    const bad = (b.negotiationDefaults && invalidNegotiationField(b.negotiationDefaults)) || (b.settings && invalidSettingsField(b.settings)) || (b.botPersona && invalidPersonaField(b.botPersona));
     if (bad) return reply.code(400).send(badField(bad));
+    const cur = await db.from('merchants').select('negotiation_defaults, settings, bot_persona').eq('id', mid).single();
     // FR-P2.2: the bot cannot be switched on until every readiness check passes, whatever the client sends.
+    // Readiness is read from the stored row, so a request that also changes other settings could switch
+    // the bot on past a check it breaks (review P2-9): switching on is a request of its own.
     if (b.settings?.botEnabled === true) {
+      const READ_BY_CHECKS = ['codEnabled', 'deliveryConfigured', 'attestations'];
+      if (Object.keys(b.settings).some((k) => READ_BY_CHECKS.includes(k)) || b.botPersona || b.businessName) return reply.code(400).send({ error: { code: 'BAD', message: 'switch the bot on in a request of its own' } });
       const r = await computeReadiness(db, mid);
       if (!r.ready) return reply.code(409).send({ error: { code: 'not_ready', message: 'Finish setting up before going live', failing: r.failing, steps: r.steps } });
     }
-    const cur = await db.from('merchants').select('negotiation_defaults, settings, bot_persona').eq('id', mid).single();
+    // Review P2-2: a live shop must keep at least one way to pay, or every buyer is handed off at checkout.
+    if (b.settings?.codEnabled === false && codOn(cur.data?.settings) && (cur.data?.settings as { botEnabled?: boolean } | null)?.botEnabled !== false) {
+      const bank = await db.from('bank_accounts').select('id').eq('merchant_id', mid).eq('is_active', true).limit(1).maybeSingle();
+      if (!bank.data) return reply.code(409).send({ error: { code: 'last_payment_method', message: 'Add a bank account before turning cash on delivery off, or your buyers would have no way to pay' } });
+    }
     const patch: Record<string, unknown> = {};
     if (b.businessName) patch.business_name = b.businessName;
     if (b.negotiationDefaults) patch.negotiation_defaults = { ...(cur.data?.negotiation_defaults ?? {}), ...b.negotiationDefaults };
@@ -521,7 +530,17 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/api/v1/admin/bank-accounts/:id', async (req, reply) => {
     if (!isManager(req.merchantCtx!)) return forbid(reply);
     const mid = req.merchantCtx!.merchantId;
-    await db.from('bank_accounts').delete().eq('id', (req.params as { id: string }).id).eq('merchant_id', mid);
+    const { id } = req.params as { id: string };
+    // Review P2-2: the last account of a live shop with COD off would leave buyers no way to pay.
+    const [m, others] = await Promise.all([
+      db.from('merchants').select('settings').eq('id', mid).maybeSingle(),
+      db.from('bank_accounts').select('id').eq('merchant_id', mid).eq('is_active', true).neq('id', id).limit(1).maybeSingle(),
+    ]);
+    const s = (m.data?.settings ?? {}) as { botEnabled?: boolean };
+    if (!others.data && !codOn(s) && s.botEnabled !== false) {
+      return reply.code(409).send({ error: { code: 'last_payment_method', message: 'Turn cash on delivery on before removing your last bank account, or your buyers would have no way to pay' } });
+    }
+    await db.from('bank_accounts').delete().eq('id', id).eq('merchant_id', mid);
     return reply.send({ ok: true });
   });
 }

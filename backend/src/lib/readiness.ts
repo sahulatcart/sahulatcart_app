@@ -3,7 +3,8 @@
 // cannot be clicked past a missing bank account or an unconnected number.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getConnectionStatus } from '../whatsapp/connect';
-import { samePhone } from './phone';
+import { phoneDigits } from './phone';
+import { codOn } from './validation';
 
 export const READINESS_STEPS = ['profile', 'whatsapp', 'catalog', 'delivery', 'payment', 'persona', 'testOrder'] as const;
 export type ReadinessStep = (typeof READINESS_STEPS)[number];
@@ -41,14 +42,21 @@ const ok: StepResult = { ok: true };
 const no = (reason: string, problem = false): StepResult => ({ ok: false, reason, problem });
 
 export async function computeReadiness(db: SupabaseClient, merchantId: string): Promise<Readiness> {
-  const [m, product, zone, bank, orders, wa] = await Promise.all([
+  const [m, product, zone, bank, wa] = await Promise.all([
     db.from('merchants').select('business_name, phone, category, business_hours, bot_persona, settings').eq('id', merchantId).maybeSingle(),
     db.from('products').select('id').eq('merchant_id', merchantId).eq('is_active', true).gt('price', 0).limit(1).maybeSingle(),
     db.from('delivery_zones').select('id').eq('merchant_id', merchantId).eq('is_serviceable', true).limit(1).maybeSingle(),
     db.from('bank_accounts').select('id').eq('merchant_id', merchantId).eq('is_active', true).limit(1).maybeSingle(),
-    db.from('orders').select('id, status, customers(wa_id)').eq('merchant_id', merchantId).in('status', TEST_ORDER_STATUSES),
     getConnectionStatus(db, merchantId),
   ]);
+  // testOrder (review P2-10): the owner's customer row by wa_id, then one placed order of theirs — two
+  // small lookups instead of every placed order with its customer on each dashboard load.
+  const ownerDigits = phoneDigits(m.data?.phone);
+  const ownerCust = ownerDigits ? await db.from('customers').select('id').eq('merchant_id', merchantId).eq('wa_id', ownerDigits) : { data: [] as { id: string }[] };
+  const ownerIds = (ownerCust.data ?? []).map((c) => c.id as string);
+  const ownerOrder = ownerIds.length
+    ? await db.from('orders').select('id').eq('merchant_id', merchantId).in('customer_id', ownerIds).in('status', TEST_ORDER_STATUSES).limit(1).maybeSingle()
+    : { data: null };
   const row = (m.data ?? {}) as { business_name?: string | null; phone?: string | null; category?: string | null; business_hours?: unknown; bot_persona?: Record<string, unknown> | null; settings?: Record<string, unknown> | null };
   const settings = row.settings ?? {};
   const persona = row.bot_persona ?? {};
@@ -73,11 +81,11 @@ export async function computeReadiness(db: SupabaseClient, merchantId: string): 
 
   const catalog = product.data ? ok : no('Add at least one product with a price');
   const delivery = zone.data || settings.deliveryConfigured === true ? ok : no('Add a delivery area, or set one charge for everywhere');
-  const payment = settings.codEnabled === true || bank.data ? ok : no('Turn on cash on delivery, or add a bank account');
+  const payment = codOn(settings) || bank.data ? ok : no('Turn on cash on delivery, or add a bank account');
   const persona_ = typeof persona.name === 'string' && persona.name.trim() && typeof persona.style === 'string' && persona.style
     ? ok : no('Give your bot a name and a bargaining style');
 
-  const mine = ((orders.data ?? []) as { customers?: { wa_id?: string } | null }[]).some((o) => samePhone(o.customers?.wa_id, row.phone));
+  const mine = !!ownerOrder.data;
   const testOrder = mine ? ok : no('Place one test order from your own phone, start to finish');
 
   const steps: Readiness['steps'] = { profile, whatsapp, catalog, delivery, payment, persona: persona_, testOrder };
