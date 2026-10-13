@@ -7,6 +7,7 @@ import { getLlmClient, isTemplateOnly, LlmUnavailableError, type ComposeContext,
 import { sendButtons, sendDocument, sendImage, sendText } from '../whatsapp/client';
 import { chargeLlmCall, DEFAULT_LLM_DAILY_CAP, FREE_QUOTA, outboundThisMonth, withLlmBudget } from '../lib/usage';
 import { billingMode } from '../lib/billing';
+import { codOn } from '../lib/validation';
 import { productImageUrl } from '../lib/images';
 import { loadConfig } from '../config';
 import { downloadWhatsAppMedia, uploadScreenshot } from '../whatsapp/media';
@@ -686,7 +687,7 @@ async function paymentMethods(db: SupabaseClient, merchantId: string): Promise<{
     db.from('bank_accounts').select('*').eq('merchant_id', merchantId).eq('is_active', true).order('is_default', { ascending: false }).limit(1).maybeSingle(),
   ]);
   const settings = (m.data?.settings ?? {}) as { codEnabled?: boolean; paymentInstructions?: string };
-  const cod = settings.codEnabled !== false;
+  const cod = codOn(settings);
   const kinds: PaymentMethodKind[] = [...(cod ? ['cod' as const] : []), ...(bank.data ? ['bank' as const] : [])];
   return { cod, bank: (bank.data as BankRow | null) ?? null, instructions: settings.paymentInstructions?.trim() || null, kinds };
 }
@@ -716,7 +717,10 @@ async function askPaymentMethod(db: SupabaseClient, ctx: OrchestratorCtx, cc: Co
   const pm = await paymentMethods(db, ctx.merchantId);
   const orderId = context.pendingOrderId as string | undefined;
   if (pm.kinds.length === 0 || !orderId) {
-    await handoff(db, ctx, cc, context, 'selecting_payment', 'No payment method is enabled: turn on Cash on Delivery or add a bank account in Settings.');
+    // Two different problems (review P2-16): no way to pay, or the draft order went missing.
+    await handoff(db, ctx, cc, context, 'selecting_payment', !orderId
+      ? 'The order being built could not be found, so the bot handed this chat to you. Please take the order by hand.'
+      : 'No payment method is enabled: turn on Cash on Delivery or add a bank account in Settings.');
     return;
   }
   if (!pm.cod && pm.bank) {

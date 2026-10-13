@@ -16,7 +16,7 @@ interface Dash {
 export default function Dashboard() {
   const [d, setD] = useState<Dash | null>(null);
   // FR-P2.4: the card shows until every readiness check passes AND the bot is on; it links to the first open step.
-  const [setup, setSetup] = useState<{ done: number; next: string | null; ready: boolean } | null>(null);
+  const [setup, setSetup] = useState<{ done: number; next: string | null; ready: boolean; botOn: boolean } | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
   // P7: an unpaid invoice or a used-up allowance puts the bot in hand-over mode; say so here, with the way out.
   const [billing, setBilling] = useState<{ mode: string; reason: string | null } | null>(null);
@@ -28,8 +28,8 @@ export default function Dashboard() {
       apiJson<{ ready: boolean; failing: string[] }>('/api/v1/admin/readiness'),
       apiJson<{ merchant: { settings?: { botEnabled?: boolean } } }>('/api/v1/admin/me'),
     ]).then(([r, me]) => {
-      const botOn = me.merchant?.settings?.botEnabled === true;
-      setSetup(r.ready && botOn ? null : { done: 7 - r.failing.length, next: r.failing[0] ?? null, ready: r.ready });
+      const botOn = me.merchant?.settings?.botEnabled !== false; // missing means on, as the backend reads it (review P2-12)
+      setSetup(r.ready && botOn ? null : { done: 7 - r.failing.length, next: r.failing[0] ?? null, ready: r.ready, botOn });
     }).catch(() => {});
   }, []);
 
@@ -63,8 +63,8 @@ export default function Dashboard() {
           <div className="row" style={{ flexWrap: 'nowrap' }}>
             <div className="ico"><Sparkles aria-hidden /></div>
             <div>
-              <div className="strong">{setup.ready ? 'Everything is set — switch the bot on' : 'Finish setting up your shop'}</div>
-              <div className="hint">{setup.ready ? 'All seven steps are done. Go live and the bot starts selling.' : `${setup.done} of 7 steps done. The bot stays off until all seven are.`}</div>
+              <div className="strong">{setup.ready ? 'Everything is set — switch the bot on' : setup.botOn ? 'Your bot is live; finish setting up' : 'Finish setting up your shop'}</div>
+              <div className="hint">{setup.ready ? 'All seven steps are done. Go live and the bot starts selling.' : setup.botOn ? `${setup.done} of 7 steps done. Finish them so you can pause and resume the bot safely.` : `${setup.done} of 7 steps done. The bot stays off until all seven are.`}</div>
             </div>
           </div>
           <Link href={setup.next ? `/onboarding?step=${setup.next}` : '/onboarding'} className="btn">{setup.ready ? 'Go live' : 'Continue setup'} <ArrowRight aria-hidden /></Link>
