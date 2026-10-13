@@ -1,7 +1,7 @@
 import { BotIntent, type Lang } from '@app/shared';
 import { loadConfig } from '../config';
 import { logger } from '../lib/logger';
-import { replySpecToPrompt } from './prompts';
+import { historyBlock, replySpecToPrompt } from './prompts';
 import {
   type ClassifyContext,
   type Classification,
@@ -113,7 +113,7 @@ export class GeminiClient implements LlmClient {
       `"ye cotton hai?"/"size kya hai"/"kaunse colors hain"=ask_product_info, ` +
       `"photo dikhao"/"tasveer bhejo"=ask_photo, ` +
       `"return policy kya hai"/"delivery kitne din"/"dukaan kahan hai"/"timing kya hai"=ask_shop_info, ` +
-      `"bandh karo"=stop. Message: "${text.replace(/"/g, "'")}"`;
+      `"bandh karo"=stop. Message: "${text.replace(/"/g, "'")}"` + historyBlock(ctx.history);
     const raw = await callGemini({
       contents: [{ parts: [{ text: sys }] }],
       generationConfig: { temperature: 0, maxOutputTokens: 200, responseMimeType: 'application/json', responseSchema: CLASSIFY_SCHEMA, ...NO_THINKING },
@@ -139,12 +139,12 @@ export class GeminiClient implements LlmClient {
   }
 
   /** Throws LlmUnavailableError when the AI is down, so the caller can hand off instead of re-asking forever. */
-  async extractDelivery(text: string): Promise<DeliveryDetails> {
+  async extractDelivery(text: string, history?: string[]): Promise<DeliveryDetails> {
     const raw = await callGemini({
       contents: [{ parts: [{ text:
         `Extract delivery details from this Pakistani customer's WhatsApp message. ` +
         `Return name (person's name), address (house/street), area (locality/mohalla), city, phone if present, else null. ` +
-        `Message: "${text.replace(/"/g, "'")}"` }] }],
+        `Message: "${text.replace(/"/g, "'")}"` + historyBlock(history) }] }],
       generationConfig: { temperature: 0, maxOutputTokens: 200, responseMimeType: 'application/json', responseSchema: DELIVERY_SCHEMA, ...NO_THINKING },
     });
     try {

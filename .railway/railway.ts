@@ -20,7 +20,7 @@ export default defineRailway(() => {
     networking: { privateNetworkEndpoint: "appbackend" },
     // NODE_ENV is "production". NPM_CONFIG_INCLUDE="dev" keeps devDependencies (TypeScript) installed
     // for the build; without it npm skips them and every deploy fails with "tsc: command not found".
-    env: { ADMIN_API_TOKEN: preserve(), ADMIN_ORIGIN: preserve(), ALERT_EMAIL_FROM: preserve(), FORCE_RESTART: preserve(), GEMINI_API_KEY: preserve(), GEMINI_MODEL: preserve(), LLM_PROVIDER: preserve(), LOG_LEVEL: preserve(), META_APP_ID: preserve(), META_APP_SECRET: preserve(), META_DEFAULT_PHONE_NUMBER_ID: preserve(), META_GRAPH_API_VERSION: preserve(), META_SYSTEM_USER_TOKEN: preserve(), META_WEBHOOK_VERIFY_TOKEN: preserve(), NODE_ENV: preserve(), NPM_CONFIG_INCLUDE: preserve(), PRODUCT_NAME: preserve(), RESEND_API_KEY: preserve(), SERVICE_HMAC_SECRET: preserve(), SIGNUP_ALLOWLIST: preserve(), SIGNUP_OPEN: preserve(), STORAGE_BUCKET_CATALOG_IMPORTS: preserve(), STORAGE_BUCKET_INBOUND_MEDIA: preserve(), STORAGE_BUCKET_ORDER_SLIPS: preserve(), STORAGE_BUCKET_PAYMENT_SCREENSHOTS: preserve(), STORAGE_BUCKET_PRODUCT_IMAGES: preserve(), SUPABASE_ANON_KEY: preserve(), SUPABASE_SERVICE_ROLE_KEY: preserve(), SUPABASE_URL: preserve(), TOKEN_ENCRYPTION_KEY: preserve(), VAPID_PRIVATE_KEY: preserve(), VAPID_PUBLIC_KEY: preserve(), VAPID_SUBJECT: preserve(), WEBHOOK_MAX_BODY_BYTES: preserve() },
+    env: { ADMIN_API_TOKEN: preserve(), ADMIN_ORIGIN: preserve(), ALERT_EMAIL_FROM: preserve(), FORCE_RESTART: preserve(), GEMINI_API_KEY: preserve(), GEMINI_MODEL: preserve(), LLM_PROVIDER: preserve(), LOG_LEVEL: preserve(), META_APP_ID: preserve(), META_APP_SECRET: preserve(), META_DEFAULT_PHONE_NUMBER_ID: preserve(), META_GRAPH_API_VERSION: preserve(), META_SYSTEM_USER_TOKEN: preserve(), META_WEBHOOK_VERIFY_TOKEN: preserve(), NODE_ENV: preserve(), NPM_CONFIG_INCLUDE: preserve(), PLAN_BASIC_PRICE_PAISA: preserve(), PLAN_PRO_PRICE_PAISA: preserve(), PLATFORM_BANK_DETAILS: preserve(), PRODUCT_NAME: preserve(), RESEND_API_KEY: preserve(), SENTRY_DSN: preserve(), SERVICE_HMAC_SECRET: preserve(), SIGNUP_ALLOWLIST: preserve(), SIGNUP_OPEN: preserve(), STORAGE_BUCKET_CATALOG_IMPORTS: preserve(), STORAGE_BUCKET_INBOUND_MEDIA: preserve(), STORAGE_BUCKET_ORDER_SLIPS: preserve(), STORAGE_BUCKET_PAYMENT_SCREENSHOTS: preserve(), STORAGE_BUCKET_PRODUCT_IMAGES: preserve(), SUPABASE_ANON_KEY: preserve(), SUPABASE_SERVICE_ROLE_KEY: preserve(), SUPABASE_URL: preserve(), TOKEN_ENCRYPTION_KEY: preserve(), VAPID_PRIVATE_KEY: preserve(), VAPID_PUBLIC_KEY: preserve(), VAPID_SUBJECT: preserve(), WEBHOOK_MAX_BODY_BYTES: preserve() },
   });
   const _appadmin = service("@app/admin", {
     source: sahulatcart_app,
@@ -29,7 +29,7 @@ export default defineRailway(() => {
     replicas: { "sfo": 1 },
     networking: { privateNetworkEndpoint: "appadmin" },
     // FIX: purpose unknown (not in the code). Kept as-is until the owner decides; undeclared, an apply deletes it.
-    env: { BACKEND_URL: preserve(), FIX: preserve(), NEXT_PUBLIC_PRODUCT_NAME: preserve() },
+    env: { BACKEND_URL: preserve(), FIX: preserve(), NEXT_PUBLIC_PRODUCT_NAME: preserve(), NEXT_PUBLIC_SENTRY_DSN: preserve() },
   });
 
   return project("exemplary-charm", {

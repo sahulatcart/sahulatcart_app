@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **34 files, 384 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **40 files, 448 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -164,6 +164,9 @@ Nothing Meta was told we received may be lost:
 - **One at a time per buyer.** [lib/keyed-queue.ts](backend/src/lib/keyed-queue.ts) `serialize()` keys on
   merchant + sender, so a burst ("hi", "ye kitne ka?") can't race over one conversation's state. It is
   in-process: correct while the backend runs as **one instance**; more replicas need a DB lock instead.
+  So are the admin-token lockout and the rate-limit store (P6). Railway exposes `RAILWAY_REPLICA_ID`
+  but no count, so the boot only warns when the id is present; a second replica needs all three
+  moved to Postgres (advisory locks / a counter table) or Redis first.
 - **Replay.** `startReplaySweeper()` re-runs messages left `received` for 5–60 minutes (a crash or
   redeploy killed them), at most 3 times, then `dead_letter`. It runs **only when `NODE_ENV=production`**:
   a local backend shares the live DB and WhatsApp token via `.env` and must never answer real customers.
@@ -345,6 +348,16 @@ in that are easy to break accidentally:
 - **Order-flow states skip intent classification** (`collecting_delivery`, `selecting_payment`,
   `awaiting_payment_proof`) to cut LLM calls, but each still routes through `handleEscape()` first so
   cancel and human-handoff always work — otherwise customers get trapped in "send your address" loops.
+- **Order-status questions** (P8, since 2026-10-13): `STATUS_RE` (whole message) before the
+  classifier and inside `handleEscape()`, plus the `ask_status` / `claim_paid` intents, answer
+  from the buyer's latest *placed* order (`orderStatusReply()`, reply kind `order_status`,
+  template-only). `out_of_scope` without a product is the clarify line, never a price.
+- **Chat memory** (P8): `recentHistory()` gives every AI call the last 12 lines of the chat as
+  `cc.history` (`historyBlock()` in prompts.ts fences it as context-only). History is **never** a
+  source for `sanctionedNumbers()`; that is what keeps a quoted "Rs 500 bolo" out of replies.
+- **Catalog imports** go through [lib/catalog-import.ts](backend/src/lib/catalog-import.ts) (P8):
+  match by SKU, else name; an existing product keeps `is_active` and its portal photos; a no-SKU
+  row never duplicates. Do not reintroduce `upsert(onConflict)` with `is_active: true`.
 - **Price-match guard**: **every** LLM-composed reply is checked by
   [orchestrator/guard.ts](backend/src/orchestrator/guard.ts) `priceGuardOk()`. A reply meant to quote a
   price must state the engine's exact figure; any reply may state only `sanctionedNumbers(spec)` — the
@@ -425,7 +438,11 @@ discriminated union of ~20 reply kinds) and only phrases it.
   (name, owner, phone, address, category, hours — then a best-effort `syncBusinessProfile()`) and the
   logo upload.
 - **The bot offers only the payment methods the merchant enabled.** `paymentMethods()` in the
-  orchestrator reads `settings.codEnabled` (default on) and the default active bank account. Both →
+  orchestrator reads `codOn(settings)` (`lib/validation.ts`: on unless `codEnabled === false`,
+  the one rule shared with readiness and the routes) and the default active bank account. A live
+  shop cannot drop its last method: the settings PATCH and the bank-account DELETE answer 409
+  `last_payment_method`. Switching the bot on is a request of its own (400 if the body also
+  changes `codEnabled`, `deliveryConfigured`, `attestations`, the persona or the name). Both →
   two buttons; COD only → a text confirm where a plain "haan" is a yes; bank only → no question, the
   details go straight out; neither → handoff. Every path that takes a payment choice, including the
   "COD kar dein" switch while waiting for a screenshot, goes through it. `settings.paymentInstructions`
@@ -450,6 +467,13 @@ discriminated union of ~20 reply kinds) and only phrases it.
   `order_items` reference the row. Product reads filter `deleted_at is null`; the bot filters on
   `is_active`. The dashboard's "today" starts at 00:00 Pakistan time (`startOfTodayKarachi()`
   in `lib/hours.ts`), not UTC.
+- **Billing** (P7, since 2026-10-13, [lib/billing.ts](backend/src/lib/billing.ts), migration 0017):
+  `subscriptions` (one per shop: trial → active → past_due) and `invoices` (due → paid, by hand in
+  the platform console). Plans and limits are `shared/src/plans.ts`; prices and the bank account are
+  config. `botMode()` returns `sell` | `handoff` | `off`; the orchestrator hands new chats over
+  while an invoice is past due or the month's conversation allowance is used, never mid-checkout,
+  and a shop with no subscription row sells. The job runs every 6 h in production and is idempotent.
+  A lapsed pilot is invoiced for Basic. Nothing in billing ever moves money (invariant 2).
 - **Order stages** (P4, since 2026-10-13): [orchestrator/order-stages.ts](backend/src/orchestrator/order-stages.ts)
   moves an order confirmed/paid → preparing → dispatched → delivered, one step at a time (`STAGE_FROM`),
   through the same `transition()`; anything else is 409. Routes are in
@@ -496,6 +520,18 @@ discriminated union of ~20 reply kinds) and only phrases it.
 
   Or skip login by putting a session straight into `localStorage` `sk_auth`.
 - The backend registers **no CORS** on purpose: nothing calls it from a browser on another origin.
+- **Rate limits** (P6, since 2026-10-13, [lib/rate-limit.ts](backend/src/lib/rate-limit.ts)): signup
+  and login 10/min per IP, WhatsApp connect 5/min, everything else 300/min per shop (per IP before
+  login); the webhook and health routes are exempt. A 429 is `{ error: { code: 'RATE_LIMITED' } }`.
+  `authenticate()` in `lib/auth.ts` is memoised per request so the limiter and the route gate share
+  one lookup. The admin-token lockout is **per IP** (`isAdminToken(tok, req.ip)`); `trustProxy` is
+  on so `req.ip` is Railway's first forwarded hop.
+- **Sentry** (P6): `SENTRY_DSN` (backend) and `NEXT_PUBLIC_SENTRY_DSN` (admin, baked at build);
+  empty means off. Bodies, cookies, query strings and user info are never sent (`dataCollection`
+  in SDK v11, plus `beforeSend`). The Next.js build helper is `@sentry/nextjs/config`.
+- **CI** (`.github/workflows/ci.yml`) runs both typechecks, the backend suite and `next lint` on
+  every PR. Run `npm run lint -w @app/admin` before pushing admin changes; the config is
+  `next/core-web-vitals` and the tree is warning-free.
 - **Notifications go through `notify()`** in [lib/notify.ts](backend/src/lib/notify.ts) (P3, since
   2026-10-13) — never a direct `notifications` insert. It writes the portal row, then fans out in the
   background to Web Push (each owner's/manager's devices, `push_subscriptions`, migration 0014) and
@@ -515,7 +551,10 @@ discriminated union of ~20 reply kinds) and only phrases it.
 Merchants join through `/signup` (self-service, P1): Supabase Auth creates the user and emails a
 confirmation link that lands on `/auth/confirmed`, which calls `POST /api/v1/signup/bootstrap` →
 `create_merchant_for_user()` (migration 0012) to create the shop and owner row, with the bot off.
-Until `SIGNUP_OPEN=true` only emails on `SIGNUP_ALLOWLIST` may join. The platform admin can still
+Until `SIGNUP_OPEN=true` only emails on `SIGNUP_ALLOWLIST` may join. The JWT must carry
+`email_confirmed_at`, or bootstrap is 401. One login, one shop, ever: a deactivated membership is
+409 `inactive_membership` (support reinstates it) and an email another shop uses is 409
+`email_in_use` (migration 0019; the fake twin raises the same codes). The platform admin can still
 create one via `POST /api/v1/admin/merchants`. Credentials live in Supabase Auth, not in this repo.
 Locally the portal cannot authenticate at all without `.env` + a running backend: `/api/v1/config`
 returns 502 and the client throws `supabaseUrl is required`.

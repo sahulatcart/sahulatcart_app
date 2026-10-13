@@ -305,3 +305,12 @@ describe('bargaining style presets', () => {
     }
   });
 });
+
+describe('opening stance (P8, FR-P8.1)', () => {
+  it('small_goodwill: the first "kam karo" gets a 15% gesture, round 2 follows the curve; list_price is unchanged', () => {
+    const d = baseDefaults({ openingStance: 'small_goodwill' });
+    expect(decide(input({ defaults: d, intent: 'wants_discount' }))).toMatchObject({ action: 'COUNTER', price: rs(2425) });
+    expect(decide(input({ defaults: d, intent: 'wants_discount', history: history(1, { lastBotOffer: rs(2425) }) }))).toMatchObject({ action: 'COUNTER', price: rs(2150) });
+    expect(decide(input({ intent: 'wants_discount' }))).toMatchObject({ action: 'COUNTER', price: rs(2300) });
+  });
+});

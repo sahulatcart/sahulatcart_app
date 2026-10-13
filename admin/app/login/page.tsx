@@ -17,10 +17,10 @@ export default function LoginPage() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true); setErr('');
-    const ok = await signIn(email.trim(), pw).catch(() => false);
+    const ok = await signIn(email.trim(), pw).catch(() => 'Could not sign in. Please try again.');
     setBusy(false);
-    if (ok) router.replace('/');
-    else setErr('Wrong email or password.');
+    if (ok === true) router.replace('/');
+    else setErr(ok);
   }
 
   return (
@@ -39,7 +39,7 @@ export default function LoginPage() {
           <div className="input-affix">
             <input id="password" type={show ? 'text' : 'password'} autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} required style={{ paddingRight: 48 }} />
             <button type="button" className="btn subtle icon-btn sm affix-btn" onClick={() => setShow((v) => !v)} aria-label={show ? 'Hide password' : 'Show password'} aria-pressed={show}>
-              {show ? <EyeOff /> : <Eye />}
+              {show ? <EyeOff aria-hidden /> : <Eye aria-hidden />}
             </button>
           </div>
         </div>

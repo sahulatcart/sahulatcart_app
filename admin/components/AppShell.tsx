@@ -2,7 +2,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
-import { ArrowLeft, BarChart3, Bell, LayoutDashboard, LogOut, Menu, MessagesSquare, Package, Settings, ShieldCheck, ShoppingBag, X, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, BarChart3, Bell, CreditCard, LayoutDashboard, LogOut, Menu, MessagesSquare, Package, Settings, ShieldCheck, ShoppingBag, X, type LucideIcon } from 'lucide-react';
 import { apiJson, hasSession, signOut } from '../lib/api';
 import { disablePush } from '../lib/push';
 import Wordmark from '../components/Wordmark';
@@ -25,6 +25,7 @@ const NAV: { section: string; items: { href: string; label: string; Icon: Lucide
     items: [
       { href: '/catalog', label: 'Catalog', Icon: Package },
       { href: '/analytics', label: 'Analytics', Icon: BarChart3 },
+      { href: '/billing', label: 'Billing', Icon: CreditCard },
       { href: '/settings', label: 'Settings', Icon: Settings },
     ],
   },

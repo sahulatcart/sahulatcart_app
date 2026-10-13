@@ -51,8 +51,8 @@ export async function signUp(email: string, password: string, data: SignupData):
 }
 
 /** Turn the confirmed login into a shop (idempotent); the response carries { merchantId, role }. */
-export function bootstrap(): Promise<Response> {
-  return api('/api/v1/signup/bootstrap', { method: 'POST', body: '{}' });
+export function bootstrap(details: { shopName: string; ownerName: string; phone: string } | null = null): Promise<Response> {
+  return api('/api/v1/signup/bootstrap', { method: 'POST', body: JSON.stringify(details ?? {}) });
 }
 
 export async function sendPasswordReset(email: string): Promise<void> {
@@ -79,9 +79,13 @@ export async function apiJson<T = unknown>(path: string, opts?: RequestInit): Pr
   return r.json() as Promise<T>;
 }
 
-export async function signIn(email: string, password: string): Promise<boolean> {
+/** True on success; otherwise the reason the form should show (review P1-10: an unconfirmed email is not a wrong password). */
+export async function signIn(email: string, password: string): Promise<true | string> {
   const { error } = await (await getSupabase()).auth.signInWithPassword({ email, password });
-  return !error;
+  if (!error) return true;
+  const code = (error as { code?: string }).code;
+  if (code === 'email_not_confirmed' || /not confirmed/i.test(error.message)) return 'Confirm your email first: open the link we sent you, or sign up again for a new one.';
+  return 'Wrong email or password.';
 }
 
 export async function signOut(): Promise<void> {

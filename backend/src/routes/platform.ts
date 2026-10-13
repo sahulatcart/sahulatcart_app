@@ -3,6 +3,8 @@ import { getServiceClient } from '../lib/supabase';
 import { requirePlatformAdmin } from '../lib/auth';
 import { periodMonth } from '../lib/usage';
 import { notify } from '../lib/notify';
+import { isPlan, markInvoicePaid } from '../lib/billing';
+import { PLANS } from '@app/shared';
 
 /**
  * /api/v1/platform/* — the platform owner's console (SRS-Fazal M6). Every shop, its connection,
@@ -85,6 +87,38 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
     await db.from('audit_log').insert({ merchant_id: id, actor: 'platform', user_id: req.platformCtx!.authUserId, action: 'suspend', entity: 'merchant', entity_id: id, diff: { reason, by } });
     await notify(db, id, { type: 'system', title: 'Your shop has been suspended', body: `Reason: ${reason}. The bot is not replying and the portal is read-only. Contact support to resolve this.`, data: { action: 'suspended' } });
     return reply.send({ ok: true, status: 'suspended' });
+  });
+
+  // ── P7 (FR-P7.5): invoices and plan changes ──
+  app.get('/api/v1/platform/invoices', async (_req, reply) => {
+    const [invoices, requests] = await Promise.all([
+      db.from('invoices').select('id, merchant_id, plan, period_start, period_end, amount_paisa, status, reference, claimed_at, created_at, merchants(business_name)').eq('status', 'due').order('created_at', { ascending: true }).limit(200),
+      db.from('subscriptions').select('id, merchant_id, plan, status, requested_plan, current_period_end, trial_ends_at, merchants(business_name)').not('requested_plan', 'is', null).limit(200),
+    ]);
+    const name = (r: { merchants?: { business_name?: string } | null }) => r.merchants?.business_name ?? null;
+    return reply.send({
+      invoices: (invoices.data ?? []).map((i) => ({ ...i, merchants: undefined, businessName: name(i as { merchants?: { business_name?: string } | null }) })),
+      requests: (requests.data ?? []).map((s) => ({ ...s, merchants: undefined, businessName: name(s as { merchants?: { business_name?: string } | null }) })),
+    });
+  });
+
+  app.post('/api/v1/platform/invoices/:id/paid', async (req, reply) => {
+    const r = await markInvoicePaid(db, (req.params as { id: string }).id, req.platformCtx!.authUserId);
+    if (r.ok) return reply.send(r);
+    return reply.code(r.status).send({ error: { code: r.status === 404 ? 'NOT_FOUND' : 'CONFLICT', message: r.message } });
+  });
+
+  /** Change a shop's plan; the price applies from the next invoice. Clears any pending request. */
+  app.post('/api/v1/platform/merchants/:id/plan', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const plan = (req.body as { plan?: unknown } | undefined)?.plan;
+    if (!isPlan(plan)) return reply.code(400).send({ error: { code: 'BAD', message: 'plan must be pilot, basic or pro' } });
+    const { data: s } = await db.from('subscriptions').update({ plan, requested_plan: null, updated_at: new Date().toISOString() }).eq('merchant_id', id).select('id').maybeSingle();
+    if (!s) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'no subscription for that shop' } });
+    await db.from('merchants').update({ plan }).eq('id', id);
+    await db.from('audit_log').insert({ merchant_id: id, actor: 'platform', user_id: req.platformCtx!.authUserId, action: 'plan_changed', entity: 'subscription', entity_id: s.id, diff: { plan } });
+    await notify(db, id, { type: 'system', title: `Your plan is now ${PLANS[plan].label}`, body: `Up to ${PLANS[plan].conversations.toLocaleString('en-PK')} conversations a month. The new price applies from your next invoice.`, data: { action: 'plan_changed', plan } });
+    return reply.send({ ok: true, plan });
   });
 
   app.post('/api/v1/platform/merchants/:id/unsuspend', async (req, reply) => {

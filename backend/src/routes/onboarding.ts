@@ -7,7 +7,7 @@ import { logger } from '../lib/logger';
 import { getServiceClient } from '../lib/supabase';
 import { forbid, isManager, requireMerchant } from '../lib/auth';
 import { computeReadiness } from '../lib/readiness';
-import { invalidProfileField, invalidZoneField } from '../lib/validation';
+import { IMAGE_TYPES, invalidProfileField, invalidZoneField } from '../lib/validation';
 import { validBusinessHours } from '../lib/hours';
 import { isPakistaniMobile, phoneDigits } from '../lib/phone';
 import { MAX_IMAGE_BYTES, productImageUrl } from '../lib/images';
@@ -55,6 +55,7 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
     if (await duplicateArea(mid, b.area_name as string)) return reply.code(409).send({ error: { code: 'DUPLICATE', message: 'That area is already in the list' } });
     const row = { merchant_id: mid, is_serviceable: true, ...pick(b) };
     const { data, error } = await db.from('delivery_zones').insert(row).select(ZONE_COLS).single();
+    if (error?.code === '23505') return reply.code(409).send({ error: { code: 'DUPLICATE', message: 'That area is already in the list' } }); // the index (0018) caught a race
     if (error || !data) return reply.code(400).send({ error: { code: 'DB', message: error?.message ?? 'could not save' } });
     return reply.send({ zone: data });
   });
@@ -71,7 +72,10 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
     if (typeof b.area_name === 'string' && (await duplicateArea(mid, b.area_name, id))) {
       return reply.code(409).send({ error: { code: 'DUPLICATE', message: 'That area is already in the list' } });
     }
-    const { data, error } = await db.from('delivery_zones').update(pick(b)).eq('id', id).eq('merchant_id', mid).select(ZONE_COLS).single();
+    const patch = pick(b);
+    if (!Object.keys(patch).length) return reply.code(400).send({ error: { code: 'BAD', message: 'nothing to change' } });
+    const { data, error } = await db.from('delivery_zones').update(patch).eq('id', id).eq('merchant_id', mid).select(ZONE_COLS).single();
+    if (error?.code === '23505') return reply.code(409).send({ error: { code: 'DUPLICATE', message: 'That area is already in the list' } });
     if (error || !data) return reply.code(400).send({ error: { code: 'DB', message: error?.message ?? 'could not save' } });
     return reply.send({ zone: data });
   });
@@ -82,7 +86,8 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
     const { id } = req.params as { id: string };
     const cur = await db.from('delivery_zones').select('id').eq('id', id).eq('merchant_id', mid).maybeSingle();
     if (!cur.data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'delivery zone not found' } });
-    await db.from('delivery_zones').delete().eq('id', id).eq('merchant_id', mid);
+    const { error } = await db.from('delivery_zones').delete().eq('id', id).eq('merchant_id', mid);
+    if (error) return reply.code(400).send({ error: { code: 'DB', message: error.message } });
     return reply.send({ ok: true });
   });
 
@@ -93,6 +98,7 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
     if (!isManager(req.merchantCtx!)) return forbid(reply);
     const mid = req.merchantCtx!.merchantId;
     const b = (req.body ?? {}) as Record<string, unknown>;
+    if (!Object.keys(b).length) return reply.code(400).send({ error: { code: 'BAD', message: 'nothing to change' } });
     const bad = invalidProfileField(b);
     if (bad) return reply.code(400).send({ error: { code: 'BAD', message: `${bad} is missing or invalid` } });
     if ('businessHours' in b && !validBusinessHours(b.businessHours)) return reply.code(400).send({ error: { code: 'BAD', message: 'businessHours is invalid: { mon: { open: "10:00", close: "22:00" } | { closed: true }, … }' } });
@@ -120,18 +126,21 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
     if (!isManager(req.merchantCtx!)) return forbid(reply);
     const mid = req.merchantCtx!.merchantId;
     const b = (req.body ?? {}) as { dataBase64?: string; contentType?: string };
-    if (!b.dataBase64 || !b.contentType?.startsWith('image/')) return reply.code(400).send({ error: { code: 'BAD', message: 'dataBase64 and image contentType required' } });
+    const ext = b.contentType ? IMAGE_TYPES[b.contentType] : undefined;
+    if (!b.dataBase64 || !ext) return reply.code(400).send({ error: { code: 'BAD', message: 'dataBase64 and a png, jpeg or webp contentType required' } });
     const buf = Buffer.from(b.dataBase64, 'base64');
     if (buf.length > MAX_IMAGE_BYTES) return reply.code(400).send({ error: { code: 'TOO_BIG', message: 'image over 5MB' } });
-    const ext = b.contentType.includes('png') ? 'png' : b.contentType.includes('webp') ? 'webp' : 'jpg';
-    // A new key each time, so a cached old logo never shows after a change.
+    // A new key each time, so a cached old logo never shows after a change; the old file is removed (review P2-5).
     const key = `merchants/${mid}/logo-${crypto.randomUUID().slice(0, 8)}.${ext}`;
     const cfg = loadConfig();
     const up = await db.storage.from(cfg.STORAGE_BUCKET_PRODUCT_IMAGES).upload(key, buf, { contentType: b.contentType, upsert: true });
     if (up.error) return reply.code(500).send({ error: { code: 'STORAGE', message: up.error.message } });
     const logoUrl = productImageUrl(cfg.SUPABASE_URL, key);
+    const prev = await db.from('merchants').select('logo_url').eq('id', mid).maybeSingle();
     const { error } = await db.from('merchants').update({ logo_url: logoUrl }).eq('id', mid);
     if (error) return reply.code(400).send({ error: { code: 'DB', message: error.message } });
+    const oldKey = typeof prev.data?.logo_url === 'string' ? prev.data.logo_url.split('/object/public/product-images/')[1] : undefined;
+    if (oldKey && oldKey !== key) await db.storage.from(cfg.STORAGE_BUCKET_PRODUCT_IMAGES).remove([oldKey]).catch(() => undefined);
     return reply.send({ logoUrl });
   });
 }

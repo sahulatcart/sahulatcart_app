@@ -25,21 +25,23 @@ export default function DeliveryZones({ s, onChange }: { s: DeliverySettings; on
   });
   const [busy, setBusy] = useState<string | null>(null);
 
-  async function run(key: string, req: Promise<Response>, ok: string) {
+  async function run(key: string, req: Promise<Response>, ok: string): Promise<boolean> {
     setBusy(key);
     try {
       const r = await req;
-      if (!r.ok) return toast(await apiError(r), 'error');
+      if (!r.ok) { toast(await apiError(r), 'error'); return false; }
       toast(ok, 'success');
       await onChange();
+      return true;
     } finally { setBusy(null); }
   }
 
   async function addZone(e: React.FormEvent) {
     e.preventDefault();
     if (zone.area_name.trim().length < 2) return toast('Enter the area name', 'error');
-    await run('add', api('/api/v1/admin/delivery-zones', { method: 'POST', body: JSON.stringify({ area_name: zone.area_name, city: zone.city, charge: rupees(zone.charge), eta_text: zone.eta_text }) }), 'Area added');
-    setZone({ area_name: '', city: '', charge: '', eta_text: '' });
+    if (zone.charge.trim() === '' || !Number.isFinite(Number(zone.charge)) || Number(zone.charge) < 0) return toast('Enter the delivery charge (0 for free)', 'error'); // review P2-15: a blank is not Rs 0
+    const ok = await run('add', api('/api/v1/admin/delivery-zones', { method: 'POST', body: JSON.stringify({ area_name: zone.area_name, city: zone.city, charge: rupees(zone.charge), eta_text: zone.eta_text }) }), 'Area added');
+    if (ok) setZone({ area_name: '', city: '', charge: '', eta_text: '' }); // keep the form after a 409 so the typing is not lost
   }
   const toggle = (z: Zone) => run(z.id, api(`/api/v1/admin/delivery-zones/${z.id}`, { method: 'PATCH', body: JSON.stringify({ is_serviceable: !z.is_serviceable }) }), z.is_serviceable ? `${z.area_name}: not serviceable` : `${z.area_name}: serviceable`);
   const remove = (z: Zone) => run(z.id, api(`/api/v1/admin/delivery-zones/${z.id}`, { method: 'DELETE' }), 'Area removed');
@@ -62,7 +64,7 @@ export default function DeliveryZones({ s, onChange }: { s: DeliverySettings; on
                 <td className="num">{rs(z.charge)}</td>
                 <td>{z.eta_text ?? '—'}</td>
                 <td><label className="switch"><input type="checkbox" aria-label={`${z.area_name} serviceable`} checked={z.is_serviceable} disabled={busy === z.id} onChange={() => toggle(z)} /><span className="track" /></label></td>
-                <td><button type="button" className="btn subtle icon-btn sm" aria-label={`Remove ${z.area_name}`} disabled={busy === z.id} onClick={() => remove(z)}><Trash2 /></button></td>
+                <td><button type="button" className="btn subtle icon-btn sm" aria-label={`Remove ${z.area_name}`} disabled={busy === z.id} onClick={() => remove(z)}><Trash2 aria-hidden /></button></td>
               </tr>
             ))}
           </tbody>

@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertCircle, ArrowRight, Eye, EyeOff, Loader2, MailCheck } from 'lucide-react';
 import { checkSignup, signUp } from '../../lib/api';
@@ -18,6 +18,9 @@ export default function SignupPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [done, setDone] = useState<'sent' | 'closed' | null>(null);
+  // Review P1-9: while sign-up is closed, say so before the form, not after seven fields.
+  const [open, setOpen] = useState<boolean | null>(null);
+  useEffect(() => { fetch('/api/v1/config').then((r) => r.json()).then((c: { signupOpen?: boolean }) => setOpen(c.signupOpen === true)).catch(() => setOpen(null)); }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -74,6 +77,12 @@ export default function SignupPage() {
   return (
     <AuthLayout title="Create your shop" hint="Free to start. Your bot stays off until you finish setting up.">
       <form onSubmit={submit} noValidate>
+        {open === false && (
+          <p className="hint" role="note" style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <AlertCircle aria-hidden style={{ flex: 'none', width: 18, height: 18, marginTop: 2 }} />
+            <span>{PRODUCT_NAME} is in private pilot: only invited emails can open a shop right now. <a href={`${siteUrl}/demo.html`}>Book a demo</a> to be invited.</span>
+          </p>
+        )}
         {err && <div className="form-error" role="alert"><AlertCircle aria-hidden />{err}</div>}
         <div className="field">
           <label htmlFor="email">Email</label>
@@ -84,7 +93,7 @@ export default function SignupPage() {
           <div className="input-affix">
             <input id="password" type={show ? 'text' : 'password'} autoComplete="new-password" minLength={8} value={f.password} onChange={(e) => set('password', e.target.value)} required style={{ paddingRight: 48 }} />
             <button type="button" className="btn subtle icon-btn sm affix-btn" onClick={() => setShow((v) => !v)} aria-label={show ? 'Hide password' : 'Show password'} aria-pressed={show}>
-              {show ? <EyeOff /> : <Eye />}
+              {show ? <EyeOff aria-hidden /> : <Eye aria-hidden />}
             </button>
           </div>
           <div className="help">At least 8 characters.</div>

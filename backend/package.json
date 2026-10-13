@@ -15,6 +15,8 @@
     "@anthropic-ai/sdk": "^0.32.1",
     "@app/shared": "*",
     "@fastify/helmet": "^11.1.1",
+    "@fastify/rate-limit": "^9.1.0",
+    "@sentry/node": "^11.7.0",
     "@supabase/supabase-js": "^2.45.4",
     "fastify": "^4.28.1",
     "pdfkit": "^0.15.1",

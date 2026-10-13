@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Bell, Clock, Gauge, MessageSquare, Package, ShoppingBag, Sparkles, Truck, Wallet } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Bell, Clock, Gauge, MessageSquare, Package, ShoppingBag, Sparkles, Truck, Wallet } from 'lucide-react';
 import AppShell, { EmptyState, PageHead, PaymentPill, StatusPill } from '../components/AppShell';
 import { apiJson, rs } from '../lib/api';
 import { enablePush, pushState } from '../lib/push';
@@ -16,17 +16,20 @@ interface Dash {
 export default function Dashboard() {
   const [d, setD] = useState<Dash | null>(null);
   // FR-P2.4: the card shows until every readiness check passes AND the bot is on; it links to the first open step.
-  const [setup, setSetup] = useState<{ done: number; next: string | null; ready: boolean } | null>(null);
+  const [setup, setSetup] = useState<{ done: number; next: string | null; ready: boolean; botOn: boolean } | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
+  // P7: an unpaid invoice or a used-up allowance puts the bot in hand-over mode; say so here, with the way out.
+  const [billing, setBilling] = useState<{ mode: string; reason: string | null } | null>(null);
   useEffect(() => {
     apiJson<Dash>('/api/v1/admin/dashboard').then(setD).catch(() => {});
+    apiJson<{ mode: string; reason: string | null }>('/api/v1/admin/billing').then(setBilling).catch(() => {});
     apiJson<Usage>('/api/v1/admin/usage').then(setUsage).catch(() => {});
     Promise.all([
       apiJson<{ ready: boolean; failing: string[] }>('/api/v1/admin/readiness'),
       apiJson<{ merchant: { settings?: { botEnabled?: boolean } } }>('/api/v1/admin/me'),
     ]).then(([r, me]) => {
-      const botOn = me.merchant?.settings?.botEnabled === true;
-      setSetup(r.ready && botOn ? null : { done: 7 - r.failing.length, next: r.failing[0] ?? null, ready: r.ready });
+      const botOn = me.merchant?.settings?.botEnabled !== false; // missing means on, as the backend reads it (review P2-12)
+      setSetup(r.ready && botOn ? null : { done: 7 - r.failing.length, next: r.failing[0] ?? null, ready: r.ready, botOn });
     }).catch(() => {});
   }, []);
 
@@ -43,13 +46,25 @@ export default function Dashboard() {
       <PageHead title="Dashboard" sub="Your shop at a glance — today, in Pakistan time" />
 
       <PushNudge />
+      {billing?.mode === 'handoff' && (
+        <div className="callout" role="status">
+          <div className="row" style={{ flexWrap: 'nowrap' }}>
+            <div className="ico"><AlertTriangle aria-hidden /></div>
+            <div>
+              <div className="strong">{billing.reason === 'limit' ? 'The bot is handing chats to you: this month\'s conversation allowance is used up' : 'The bot is handing chats to you: an invoice is unpaid'}</div>
+              <div className="hint">Every message is still stored and you can reply from the inbox. {billing.reason === 'limit' ? 'Ask for a bigger plan, or wait for the month to reset.' : 'Pay the invoice and enter the transfer reference to restore selling.'}</div>
+            </div>
+          </div>
+          <Link href="/billing" className="btn">Open billing <ArrowRight aria-hidden /></Link>
+        </div>
+      )}
       {setup && (
         <div className="callout">
           <div className="row" style={{ flexWrap: 'nowrap' }}>
             <div className="ico"><Sparkles aria-hidden /></div>
             <div>
-              <div className="strong">{setup.ready ? 'Everything is set — switch the bot on' : 'Finish setting up your shop'}</div>
-              <div className="hint">{setup.ready ? 'All seven steps are done. Go live and the bot starts selling.' : `${setup.done} of 7 steps done. The bot stays off until all seven are.`}</div>
+              <div className="strong">{setup.ready ? 'Everything is set — switch the bot on' : setup.botOn ? 'Your bot is live; finish setting up' : 'Finish setting up your shop'}</div>
+              <div className="hint">{setup.ready ? 'All seven steps are done. Go live and the bot starts selling.' : setup.botOn ? `${setup.done} of 7 steps done. Finish them so you can pause and resume the bot safely.` : `${setup.done} of 7 steps done. The bot stays off until all seven are.`}</div>
             </div>
           </div>
           <Link href={setup.next ? `/onboarding?step=${setup.next}` : '/onboarding'} className="btn">{setup.ready ? 'Go live' : 'Continue setup'} <ArrowRight aria-hidden /></Link>

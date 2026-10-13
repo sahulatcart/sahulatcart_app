@@ -15,7 +15,7 @@
     "dev:admin": "npm run dev -w @app/admin",
     "typecheck": "npm run typecheck -w @app/shared && npm run typecheck -w @app/backend",
     "db:migrate": "node --env-file=.env db/migrate.mjs",
-    "lint": "echo \"(lint not configured yet)\""
+    "lint": "npm run lint -w @app/admin"
   },
   "engines": {
     "node": ">=22"

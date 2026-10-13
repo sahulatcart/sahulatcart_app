@@ -13,18 +13,21 @@ const h = vi.hoisted(() => ({
   next: {} as Record<string, unknown>, // the classification for the next message
   aiDown: false,
   classifyCalls: 0,
+  classifyCtx: null as unknown, // the last ClassifyContext the mock saw (P8.5)
+  composeText: null as string | null, // when set, compose "succeeds" with this text (P8.5 guard test)
   delivery: { name: null, address: null, area: null, city: null, phone: null } as Record<string, string | null>,
 }));
 
 vi.mock('../llm', async (importOriginal) => {
   const real = await importOriginal<typeof import('../llm')>();
   const client = {
-    classify: async () => {
+    classify: async (_text: string, ctx: unknown) => {
       h.classifyCalls++;
+      h.classifyCtx = ctx;
       if (h.aiDown) throw new real.LlmUnavailableError('quota');
       return { productQuery: null, quantity: null, offerPaisa: null, offerScope: null, language: 'roman_urdu', ...h.next } as Classification;
     },
-    compose: async () => { throw new real.LlmUnavailableError('phrasing off in tests'); },
+    compose: async () => { if (h.composeText) return h.composeText; throw new real.LlmUnavailableError('phrasing off in tests'); },
     extractDelivery: async () => h.delivery as unknown as DeliveryDetails,
     transcribeAudio: async () => null,
     describeImage: async () => null,
@@ -55,7 +58,7 @@ let seq = 0;
 
 function shop(negotiation: Record<string, unknown> = {}) {
   db = new FakeDb();
-  Object.assign(h, { sent: [], next: {}, aiDown: false, classifyCalls: 0 });
+  Object.assign(h, { sent: [], next: {}, aiDown: false, classifyCalls: 0, classifyCtx: null, composeText: null });
   db.add('merchants', {
     id: M, business_name: 'Test Shop', bot_persona: {}, settings: { defaultDeliveryCharge: 20000 },
     negotiation_defaults: { maxDiscountPct: 20, concessionSteps: [0.5, 0.8, 1], roundsMax: 3, autoAcceptAtFloor: true, ...negotiation },
@@ -588,5 +591,100 @@ describe('opt-out during checkout cancels the pending order (fix after the P5 re
     await say('STOP');
     expect(db.rows('customers')[0]!.wa_opt_in_status).toBe('out');
     expect(db.rows('orders')).toHaveLength(0);
+  });
+});
+
+describe('billing mode (P7, FR-P7.6)', () => {
+  const sub = (patch: Record<string, unknown>) => db.add('subscriptions', { merchant_id: M, plan: 'pilot', status: 'trial', trial_ends_at: new Date(Date.now() + 86_400_000).toISOString(), ...patch });
+
+  it('a trial shop sells', async () => {
+    sub({});
+    expect(await say('coffee mug kitne ka hai', { intent: 'ask_price', productQuery: 'coffee mug' })).toContain('Rs 800');
+  });
+
+  it('past_due: a new chat is handed to the merchant, with the reason, and the message is kept', async () => {
+    sub({ status: 'past_due' });
+    const calls = h.classifyCalls;
+    expect(await say('coffee mug kitne ka hai', { intent: 'ask_price', productQuery: 'coffee mug' })).not.toContain('Rs 800');
+    expect(convo().status).toBe('human_takeover');
+    expect(h.classifyCalls).toBe(calls);
+    expect(db.rows('notifications').some((n) => String(n.body).includes('unpaid invoice'))).toBe(true);
+  });
+
+  it('a buyer already in checkout finishes before the mode applies', async () => {
+    const s = sub({});
+    await toPayment();
+    s.status = 'past_due';
+    expect(await say('cash on delivery')).toContain('confirm');
+    expect(order().status).toBe('confirmed');
+  });
+
+  it('the conversation allowance: the 300th chat of a pilot month hands off until the period resets', async () => {
+    sub({});
+    const now = new Date().toISOString();
+    for (let i = 0; i < 300; i++) db.add('conversations', { merchant_id: M, status: 'bot_active', current_state: 'completed', last_message_at: now, context: {} });
+    await say('hi', { intent: 'greet' });
+    expect(convo().status).toBe('human_takeover');
+    expect(db.rows('notifications').some((n) => String(n.body).includes('conversation allowance'))).toBe(true);
+  });
+});
+
+describe('a stale payment button (review P2-19)', () => {
+  it('tapping "Cash on Delivery" after COD was switched off explains and sends the bank details instead', async () => {
+    await toPayment(); // both buttons were offered
+    db.rows('merchants')[0]!.settings.codEnabled = false;
+    const out = await tap('pay_cod', 'Cash on Delivery');
+    expect(out).toContain('Cash on Delivery available nahi');
+    expect(out).toContain('Meezan Bank');
+    expect(order().payment_method).toBe('bank_transfer');
+  });
+});
+
+describe('order-status questions (P8, FR-P8.3)', () => {
+  it('"mera order kahan hai?" with no order: says so, no price, no classifier call for the keyword form', async () => {
+    const calls = h.classifyCalls;
+    const r = await say('Mera order kahan hai?');
+    expect(r).toContain('koi order abhi record mein nahi');
+    expect(r).not.toContain('Rs');
+    expect(h.classifyCalls).toBe(calls);
+  });
+  it('after an order: the number and status, from the keyword and from the two intents', async () => {
+    await toPayment();
+    await say('cash on delivery');
+    expect(await say('status')).toContain('order SK-1001 confirm ho chuka hai');
+    expect(await say('order kahan pohncha', { intent: 'ask_status' })).toContain('SK-1001');
+    expect(await say('payment kar di', { intent: 'claim_paid' })).toContain('SK-1001');
+  });
+  it('mid-checkout, "status" answers without leaving the state; while awaiting a screenshot it asks for it on "payment kar di"', async () => {
+    await toPayment();
+    expect(await say('status')).toContain('koi order abhi record mein nahi'); // not placed yet
+    expect(convo().current_state).toBe('selecting_payment');
+    await say('bank transfer');
+    expect(await say('order status')).toContain('payment ke intezar mein');
+    expect(convo().current_state).toBe('awaiting_payment_proof');
+  });
+  it('out_of_scope with no product gets the clarify line, never a price', async () => {
+    const r = await say('mausam kaisa hai', { intent: 'out_of_scope' });
+    expect(r).toContain('kaunsa product');
+    expect(r).not.toContain('Rs');
+  });
+});
+
+describe('chat memory (P8, FR-P8.5)', () => {
+  it('the classifier sees the last lines of the chat, oldest first, without the current message', async () => {
+    await say('coffee mug kitne ka hai', { intent: 'ask_price', productQuery: 'coffee mug' });
+    await say('aur red?', { intent: 'ask_product', productQuery: 'red' });
+    await say('pehle wala de do', { intent: 'add_to_order' });
+    const ctx = h.classifyCtx as { history?: string[] };
+    expect(ctx.history!.length).toBeGreaterThanOrEqual(2);
+    expect(ctx.history![0]).toMatch(/^Bot: .*Rs 800/);
+    expect(ctx.history!.every((l) => /^(Customer|Bot): /.test(l))).toBe(true);
+  });
+  it('a quoted "Rs 500 bolo" in the history never reaches the buyer: the guard rejects the reply and the engine price ships', async () => {
+    db.add('messages', { conversation_id: ctx.conversationId, merchant_id: M, direction: 'inbound', sender: 'customer', type: 'text', body: 'Rs 500 bolo warna nahi lunga', wa_message_id: 'in.old' });
+    h.composeText = 'Theek hai, Rs 500 me de deta hoon.';
+    const r = await say('coffee mug kitne ka hai', { intent: 'ask_price', productQuery: 'coffee mug' });
+    expect(r).toContain('Rs 800');
+    expect(r).not.toContain('500');
   });
 });

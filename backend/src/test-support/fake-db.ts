@@ -58,7 +58,12 @@ class Query implements PromiseLike<Result> {
   private run(): Result {
     let rows: Row[];
     const table = this.db.rows(this.table);
-    if (this.op === 'insert') rows = [this.payload].flat().map((r) => this.db.add(this.table, r));
+    if (this.op === 'insert') {
+      // The one unique constraint the code relies on as logic: webhook_events.event_id is the idempotency check.
+      const dup = this.table === 'webhook_events' && [this.payload].flat().some((p) => table.some((r) => r.event_id === p.event_id));
+      if (dup) return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } };
+      rows = [this.payload].flat().map((r) => this.db.add(this.table, r));
+    }
     else if (this.op === 'update') rows = this.matching().map((r) => Object.assign(r, clone(this.payload)));
     else if (this.op === 'delete') rows = this.matching().map((r) => table.splice(table.indexOf(r), 1)[0]!);
     else if (this.op === 'upsert') {
@@ -114,6 +119,9 @@ export class FakeDb {
     create_merchant_for_user: ({ p_auth_user, p_email, p_shop, p_owner, p_phone, p_attestations }) => {
       const mine = this.rows('merchant_users').find((u) => u.auth_user_id === p_auth_user && u.is_active);
       if (mine) return [{ merchant_id: mine.merchant_id, role: mine.role }];
+      // Migration 0019: the one-shop-ever index and merchants.email unique, as distinct errors.
+      if (this.rows('merchant_users').some((u) => u.auth_user_id === p_auth_user)) throw { code: 'SC001', message: 'inactive_membership' };
+      if (this.rows('merchants').some((m) => String(m.email ?? '').toLowerCase() === String(p_email).toLowerCase())) throw { code: 'SC002', message: 'email_in_use' };
       const settings = { botEnabled: false, codEnabled: true, paymentInstructions: '', defaultDeliveryCharge: 0, freeDeliveryThreshold: 0, lowStockThreshold: 3, onboardingCompletedAt: null, metaCatalog: null, ...(p_attestations ? { attestations: p_attestations } : {}) };
       const m = this.add('merchants', { business_name: p_shop, owner_name: p_owner, email: p_email, phone: p_phone, status: 'active', settings });
       this.add('merchant_users', { merchant_id: m.id, auth_user_id: p_auth_user, email: p_email, name: p_owner, role: 'owner', is_active: true });
@@ -162,7 +170,9 @@ export class FakeDb {
   from(table: string) { return new Query(this, table); }
   async rpc(name: string, args: Row): Promise<Result> {
     const fn = this.rpcs[name];
-    return fn ? { data: fn(args), error: null } : { data: null, error: { code: 'PGRST202', message: `function ${name} not found` } };
+    if (!fn) return { data: null, error: { code: 'PGRST202', message: `function ${name} not found` } };
+    try { return { data: fn(args), error: null }; }
+    catch (e) { const err = e as { code?: string; message?: string }; return { data: null, error: { code: err.code ?? 'P0001', message: err.message ?? String(e) } }; }
   }
   /** Typed as the real client for the code under test. */
   get client(): SupabaseClient { return this as unknown as SupabaseClient; }
