@@ -4,8 +4,11 @@ import webpush from 'web-push';
 import { loadConfig } from '../config';
 import { logger } from './logger';
 
-export interface PushPayload { title: string; body: string; url: string }
+export interface PushPayload { id?: string; title: string; body: string; url: string }
 export interface PushTarget { endpoint: string; p256dh: string; auth: string }
+
+/** Push services reject payloads over ~4 KB; a buyer's message can be long, the lock screen shows one line anyway. */
+const MAX_BODY = 300;
 
 export function isPushConfigured(): boolean {
   const cfg = loadConfig();
@@ -25,7 +28,9 @@ export async function sendPush(target: PushTarget, payload: PushPayload): Promis
   if (!isPushConfigured()) return 'failed';
   ensureVapid();
   try {
-    await webpush.sendNotification({ endpoint: target.endpoint, keys: { p256dh: target.p256dh, auth: target.auth } }, JSON.stringify(payload), { TTL: 60 * 60 });
+    const body = payload.body.length > MAX_BODY ? `${payload.body.slice(0, MAX_BODY - 1)}…` : payload.body;
+    // A day's TTL so a phone that is off still gets it; high urgency so Android Doze does not hold it.
+    await webpush.sendNotification({ endpoint: target.endpoint, keys: { p256dh: target.p256dh, auth: target.auth } }, JSON.stringify({ ...payload, body }), { TTL: 24 * 60 * 60, urgency: 'high' });
     return 'ok';
   } catch (e) {
     const code = (e as { statusCode?: number }).statusCode;

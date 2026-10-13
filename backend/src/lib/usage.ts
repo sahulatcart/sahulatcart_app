@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { loadConfig } from '../config';
 import { LlmUnavailableError } from '../llm/types';
 import { logger } from './logger';
+import { notify } from './notify';
 
 /**
  * The message meter and the AI budget (SRS-Fazal M5).
@@ -71,15 +72,13 @@ export async function bumpUsage(
 async function warnQuota(db: SupabaseClient, merchantId: string, threshold: number): Promise<void> {
   const full = threshold >= FREE_QUOTA;
   const rate = `Rs ${Math.round(loadConfig().META_UTILITY_RATE_PAISA / 100)}`;
-  await db.from('notifications').insert({
-    merchant_id: merchantId,
+  await notify(db, merchantId, {
     type: 'system',
     title: full ? 'Free WhatsApp messages used up for this month' : `${Math.round((threshold / FREE_QUOTA) * 100)}% of free WhatsApp messages used`,
     body: full
       ? `Every message from now until the 1st costs about ${rate} (Meta's rate). Settings → Messages lets you keep going or switch the bot to hand-over-only.`
       : `${threshold} of ${FREE_QUOTA} free messages sent this month. After ${FREE_QUOTA}, each one costs about ${rate}.`,
     data: { action: 'usage', threshold, month: periodMonth() },
-    channel: 'portal',
   });
 }
 

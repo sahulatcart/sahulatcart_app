@@ -7,6 +7,58 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — P3 review fixes (Fazal's review of 13 Oct, items 1–16), merged with main
+
+`feat/p3-alerts` was merged with `main` (the go-live fix, the admin build fix, M5), then the
+review's P3 items were applied before the merge into `main`:
+
+- **`ADMIN_ORIGIN` is optional again** with the fallback in `portalOrigin()` (config.ts). It has
+  existed on Railway since the CORS days; a required `.url()` would have turned a stale value into
+  a boot failure.
+- **Resend is listed as a sub-processor** in `site/privacy.html` §7, since alert emails carry the
+  buyer's name and, for an undeliverable message, its text. The policy promises not to add one
+  silently, so this goes in before `RESEND_API_KEY` is set.
+- **Manager-only, everywhere.** All alert routes now `isManager()`; staff were able to save prefs
+  and register devices that could never fire. `POST /notifications/test` has a 30 s cooldown per
+  member and channel (in-memory), so a looped tab cannot burn the shared Resend quota (100/day free).
+- **Push endpoints are allow-listed**: only `fcm.googleapis.com`, `*.push.services.mozilla.com`,
+  `*.push.apple.com` and `*.notify.windows.com` over https, ≤1024 chars, keys ≤256 — the previous
+  "any https URL" was a small reflector through `/test`. A device already registered to another
+  shop is refused (403) instead of silently re-homed by the upsert.
+- **Each alert gets its own notification** on the lock screen: the payload carries the row `id` and
+  the service worker tags with it (`renotify: true`). Before, every handoff tagged `/inbox` and a
+  second "Bot needs help" replaced the first.
+- **Queued digests survive a deploy**: `flushPendingDigests()` is awaited in the SIGTERM handler
+  after `drainWebhooks()`. The 5-minute timer was `unref`'d, so up to five minutes of emails died
+  with the process.
+- **Push payload**: body cut to 300 chars (push services reject >4 KB; the window-closed notice
+  embeds the buyer's message), `TTL: 86400`, `urgency: 'high'` (Android Doze held the 1 h/normal one).
+- **Logging out forgets this device's subscription** before `signOut()`, so on a shared phone the
+  next person does not keep getting this shop's orders.
+- **Real icons**: 192/512 PNGs and a monochrome 96 px badge were generated from
+  `site/assets/logo-1024.png` with .NET's `System.Drawing` from PowerShell (there is no image
+  tooling in the repo; this is the Windows equivalent of `sips`). Android drew the colour icon as a
+  white square in the status bar; the badge is a white silhouette.
+- Nits: generic DB error messages (the raw Postgres text was returned), `NotificationType` imported
+  from `@app/shared`, `test()` has a catch and the channel switches are disabled when the server
+  lacks that channel, `focus().then(navigate).catch(openWindow)` in the worker, "1 new notification".
+- **M5's one direct `notifications` insert** (`lib/usage.ts` `warnQuota`) was switched to
+  `notify()` here rather than in a later M5 rebase, since `notify()` exists on this branch; usage
+  alerts lead to `/settings/messages`.
+
+**What fought back.** The merge conflicted only on the changelog and the dashboard's icon import.
+After it, the backend typecheck lost `@fastify/helmet` and vitest died with
+`ENOTDIR: mkdir backend/node_modules`: commit `9ad4a96` on `main` had added `backend/node_modules`
+to git as a **symlink** to a path on Fazal's Mac (`.gitignore` has `node_modules/`, but a forced add
+bypasses it). Windows checks a symlink out as a 67-byte text file, so npm could not create the
+nested `backend/node_modules` directory where the lockfile puts helmet. Removed from git here;
+`npm install` then rebuilt the tree. If a checkout ever shows `backend/node_modules` as a file,
+that is why.
+`next build` is now part of the pre-push check (Fazal's rule after #21 broke the admin deploy):
+`cd admin && npm run build`, then `rm -rf admin/.next` so the dev server is not poisoned.
+
+---
+
 ## 2026-10-13 — P3: merchant alerts — `notify()`, Web Push, email, the digest rule
 
 **Outcome** — a merchant no longer has to keep the portal open to learn of an order. Every

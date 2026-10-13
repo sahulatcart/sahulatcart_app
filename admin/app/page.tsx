@@ -118,7 +118,11 @@ export default function Dashboard() {
   );
 }
 
-/** "Turn on phone notifications" (P3): shown once per device while push is possible but not yet on. */
+/**
+ * "Turn on phone notifications" (P3): shown once per device while push is possible but not yet on —
+ * and only when the server has VAPID keys and the viewer is an owner or manager (staff are never
+ * alerted), so nobody is invited to turn on something that cannot fire (review P3-3).
+ */
 function PushNudge() {
   const toast = useToast();
   const [show, setShow] = useState(false);
@@ -127,7 +131,14 @@ function PushNudge() {
     let dismissed = false;
     try { dismissed = localStorage.getItem('sk_push_nudge') === 'off'; } catch { /* storage blocked */ }
     if (dismissed) return;
-    pushState().then((st) => setShow(st === 'available')).catch(() => {});
+    Promise.all([
+      pushState(),
+      fetch('/api/v1/config').then((r) => r.json()) as Promise<{ vapidPublicKey?: string | null }>,
+      apiJson<{ role?: string; isPlatformAdmin?: boolean }>('/api/v1/admin/me'),
+    ]).then(([st, cfg, me]) => {
+      const manager = me.isPlatformAdmin || me.role === 'owner' || me.role === 'manager';
+      setShow(st === 'available' && !!cfg.vapidPublicKey && !!manager);
+    }).catch(() => {});
   }, []);
   if (!show) return null;
   async function enable() {

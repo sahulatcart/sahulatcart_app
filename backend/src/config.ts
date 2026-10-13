@@ -42,7 +42,9 @@ const schema = z.object({
   VAPID_SUBJECT: z.string().default('mailto:support@sahulatcart.com'),
   RESEND_API_KEY: z.string().optional(),
   ALERT_EMAIL_FROM: z.string().default('Sahulatcart <onboarding@resend.dev>'), // Resend's test sender until the domain is verified
-  ADMIN_ORIGIN: z.string().url().default('https://appadmin-production-0a30.up.railway.app'), // links in emails
+  // The portal's origin, for links in alert emails. Optional on purpose: the variable has existed on
+  // Railway since the CORS days, and a stray value must not stop the backend booting (review P3-1).
+  ADMIN_ORIGIN: z.string().url().optional(),
 
   // Self-service signup (P1): closed to all but the allow-list until SIGNUP_OPEN=true.
   SIGNUP_OPEN: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
@@ -92,6 +94,11 @@ export function loadConfig(): Config {
   }
   cached = parsed.data;
   return cached;
+}
+
+/** Where the portal lives, for links the backend writes (alert emails). */
+export function portalOrigin(cfg: Config = loadConfig()): string {
+  return cfg.ADMIN_ORIGIN ?? 'https://appadmin-production-0a30.up.railway.app';
 }
 
 /** Assert a phase's secret group is present (call when enabling that feature). */

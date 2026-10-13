@@ -10,10 +10,12 @@ self.addEventListener('push', function (event) {
   var url = data.url || '/notifications';
   event.waitUntil(self.registration.showNotification(title, {
     body: data.body || '',
-    icon: '/apple-touch-icon.png',
-    badge: '/apple-touch-icon.png',
+    icon: '/icon-192.png',
+    badge: '/badge-96.png', // monochrome: Android draws it as a white silhouette
     data: { url: url },
-    tag: url, // a second alert for the same page replaces the first instead of stacking
+    // One entry per notification (its row id), so a second "Bot needs help" does not replace the first.
+    tag: data.id || (url + ':' + Date.now()),
+    renotify: true,
   }));
 });
 
@@ -23,8 +25,8 @@ self.addEventListener('notificationclick', function (event) {
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (list) {
     for (var i = 0; i < list.length; i++) {
       if (list[i].url.indexOf(self.location.origin) === 0 && 'focus' in list[i]) {
-        list[i].navigate(url);
-        return list[i].focus();
+        // navigate() can reject on an uncontrolled window; fall back to a new one.
+        return list[i].focus().then(function (c) { return c.navigate(url); }).catch(function () { return self.clients.openWindow(url); });
       }
     }
     return self.clients.openWindow(url);

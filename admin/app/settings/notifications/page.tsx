@@ -44,7 +44,8 @@ export default function NotificationSettings() {
       if (!r.ok) return toast(await apiError(r), 'error');
       const j = (await r.json()) as { sent: number };
       toast(j.sent ? (channel === 'push' ? `Sent to ${j.sent} device${j.sent === 1 ? '' : 's'}` : 'Test email sent') : 'Nothing to send to yet', j.sent ? 'success' : 'info');
-    } finally { setBusy(null); }
+    } catch { toast('Could not send the test', 'error'); }
+    finally { setBusy(null); }
   }
 
   const head = <PageHead title="Notifications" sub="How you hear about new orders, payment screenshots and chats handed to you" />;
@@ -62,7 +63,7 @@ export default function NotificationSettings() {
               <div className="t">Phone notifications {!p.channels.push && <Pill kind="neutral">Not set up on the server</Pill>}</div>
               <div className="d">A notification on this phone or computer, even when the portal is closed.</div>
             </div>
-            <label className="switch"><input type="checkbox" aria-label="Phone notifications" checked={p.prefs.push} onChange={(e) => setPref('push', e.target.checked)} /><span className="track" /></label>
+            <label className="switch"><input type="checkbox" aria-label="Phone notifications" checked={p.prefs.push} disabled={!p.channels.push} onChange={(e) => setPref('push', e.target.checked)} /><span className="track" /></label>
           </div>
         </div>
         <div className="card-head" style={{ borderBottom: 0 }}>
@@ -71,7 +72,7 @@ export default function NotificationSettings() {
               <div className="t">Email {!p.channels.email && <Pill kind="neutral">Not set up on the server</Pill>}</div>
               <div className="d">To <span className="mono">{p.email ?? '—'}</span>, the address you signed in with. More than five in five minutes arrive as one digest.</div>
             </div>
-            <label className="switch"><input type="checkbox" aria-label="Email alerts" checked={p.prefs.email} onChange={(e) => setPref('email', e.target.checked)} /><span className="track" /></label>
+            <label className="switch"><input type="checkbox" aria-label="Email alerts" checked={p.prefs.email} disabled={!p.channels.email} onChange={(e) => setPref('email', e.target.checked)} /><span className="track" /></label>
           </div>
         </div>
       </div>

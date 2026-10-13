@@ -3,12 +3,13 @@
 // 2026-10-13: merchant alerts are push and email only). Failures never block the caller: the row
 // is awaited, the channels run in the background with their errors logged.
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { loadConfig } from '../config';
+import type { NotificationType } from '@app/shared';
+import { loadConfig, portalOrigin } from '../config';
 import { logger } from './logger';
 import { isEmailConfigured, renderAlert, renderDigest, sendEmail } from './email';
 import { isPushConfigured, sendPush, type PushPayload } from './push';
 
-export type NotificationType = 'new_order' | 'payment_claim' | 'takeover_request' | 'bot_needs_help' | 'low_stock' | 'template_status' | 'system';
+export type { NotificationType };
 export interface NotifyInput {
   type: NotificationType;
   title: string;
@@ -32,11 +33,13 @@ export function notificationUrl(n: { type: NotificationType; data?: Record<strin
   if (typeof d.orderId === 'string') return `/orders/${d.orderId}`;
   if (typeof d.conversationId === 'string') return '/inbox';
   if (n.type === 'template_status' || d.action === 'reconnect_whatsapp' || typeof d.phoneNumberId === 'string') return '/settings/whatsapp';
+  if (d.action === 'usage') return '/settings/messages';
   return '/notifications';
 }
 
 // ── The digest rule: more than DIGEST_AFTER emails in DIGEST_WINDOW_MS for one merchant → the rest
 // wait and go out as ONE digest when the window closes. In-process state: one backend instance.
+// Shutdown calls flushPendingDigests() so a deploy does not drop what is queued (review P3-7).
 const DIGEST_WINDOW_MS = 5 * 60_000;
 const DIGEST_AFTER = 5;
 interface EmailState { sent: number[]; queued: { title: string; body: string; link: string }[]; timer: NodeJS.Timeout | null; to: string[] }
@@ -51,15 +54,27 @@ export async function notify(db: SupabaseClient, merchantId: string, input: Noti
     .select('id')
     .single();
   if (error) logger.warn({ err: error.message, merchantId, type: input.type }, 'notification row failed');
-  const p = fanOut(db, merchantId, input).catch((e: unknown) => logger.warn({ err: (e as Error).message, merchantId, type: input.type }, 'notification fan-out failed'));
+  const id = (data?.id as string | undefined) ?? null;
+  const p = fanOut(db, merchantId, input, id).catch((e: unknown) => logger.warn({ err: (e as Error).message, merchantId, type: input.type }, 'notification fan-out failed'));
   inflight.add(p);
   void p.finally(() => inflight.delete(p));
-  return (data?.id as string | undefined) ?? null;
+  return id;
 }
 
-/** Tests only: wait for every background delivery started so far. */
+/** Wait for every background delivery started so far (tests, and shutdown). */
 export async function flushNotifications(): Promise<void> {
   await Promise.all([...inflight]);
+}
+
+/** Send every queued digest now, without waiting for its window — called on SIGTERM before exit. */
+export async function flushPendingDigests(): Promise<void> {
+  const ids = [...emailState.keys()];
+  for (const merchantId of ids) {
+    const s = emailState.get(merchantId);
+    if (s?.timer) { clearTimeout(s.timer); s.timer = null; }
+  }
+  await Promise.all(ids.map((id) => flushDigest(id)));
+  await flushNotifications();
 }
 
 /** Tests only: drop the digest timers and counters. */
@@ -70,7 +85,7 @@ export function _resetNotifyState(): void {
 
 interface MemberRow { id: string; email: string | null; role: string; notification_prefs: unknown }
 
-async function fanOut(db: SupabaseClient, merchantId: string, input: NotifyInput): Promise<void> {
+async function fanOut(db: SupabaseClient, merchantId: string, input: NotifyInput, id: string | null): Promise<void> {
   const members = await db.from('merchant_users').select('id, email, role, notification_prefs').eq('merchant_id', merchantId).eq('is_active', true).in('role', ['owner', 'manager']);
   const rows = (members.data ?? []) as MemberRow[];
   if (!rows.length) return;
@@ -78,7 +93,7 @@ async function fanOut(db: SupabaseClient, merchantId: string, input: NotifyInput
   const pushTo = rows.filter((m) => prefsOf(m.notification_prefs).push).map((m) => m.id);
   const emailTo = rows.filter((m) => prefsOf(m.notification_prefs).email && m.email).map((m) => m.email!);
   await Promise.all([
-    pushTo.length ? pushMembers(db, pushTo, { title: input.title, body: input.body, url }) : Promise.resolve(),
+    pushTo.length ? pushMembers(db, pushTo, { id: id ?? undefined, title: input.title, body: input.body, url }) : Promise.resolve(),
     emailTo.length ? emailMembers(merchantId, emailTo, input.title, input.body, url) : Promise.resolve(),
   ]);
 }
@@ -97,7 +112,7 @@ async function pushMembers(db: SupabaseClient, memberIds: string[], payload: Pus
 async function emailMembers(merchantId: string, to: string[], title: string, body: string, url: string): Promise<void> {
   if (!isEmailConfigured()) return;
   const cfg = loadConfig();
-  const link = `${cfg.ADMIN_ORIGIN}${url}`;
+  const link = `${portalOrigin(cfg)}${url}`;
   const now = Date.now();
   const st = emailState.get(merchantId) ?? { sent: [], queued: [], timer: null, to };
   emailState.set(merchantId, st);

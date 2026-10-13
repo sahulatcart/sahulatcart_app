@@ -42,7 +42,7 @@ export function renderAlert(title: string, body: string, link: string, product: 
 
 /** Several notifications folded into one email (the digest rule, FR-P3.4). */
 export function renderDigest(items: { title: string; body: string; link: string }[], product: string): { subject: string; text: string; html: string } {
-  const subject = `${items.length} new notifications — ${product}`;
+  const subject = `${items.length} new notification${items.length === 1 ? '' : 's'} — ${product}`;
   return {
     subject,
     text: `${items.map((i) => `• ${i.title}\n  ${i.body}\n  ${i.link}`).join('\n\n')}\n\n— ${product}`,

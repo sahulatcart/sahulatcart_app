@@ -3,12 +3,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { FakeDb } from '../test-support/fake-db';
 
-const push = vi.hoisted(() => ({ sent: [] as { endpoint: string; title: string }[], result: 'ok' as 'ok' | 'gone' | 'failed', configured: true }));
+const push = vi.hoisted(() => ({ sent: [] as { endpoint: string; title: string; id?: string }[], result: 'ok' as 'ok' | 'gone' | 'failed', configured: true }));
 const mail = vi.hoisted(() => ({ sent: [] as { to: string[]; subject: string }[], ok: true, configured: true, throwOnce: false }));
 
 vi.mock('./push', () => ({
   isPushConfigured: () => push.configured,
-  sendPush: async (t: { endpoint: string }, p: { title: string }) => { push.sent.push({ endpoint: t.endpoint, title: p.title }); return push.result; },
+  sendPush: async (t: { endpoint: string }, p: { title: string; id?: string }) => { push.sent.push({ endpoint: t.endpoint, title: p.title, id: p.id }); return push.result; },
 }));
 vi.mock('./email', async (importOriginal) => {
   const real = await importOriginal<typeof import('./email')>();
@@ -23,7 +23,7 @@ vi.mock('./email', async (importOriginal) => {
   };
 });
 
-import { _resetNotifyState, flushNotifications, notificationUrl, notify, prefsOf } from './notify';
+import { _resetNotifyState, flushNotifications, flushPendingDigests, notificationUrl, notify, prefsOf } from './notify';
 
 const M = 'merchant-1';
 let db: FakeDb;
@@ -114,5 +114,31 @@ describe('notify()', () => {
     // After the digest the merchant gets individual emails again.
     await send('Order 9'); await flushNotifications();
     expect(mail.sent.at(-1)!.subject).toBe('Order 9');
+  });
+});
+
+describe('review fixes (P3-6, P3-7)', () => {
+  it('the push payload carries the row id, so the service worker can give each alert its own tag', async () => {
+    const id = await send();
+    await flushNotifications();
+    expect(push.sent[0]!.id).toBe(id);
+  });
+
+  it('flushPendingDigests() sends what is queued at once — a deploy does not drop five minutes of emails', async () => {
+    vi.useFakeTimers();
+    for (let i = 1; i <= 7; i++) { await send(`Order ${i}`); await flushNotifications(); }
+    expect(mail.sent).toHaveLength(5);
+    await flushPendingDigests();
+    expect(mail.sent).toHaveLength(6);
+    expect(mail.sent[5]!.subject).toBe('2 new notifications — Sahulatcart');
+    await vi.advanceTimersByTimeAsync(5 * 60_000 + 1);
+    expect(mail.sent).toHaveLength(6); // the cancelled timer does not send a second, empty digest
+  });
+
+  it('one queued item is "1 new notification", not "notifications"', async () => {
+    vi.useFakeTimers();
+    for (let i = 1; i <= 6; i++) { await send(`Order ${i}`); await flushNotifications(); }
+    await flushPendingDigests();
+    expect(mail.sent.at(-1)!.subject).toBe('1 new notification — Sahulatcart');
   });
 });
