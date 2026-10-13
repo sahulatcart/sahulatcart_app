@@ -13,13 +13,16 @@ vi.hoisted(() => {
 });
 
 const fake = new FakeDb();
-const USERS: Record<string, { id: string; email: string; user_metadata: Record<string, unknown> }> = {
+const USERS: Record<string, { id: string; email: string; email_confirmed_at?: string | null; user_metadata: Record<string, unknown> }> = {
   'jwt.ali.sig': {
     id: 'user-ali',
     email: 'ali@shop.pk',
+    email_confirmed_at: '2026-10-13T10:00:00Z',
     user_metadata: { shopName: 'Ali Garments', ownerName: 'Ali Raza', phone: '+92 300 1234567', attestations: { noProhibitedGoods: true, optInOnly: true } },
   },
-  'jwt.stranger.sig': { id: 'user-stranger', email: 'stranger@example.com', user_metadata: { shopName: 'X Store', ownerName: 'Xy', phone: '03001112223' } },
+  'jwt.stranger.sig': { id: 'user-stranger', email: 'stranger@example.com', email_confirmed_at: '2026-10-13T10:00:00Z', user_metadata: { shopName: 'X Store', ownerName: 'Xy', phone: '03001112223' } },
+  'jwt.unconfirmed.sig': { id: 'user-unconfirmed', email: 'second@shop.pk', email_confirmed_at: null, user_metadata: { shopName: 'Second Store', ownerName: 'Sana Khan', phone: '03009998877' } },
+  'jwt.second.sig': { id: 'user-second', email: 'second@shop.pk', email_confirmed_at: '2026-10-13T10:00:00Z', user_metadata: { shopName: 'Second Store', ownerName: 'Sana Khan', phone: '03009998877' } },
 };
 
 vi.mock('./supabase', () => ({
@@ -117,10 +120,22 @@ describe('POST /api/v1/signup/bootstrap', () => {
     expect(fake.rows('merchants')).toHaveLength(0);
   });
 
+  it('an unconfirmed email is 401 even on the allow-list (review P1-1)', async () => {
+    const r = await app.inject({ method: 'POST', url: '/api/v1/signup/bootstrap', headers: auth('jwt.unconfirmed.sig') });
+    expect(r.statusCode).toBe(401);
+    expect(fake.rows('merchants')).toHaveLength(0);
+  });
+
+  it('{"email":5} on /signup/check is a plain "not allowed", not a crash (review P1-7)', async () => {
+    const r = await app.inject({ method: 'POST', url: '/api/v1/signup/check', payload: { email: 5 } });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toEqual({ allowed: false });
+  });
+
   it('creates one shop and one owner row for an allow-listed user, with the bot off', async () => {
     const r = await app.inject({ method: 'POST', url: '/api/v1/signup/bootstrap', headers: auth('jwt.ali.sig') });
     expect(r.statusCode).toBe(200);
-    expect(r.json()).toMatchObject({ role: 'owner' });
+    expect(r.json()).toMatchObject({ role: 'owner', existing: false });
     const m = fake.rows('merchants');
     expect(m).toHaveLength(1);
     expect(m[0]).toMatchObject({ business_name: 'Ali Garments', owner_name: 'Ali Raza', email: 'ali@shop.pk', phone: '923001234567', status: 'active' });
@@ -134,11 +149,27 @@ describe('POST /api/v1/signup/bootstrap', () => {
     expect(new Date(fake.rows('subscriptions')[0]!.trial_ends_at).getTime() - Date.now()).toBeGreaterThan(29 * 86_400_000);
   });
 
+  it('the two conflicts are 409 with plain copy: a deactivated membership, an email another shop uses (review P1-5)', async () => {
+    const me = fake.rows('merchant_users').find((u) => u.auth_user_id === 'user-ali')!;
+    me.is_active = false;
+    let r = await app.inject({ method: 'POST', url: '/api/v1/signup/bootstrap', headers: auth('jwt.ali.sig') });
+    expect(r.statusCode).toBe(409);
+    expect(r.json().error.code).toBe('inactive_membership');
+    expect(r.json().error.message).not.toMatch(/violat|constraint|duplicate/i);
+    me.is_active = true;
+    fake.add('merchants', { business_name: 'Taken', email: 'second@shop.pk', settings: {} });
+    r = await app.inject({ method: 'POST', url: '/api/v1/signup/bootstrap', headers: auth('jwt.second.sig') });
+    expect(r.statusCode).toBe(409);
+    expect(r.json().error.code).toBe('email_in_use');
+    expect(fake.rows('merchant_users').filter((u) => u.auth_user_id === 'user-second')).toHaveLength(0);
+    fake.rows('merchants').pop();
+  });
+
   it('a second bootstrap returns the same shop and creates nothing (idempotent)', async () => {
     const first = fake.rows('merchants')[0]!.id;
     const r = await app.inject({ method: 'POST', url: '/api/v1/signup/bootstrap', headers: auth('jwt.ali.sig') });
     expect(r.statusCode).toBe(200);
-    expect(r.json().merchantId).toBe(first);
+    expect(r.json()).toMatchObject({ merchantId: first, existing: true }); // review P1-10: the page sends them to the dashboard
     expect(fake.rows('merchants')).toHaveLength(1);
     expect(fake.rows('merchant_users')).toHaveLength(1);
   });

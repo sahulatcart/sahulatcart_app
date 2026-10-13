@@ -19,7 +19,7 @@ export const NEW_MERCHANT_SETTINGS = {
 /** Until SIGNUP_OPEN=true only the comma-separated SIGNUP_ALLOWLIST may create a shop. */
 export function signupAllowed(email: string | null | undefined, cfg: Pick<Config, 'SIGNUP_OPEN' | 'SIGNUP_ALLOWLIST'> = loadConfig()): boolean {
   if (cfg.SIGNUP_OPEN) return true;
-  const e = (email ?? '').trim().toLowerCase();
+  const e = typeof email === 'string' ? email.trim().toLowerCase() : ''; // review P1-7: {"email":5} used to crash here
   if (!e) return false;
   return cfg.SIGNUP_ALLOWLIST.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean).includes(e);
 }
@@ -59,7 +59,7 @@ export async function bootstrapMerchant(
   db: SupabaseClient,
   user: { id: string; email: string },
   p: SignupProfile,
-): Promise<{ merchantId: string; role: string } | { error: string }> {
+): Promise<{ merchantId: string; role: string } | { error: string; conflict?: 'inactive_membership' | 'email_in_use' }> {
   const r = await db.rpc('create_merchant_for_user', {
     p_auth_user: user.id,
     p_email: user.email,
@@ -69,7 +69,13 @@ export async function bootstrapMerchant(
     p_attestations: p.attestations,
   });
   const row = (Array.isArray(r.data) ? r.data[0] : r.data) as { merchant_id?: string; role?: string } | null;
-  if (r.error || !row?.merchant_id) return { error: r.error?.message ?? 'could not create the shop' };
+  if (r.error || !row?.merchant_id) {
+    // Review P1-5: migration 0019 raises SC001/SC002 for the two conflicts a merchant can do something about.
+    const code = (r.error as { code?: string } | null)?.code;
+    if (code === 'SC001' || r.error?.message === 'inactive_membership') return { conflict: 'inactive_membership', error: 'This login belonged to a shop that was deactivated. Contact support to reinstate it.' };
+    if (code === 'SC002' || r.error?.message === 'email_in_use') return { conflict: 'email_in_use', error: 'A shop already uses this email. Sign in with it, or reset its password.' };
+    return { error: 'could not create the shop' };
+  }
   await ensureTrial(db, row.merchant_id); // P7: 30 free days start now
   return { merchantId: row.merchant_id, role: row.role ?? 'owner' };
 }

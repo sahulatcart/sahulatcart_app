@@ -18,14 +18,20 @@ export default function NewPasswordPage() {
   const [err, setErr] = useState('');
 
   useEffect(() => {
+    // Review P1-10: only a recovery link may set a new password without the old one. The link's
+    // hash says type=recovery and the client fires PASSWORD_RECOVERY; a plain signed-in visit gets neither.
     let cancelled = false;
+    const fromLink = /type=recovery/.test(window.location.hash);
+    let unsub = () => {};
     (async () => {
       const sb = await getSupabase();
+      const { data: sub } = sb.auth.onAuthStateChange((event) => { if (event === 'PASSWORD_RECOVERY' && !cancelled) setReady('ok'); });
+      unsub = () => sub.subscription.unsubscribe();
       let { data } = await sb.auth.getSession();
       if (!data.session) { await new Promise((r) => setTimeout(r, 800)); ({ data } = await sb.auth.getSession()); }
-      if (!cancelled) setReady(data.session ? 'ok' : 'no_session');
+      if (!cancelled) setReady((prev) => (prev === 'ok' ? 'ok' : data.session && fromLink ? 'ok' : 'no_session'));
     })().catch(() => { if (!cancelled) setReady('no_session'); });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; unsub(); };
   }, []);
 
   async function submit(e: React.FormEvent) {
@@ -64,7 +70,7 @@ export default function NewPasswordPage() {
           <div className="input-affix">
             <input id="password" type={show ? 'text' : 'password'} autoComplete="new-password" minLength={8} value={pw} onChange={(e) => setPw(e.target.value)} autoFocus required style={{ paddingRight: 48 }} />
             <button type="button" className="btn subtle icon-btn sm affix-btn" onClick={() => setShow((v) => !v)} aria-label={show ? 'Hide password' : 'Show password'} aria-pressed={show}>
-              {show ? <EyeOff /> : <Eye />}
+              {show ? <EyeOff aria-hidden /> : <Eye aria-hidden />}
             </button>
           </div>
           <div className="help">At least 8 characters.</div>

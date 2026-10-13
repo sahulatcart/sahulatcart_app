@@ -10,11 +10,11 @@ vi.hoisted(() => {
 });
 
 const fake = { db: new FakeDb() };
-const USERS: Record<string, { id: string; email: string; user_metadata: Record<string, unknown> }> = {
-  'jwt.fazal.sig': { id: 'user-fazal', email: 'fazal@sahulatcart.com', user_metadata: {} },
-  'jwt.owner.sig': { id: 'user-owner', email: 'owner@shop.pk', user_metadata: {} },
-  'jwt.staff.sig': { id: 'user-staff', email: 'staff@shop.pk', user_metadata: {} },
-  'jwt.adminowner.sig': { id: 'user-adminowner', email: 'both@sahulatcart.com', user_metadata: {} },
+const USERS: Record<string, { id: string; email: string; email_confirmed_at: string; user_metadata: Record<string, unknown> }> = {
+  'jwt.fazal.sig': { id: 'user-fazal', email: 'fazal@sahulatcart.com', email_confirmed_at: '2026-10-13T10:00:00Z', user_metadata: {} },
+  'jwt.owner.sig': { id: 'user-owner', email: 'owner@shop.pk', email_confirmed_at: '2026-10-13T10:00:00Z', user_metadata: {} },
+  'jwt.staff.sig': { id: 'user-staff', email: 'staff@shop.pk', email_confirmed_at: '2026-10-13T10:00:00Z', user_metadata: {} },
+  'jwt.adminowner.sig': { id: 'user-adminowner', email: 'both@sahulatcart.com', email_confirmed_at: '2026-10-13T10:00:00Z', user_metadata: {} },
 };
 vi.mock('../lib/supabase', () => ({
   getServiceClient: () => fake.db.client,

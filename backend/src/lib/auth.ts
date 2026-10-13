@@ -95,7 +95,8 @@ export async function resolveAuthUser(req: FastifyRequest): Promise<AuthUser | n
   const token = bearerJwt(req);
   if (!token) return null;
   const { data, error } = await getAnonClient().auth.getUser(token);
-  if (error || !data.user?.email) return null;
+  // Review P1-1: an unconfirmed email proves nothing, whatever the project's "confirm email" toggle says.
+  if (error || !data.user?.email || !data.user.email_confirmed_at) return null;
   return { id: data.user.id, email: data.user.email, metadata: (data.user.user_metadata ?? {}) as Record<string, unknown> };
 }
 
