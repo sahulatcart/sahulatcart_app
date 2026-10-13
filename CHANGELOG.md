@@ -40,6 +40,115 @@ back to a generic line). The templates are created against Meta only once a real
 (M7), so `message_templates` stays empty in production until then. Migration 0010 is **not
 applied** yet; apply after merge.
 
+Migrations **0012 and 0013** (Uzair's P1 and P2, merged as PRs #18 and #19) were applied to the live
+database on 2026-10-13 right after their merge, before M4, because the deployed code needed them
+(the bootstrap RPC and the two `merchants` columns). Verified: the one-shop index, the function
+executable by `service_role` only, `logo_url` and `address`. The applied order is therefore 0009,
+0012, 0013, then 0010 and 0011 later; the runner tracks names, not sequence, so that is fine.
+---
+
+## 2026-10-13 — P2, part 1: readiness checks, delivery zones, the go-live gate, the wizard shell
+
+**Outcome** — the bot can no longer be switched on by setting a flag. `GET /api/v1/admin/readiness`
+computes seven checks from the data itself ([lib/readiness.ts](backend/src/lib/readiness.ts)) and
+`PATCH settings { botEnabled: true }` answers **409 `not_ready`** with the failing steps until all
+pass. Delivery zones got their missing writes. The onboarding page is now a checklist that follows
+the server's verdict. Branch `feat/p2-onboarding`, week 2 of SRS-Uzair v1.1. Panels 1–7 proper,
+COD enforcement in the bot and the greeting text are week 3.
+
+**The seven checks and what they read.** profile: `business_name`, `phone`, `category`, at least
+one day in `business_hours` (`{ mon: { open, close } }` — a day marked `{ closed: true }` does not
+count), and the two attestations from signup. whatsapp: IC-4 status `connected` — M2/M3 are on
+`main`, so this is the real status, not the IC-10 stub; `connecting` says "send one message from your
+phone", `needs_attention` is shown as a problem with Meta's message. catalog: one active product with
+a price. delivery: one serviceable zone **or** `settings.deliveryConfigured` (the explicit "one
+charge for everywhere" choice). payment: `settings.codEnabled` or an active bank account. persona:
+`bot_persona.name` **and** `.style`. testOrder: an order in `confirmed`/`awaiting_payment`/`paid`
+whose customer's `wa_id` is the owner's phone, compared as digits (`samePhone()`), so `+92 300
+1234567` matches `923001234567`.
+
+**Routes** live in a new [routes/onboarding.ts](backend/src/routes/onboarding.ts) with its own
+`requireMerchant` hook (Part 0.3): readiness, and `GET/POST /admin/delivery-zones`,
+`PATCH/DELETE /admin/delivery-zones/:id` (managers only; `area_name` 2–60, `charge` ≥ 0 paisa,
+the same area in any case is 409 `DUPLICATE`, because the bot matches areas by whole words and two
+spellings would make the match arbitrary). `GET settings` now carries the `readiness` block
+(FR-P2.6) so the settings page can disable the bot toggle and say why.
+
+**Portal.** `/onboarding` is a left checklist (Done / To do / Problem) with the active panel on the
+right; on phones the list becomes a horizontal stepper. `?step=` deep-links a panel; otherwise the
+first open step opens. The Delivery panel is complete: zones table with serviceable toggle and
+delete, add form in rupees (stored as paisa), default charge, free-delivery threshold and the
+"everywhere" checkbox. The other panels show the server's reason and a link to the page that handles
+it today, until week 3 fills them in. "Go live" sends `botEnabled: true` and, on 409, jumps to the
+first failing step. The dashboard card now reads readiness: "N of 7 steps done", linking to the first
+open step, and disappears exactly when ready **and** the bot is on (FR-P2.4).
+
+**Tests.** [lib/readiness.test.ts](backend/src/lib/readiness.test.ts): each check flips on its own
+data (21 tests, over FakeDb through the real routes), the 409 gate, "off" never needs readiness, zone
+CRUD with the duplicate and staff refusals. FakeDb needed nothing new: its many-to-one embed already
+resolves `customers(wa_id)` on orders. Suite: 24 files, 235 tests.
+
+**Checked visually** against a throwaway mock backend (not committed; it serves fixtures with two
+zones and four failing steps) at desktop and phone width.
+
+---
+
+## 2026-10-13 — P1: self-service signup, email confirmation, password reset, automatic shop
+
+**Outcome** — a shop owner can sign up at `/signup`, confirm by email, and land on onboarding with
+their own empty shop; "Forgot password?" works end to end. Built on branch `feat/p1-signup` from
+SRS-Uzair v1.1 (Stream P, week 1). Not yet deployed; migration 0012 not yet applied.
+
+**How it fits together.** Accounts live in Supabase Auth, as before. The backend only does two
+things: gate who may join (`POST /api/v1/signup/check`, `SIGNUP_OPEN` / `SIGNUP_ALLOWLIST`), and
+turn a confirmed login into a shop (`POST /api/v1/signup/bootstrap` → `create_merchant_for_user()`
+RPC, migration 0012). The shop's name, owner and phone travel in the auth user's metadata, set by
+the signup form, so the bootstrap call needs no body. The new shop has `botEnabled:false`
+(and 0012 changes the column default to match), so no shop answers buyers before onboarding.
+
+**Decisions taken while building, per the SRS:**
+- **One user, one shop, enforced by the database.** `merchant_users` was unique only on
+  `(merchant_id, auth_user_id)`; two bootstrap calls racing could make two shops. 0012 adds a
+  unique index on `auth_user_id` and the RPC catches the violation and returns the shop that won.
+- **Phone numbers are digits only** ([lib/phone.ts](backend/src/lib/phone.ts)): `+92 300 1234567`,
+  `0300-1234567` and `923001234567` all store as `923001234567`, which is what WhatsApp sends as
+  `wa_id`. P2's test-order check compares with `samePhone()`.
+- **The auth gate moved out of `routes/admin.ts`** into `requireMerchant()` in
+  [lib/auth.ts](backend/src/lib/auth.ts), so new route files apply it themselves. A valid JWT with no
+  shop now gets `401 { code: 'no_membership' }` instead of a plain 401, and the portal's `api()`
+  sends that case to `/auth/confirmed` (which bootstraps) instead of `/login` — that was the login
+  loop. A caller with no `merchantId` gets 403 `NO_SHOP`; nothing produces that today, but M6's
+  platform admin without a membership will.
+- **Attestations** (no prohibited goods, opt-in only) are two required checkboxes on the form and
+  land in `settings.attestations` with a timestamp; P2's readiness check reads them.
+- **`POST /api/v1/admin/merchants`** (platform admin) now also creates the shop with the bot off.
+
+**Portal.** `/signup`, `/auth/confirmed`, `/reset`, `/auth/reset`; `/login` gained the two links.
+The two-column sign-in screen became `components/AuthLayout.tsx`, shared by all five pages. The
+signup page asks `/signup/check` *before* calling Supabase, so a refused email never leaves a
+stray auth user. A repeat signup is detected two ways: Supabase's `user_already_exists`, and the
+quieter "user with zero identities" answer it gives when email confirmation is on.
+
+**Site.** "Start free" on the home hero and the first pricing plan, pointing at the portal's
+`/signup`; `site.js` keeps the path when it rewrites railway links to localhost.
+
+**Tests.** [lib/auth.test.ts](backend/src/lib/auth.test.ts) runs the real routes with `app.inject()`
+over FakeDb, with `./supabase` mocked so `auth.getUser()` answers from a table of test tokens:
+`no_membership` for a user without a shop, 403 `signup_closed` off the allow-list, one shop and one
+owner row for an allow-listed user, a second bootstrap returning the same shop, and the same JWT
+passing the gate afterwards. [lib/phone.test.ts](backend/src/lib/phone.test.ts) covers the formats.
+FakeDb gained the RPC twin. Suite: 18 files, 147 tests; both typechecks pass.
+
+**Still to do for P1's "done when":** Fazal flips Supabase's "Confirm email" on and runs 0012;
+`SIGNUP_ALLOWLIST` set on Railway; the full signup tried on the deployed portal with a Gmail
+"+tag" address (T1–T3).
+
+**Merged with `main` the same day** after M1–M3 landed: `lib/phone.ts` existed on both sides
+(Fazal's `digitsOnly`/`samePhone`, mine with the 0300→92300 fold); the merged file keeps his
+exports and makes `samePhone()` use the fold. His simpler `requireMerchant()` was replaced by this
+one, which `routes/whatsapp.ts` already applies. `/config` now carries both `signupOpen` and the
+Embedded Signup ids. Suite after merge: 23 files, 214 tests.
+
 ---
 
 ## 2026-10-13 — M3: connection page, account events, send test, disconnect, profile sync
