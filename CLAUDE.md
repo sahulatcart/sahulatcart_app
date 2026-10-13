@@ -279,6 +279,29 @@ template is **always** charged. So:
 - The flow harness's client mock now records `type`, `buttons`, `template`, `params`; `tap(id,
   title)` simulates a button reply.
 
+### The message meter and the AI budget (M5, since 2026-10-13)
+
+[lib/usage.ts](backend/src/lib/usage.ts). One `message_usage` row per number per month (migration
+**0011**), bumped by the atomic RPC `bump_message_usage()` from three places: every **successful**
+send in `client.ts`, every inbound in `webhook.ts`, and every AI call through `chargeLlmCall()`.
+- `FREE_QUOTA` is 1,000. Crossing 80% and 100% writes one `system` notification each.
+  `GET /api/v1/admin/usage` (`routes/usage.ts`) is what the dashboard card, the inbox "paid" badge
+  and billing (IC-6) read. The meter is an estimate; WhatsApp Manager's count is authoritative.
+- `settings.afterFreeQuota` (`continue` default | `handoff`): at `handoff` and ≥ 1,000 outbound, the
+  orchestrator hands **new** conversations over; the three order-flow states finish. The handoff
+  reply is itself one paid message.
+- `settings.llmDailyCap` (default 2,000): `runOrchestrator()` wraps the turn in `withLlmBudget()`
+  (AsyncLocalStorage), and `chargeLlmCall()` runs before classify, compose and address extraction,
+  and around voice transcription in the webhook. Past the cap it throws `LlmUnavailableError`, so
+  classify falls into the existing "AI down" handoff and compose falls back to the template.
+  Outside a budget scope (admin actions, tests) it is a no-op. Both settings are validated in
+  `lib/validation.ts`.
+- **A page file may export only the page.** `next build` refuses a named export from
+  `app/**/page.tsx` ("does not match the required types of a Next.js Page"), while `tsc` is happy.
+  Shared pieces go in `admin/components/`. This took the admin deploy down after PR #21 while the
+  old container kept serving; run `cd admin && npm run build` (then `rm -rf admin/.next`) before
+  pushing admin changes.
+
 ### Conversation orchestrator
 
 [backend/src/orchestrator/orchestrator.ts](backend/src/orchestrator/orchestrator.ts) is the state machine

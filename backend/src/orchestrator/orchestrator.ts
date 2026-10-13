@@ -5,6 +5,7 @@ import { decide } from '../negotiation';
 import type { NegotiationDefaults, ProductPricing } from '../negotiation/types';
 import { getLlmClient, isTemplateOnly, LlmUnavailableError, type ComposeContext, type DeliveryDetails, type ReplySpec } from '../llm';
 import { sendButtons, sendDocument, sendImage, sendText } from '../whatsapp/client';
+import { chargeLlmCall, DEFAULT_LLM_DAILY_CAP, FREE_QUOTA, outboundThisMonth, withLlmBudget } from '../lib/usage';
 import { productImageUrl } from '../lib/images';
 import { loadConfig } from '../config';
 import { downloadWhatsAppMedia, uploadScreenshot } from '../whatsapp/media';
@@ -13,6 +14,7 @@ import type { NormalizedMessage } from '../whatsapp/types';
 import { resolveProduct, type CatalogItem } from './resolve';
 import { pickUpsell, type UpsellCandidate } from './upsell';
 import { priceGuardOk, sanctionedNumbers } from './guard';
+import { samePhone } from '../lib/phone';
 import { matchZone, type Zone } from './delivery';
 import { confirmBankOrder, confirmCodOrder, createDraftOrder, OUT_OF_STOCK, switchBankOrderToCod, type DeliveryInfo } from './order-service';
 import { todayHoursText } from '../lib/hours';
@@ -130,6 +132,7 @@ async function safeCompose(spec: ReplySpec, cc: ComposeContext): Promise<string>
   if (isTemplateOnly(spec)) return fallbackText(spec); // procedural line — no LLM call
   const expected = 'priceRupees' in spec ? spec.priceRupees : null;
   try {
+    await chargeLlmCall(); // M5: past the shop's daily AI cap this throws, and the template ships instead
     const text = await getLlmClient().compose(spec, cc);
     if (!priceGuardOk(text, expected, sanctionedNumbers(spec))) {
       logger.warn({ spec: spec.kind, expected }, 'price-match guard tripped — using fallback');
@@ -186,20 +189,33 @@ function toPricing(p: CatalogItem): ProductPricing {
 }
 
 // ── Main entry ───────────────────────────────────────────────────────────────
+const ORDER_FLOW_STATES: BotState[] = ['collecting_delivery', 'selecting_payment', 'awaiting_payment_proof'];
+
 export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, message: NormalizedMessage): Promise<void> {
+  // M5: every AI call in this turn is counted against the shop's daily cap; the cap itself is
+  // read with the merchant below and set on the same budget object.
+  const budget = { db, phoneNumberId: ctx.phoneNumberId, cap: DEFAULT_LLM_DAILY_CAP };
+  return withLlmBudget(budget, () => runTurn(db, ctx, message, budget));
+}
+
+async function runTurn(db: SupabaseClient, ctx: OrchestratorCtx, message: NormalizedMessage, budget: { cap: number }): Promise<void> {
   const merchantRes = await db
     .from('merchants')
-    .select('business_name, bot_persona, negotiation_defaults, settings, business_hours')
+    .select('business_name, bot_persona, negotiation_defaults, settings, business_hours, phone')
     .eq('id', ctx.merchantId)
     .single();
   const merchant = merchantRes.data;
   if (!merchant) return;
 
-  const settings = (merchant.settings ?? {}) as { botEnabled?: boolean };
-  if (settings.botEnabled === false) {
+  const settings = (merchant.settings ?? {}) as { botEnabled?: boolean; afterFreeQuota?: string; llmDailyCap?: number };
+  // A shop whose bot is off stays silent to buyers. The owner's own phone is the one exception: the
+  // go-live gate (P2 step 7) needs a test order placed while the bot is still off, and only the bot
+  // can place one, so without this no self-signup shop could ever go live.
+  if (settings.botEnabled === false && !samePhone(message.from, merchant.phone as string | null)) {
     logger.info({ merchantId: ctx.merchantId }, 'bot disabled — not replying');
     return;
   }
+  if (typeof settings.llmDailyCap === 'number' && settings.llmDailyCap > 0) budget.cap = settings.llmDailyCap;
 
   const persona = (merchant.bot_persona ?? {}) as { name?: string; style?: string; greeting?: string };
   const cc: ComposeContext = {
@@ -256,6 +272,13 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
     return;
   }
 
+  // M5: past the free 1,000 messages a month, a shop set to "hand off" stops selling to NEW
+  // conversations; a buyer already in checkout finishes (the states below), never dropped.
+  if (settings.afterFreeQuota === 'handoff' && !ORDER_FLOW_STATES.includes(state) && (await outboundThisMonth(db, ctx.phoneNumberId)) >= FREE_QUOTA) {
+    await handoff(db, ctx, cc, context, state, `This shop's free ${FREE_QUOTA} WhatsApp messages for the month are used up and Settings → Messages is set to "hand off", so the bot handed this chat to you.`);
+    return;
+  }
+
   // ── Phase-4 order-flow states are handled WITHOUT a classify call (fewer LLM calls) ──
   if (state === 'collecting_delivery') return handleDelivery(db, ctx, cc, context, merchant.settings, message);
   if (state === 'selecting_payment') return handlePayment(db, ctx, cc, context, message);
@@ -264,6 +287,7 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
   // ── Shopping states: classify intent ──
   let cls;
   try {
+    await chargeLlmCall(); // M5 daily AI cap → the same handoff as an outage
     cls = await getLlmClient().classify(text, { productNames: catalog.map((c) => c.name) });
   } catch {
     // The AI is down (quota/outage). Hand the chat to a person rather than promise a reply that never comes.
@@ -613,7 +637,10 @@ const PAY_BANK = 'pay_bank';
 
 interface BankRow { id: string; bank_name: string; account_title: string; account_number: string; iban?: string | null }
 /** "haan", "ji", "ok", "theek hai" — a yes to the COD-only question. Whole-message anchored (free-text rule). */
-const YES_RE = /^\s*(haan|han|ha|ji|g|ok|okay|theek|thik|yes|confirm|kar\s*do|kar\s*dein)\b/i;
+// Whole-message yes only: "ji nahi", "ok pehle size batao" and "han lekin kitne din?" must NOT
+// place an order. Anchored at both ends, and any negation word refuses outright.
+const YES_RE = /^\s*(haan|han|ha|ji|g|ok|okay|theek|thik|yes|confirm|kar\s*do|kar\s*dein)(\s+(hai|h|bhai|ji|g|na))?\s*[.!]*\s*$/i;
+const NO_RE = /\b(nahi|nai|nahin|mat|no|nope|rehne|rehnay|abhi nahi)\b/i;
 
 /**
  * The ways this shop takes payment (P2 step 5, enforced): COD only while `settings.codEnabled` is
@@ -815,6 +842,7 @@ async function handleDelivery(db: SupabaseClient, ctx: OrchestratorCtx, cc: Comp
   if (await handleEscape(db, ctx, cc, context, message, 'collecting_delivery')) return;
   let ex: DeliveryDetails;
   try {
+    await chargeLlmCall();
     ex = await getLlmClient().extractDelivery(message.text ?? '');
   } catch {
     // Re-asking would loop forever ("naam bata dein") while the AI can't read the reply.
@@ -872,7 +900,7 @@ async function handlePayment(db: SupabaseClient, ctx: OrchestratorCtx, cc: Compo
     // otherwise both stay false → falls through to the re-ask below
   }
   // With COD the only method, the question was "confirm?" — a plain yes is a yes.
-  if (!wantsCod && !wantsBank && pm.cod && !pm.bank && YES_RE.test(txt)) wantsCod = true;
+  if (!wantsCod && !wantsBank && pm.cod && !pm.bank && YES_RE.test(txt) && !NO_RE.test(txt)) wantsCod = true;
 
   // Only the methods the merchant enabled (P2 step 5). A disabled method is explained, then the other is used.
   if (wantsCod && !pm.cod) {

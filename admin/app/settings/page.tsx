@@ -14,7 +14,7 @@ interface Kb {
 interface Settings {
   business_name: string;
   negotiation_defaults: { maxDiscountPct?: number; roundsMax?: number; stalemateAction?: 'handoff' | 'hold_and_close'; bulkTiers?: Tier[] };
-  settings: { botEnabled?: boolean; defaultDeliveryCharge?: number; upsellEnabled?: boolean; kb?: Kb };
+  settings: { botEnabled?: boolean; defaultDeliveryCharge?: number; upsellEnabled?: boolean; kb?: Kb; afterFreeQuota?: 'continue' | 'handoff'; llmDailyCap?: number };
   bot_persona: { name?: string; style?: string } | null;
   bankAccounts: { id: string; bank_name: string; account_title: string; account_number: string; is_default: boolean }[];
   deliveryZones: Zone[];
@@ -70,6 +70,12 @@ export default function SettingsPage() {
     setS({ ...s, bot_persona: { ...(s.bot_persona ?? {}), style }, negotiation_defaults: { ...s.negotiation_defaults, roundsMax: preset.roundsMax } });
     await patch({ botPersona: { style }, negotiationDefaults: { concessionSteps: preset.concessionSteps, roundsMax: preset.roundsMax } }, `Bargaining style: ${preset.label}`);
   }
+  async function saveMessages(afterFreeQuota: 'continue' | 'handoff', llmDailyCap: number) {
+    if (!s) return;
+    setS({ ...s, settings: { ...s.settings, afterFreeQuota, llmDailyCap } });
+    await patch({ settings: { afterFreeQuota, llmDailyCap } }, 'Saved');
+  }
+
   async function toggleUpsell(on: boolean) {
     if (!s) return;
     setS({ ...s, settings: { ...s.settings, upsellEnabled: on } });
@@ -147,6 +153,23 @@ export default function SettingsPage() {
             <div><div className="t">Upsell suggestions</div><div className="d">After an order confirms, the bot suggests one cheap add-on that ships together.</div></div>
             <label className="switch"><input type="checkbox" aria-label="Upsell suggestions" checked={s.settings.upsellEnabled !== false} onChange={(e) => toggleUpsell(e.target.checked)} /><span className="track" /></label>
           </div>
+        </div>
+      </div>
+
+      <div className="card pad" id="messages">
+        <h2>Messages and AI</h2>
+        <p className="hint" style={{ marginTop: 6 }}>WhatsApp gives each number 1,000 free messages a month; after that Meta charges about Rs 4 each (its rate; check the current card). Choose what the bot does once the free ones are used.</p>
+        <div className="field" style={{ marginTop: 12 }}>
+          <label htmlFor="after-quota">After the free 1,000 messages</label>
+          <select id="after-quota" value={s.settings.afterFreeQuota ?? 'continue'} onChange={(e) => saveMessages(e.target.value as 'continue' | 'handoff', s.settings.llmDailyCap ?? 2000)}>
+            <option value="continue">Keep selling (paid messages)</option>
+            <option value="handoff">Hand new chats to me (buyers already checking out still finish)</option>
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="llm-cap">AI calls per day</label>
+          <input id="llm-cap" type="number" min={100} max={100000} step={100} value={s.settings.llmDailyCap ?? 2000} onChange={(e) => setS({ ...s, settings: { ...s.settings, llmDailyCap: Number(e.target.value) } })} onBlur={(e) => saveMessages(s.settings.afterFreeQuota ?? 'continue', Math.min(100000, Math.max(100, Number(e.target.value) || 2000)))} />
+          <div className="help">Past this, the bot hands chats to you instead of answering, so one busy day cannot use up the AI for every shop. 2,000 is plenty for a small shop.</div>
         </div>
       </div>
 

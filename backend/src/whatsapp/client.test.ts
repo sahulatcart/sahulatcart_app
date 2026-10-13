@@ -116,3 +116,16 @@ describe('templates and buttons (M4)', () => {
     expect(calls[0]!.body).toMatchObject({ type: 'interactive', interactive: { type: 'button', body: { text: 'Payment kaise?' } } });
   });
 });
+
+describe('the message meter (M5)', () => {
+  it('counts a successful send and not a failed one', async () => {
+    await sendText('PN-A', '923001', 'one');
+    await sendText('PN-A', '923001', 'two');
+    respond = () => ({ status: 400, body: { error: { message: 'Re-engagement message', code: 131047 } } });
+    await sendText('PN-A', '923001', 'three');
+    const row = fake.db.rows('message_usage').find((u) => u.phone_number_id === 'PN-A')!;
+    expect(row.outbound_count).toBe(2);
+    expect(row.merchant_id).toBe('M-A');
+    expect(fake.db.rows('message_usage').find((u) => u.phone_number_id === 'PN-B')).toBeUndefined();
+  });
+});

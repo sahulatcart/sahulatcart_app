@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { AlertCircle, ArrowRight, Check, FileUp, ImagePlus, Loader2, Plus, Rocket, Save, Scale, Send, Shield, Smartphone, Smile, Trash2, type LucideIcon } from 'lucide-react';
 import AppShell, { Pill, PageHead } from '../../components/AppShell';
 import DeliveryZones, { type Zone } from '../../components/DeliveryZones';
-import { WhatsAppConnect } from '../settings/whatsapp/page';
+import { WhatsAppConnect } from '../../components/WhatsAppConnect';
 import { api, apiError, apiJson, dt, rs } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 
