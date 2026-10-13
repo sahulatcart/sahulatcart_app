@@ -2,6 +2,7 @@ import { loadConfig } from '../config';
 import { logger } from '../lib/logger';
 import { getServiceClient } from '../lib/supabase';
 import { lookupToken, markTokenInvalid } from './credentials';
+import { bumpUsage } from '../lib/usage';
 
 /**
  * WhatsApp Cloud API sender. Every message goes out with the credentials of the number it is
@@ -44,7 +45,10 @@ async function send(phoneNumberId: string, to: string, payload: Record<string, u
     return { waMessageId: null, errorCode: code ?? res.status };
   }
   const json = (await res.json()) as { messages?: { id?: string }[] };
-  return { waMessageId: json.messages?.[0]?.id ?? null };
+  const waMessageId = json.messages?.[0]?.id ?? null;
+  // M5: every successful send counts toward the shop's monthly meter; failed sends do not.
+  if (waMessageId) await bumpUsage(db, phoneNumberId, { outbound: 1 });
+  return { waMessageId };
 }
 
 export function sendText(phoneNumberId: string, to: string, body: string): Promise<SendResult> {

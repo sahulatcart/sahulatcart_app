@@ -93,7 +93,22 @@ export class FakeDb {
   private counters: Record<string, number> = {};
 
   /** Test doubles of the SQL functions in db/migrations 0006, 0008 and 0012 (those are tested in Postgres). */
+  /** Pakistan-time 'today', for the AI day counter; tests may override. */
+  karachiToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+
   rpcs: Record<string, (args: Row) => unknown> = {
+    // db/migrations/0011: one row per number per month, atomic increments, AI calls per day.
+    bump_message_usage: ({ p_phone, p_month, p_outbound, p_inbound, p_llm }) => {
+      const num = this.rows('whatsapp_numbers').find((n) => n.phone_number_id === p_phone);
+      if (!num) return [];
+      let row = this.rows('message_usage').find((u) => u.phone_number_id === p_phone && u.period_month === p_month && u.merchant_id === num.merchant_id);
+      if (!row) row = this.add('message_usage', { merchant_id: num.merchant_id, phone_number_id: p_phone, period_month: p_month, outbound_count: 0, inbound_count: 0, llm_calls: 0, llm_calls_day: this.karachiToday });
+      row.outbound_count += p_outbound ?? 0;
+      row.inbound_count += p_inbound ?? 0;
+      row.llm_calls = (row.llm_calls_day === this.karachiToday ? row.llm_calls : 0) + (p_llm ?? 0);
+      row.llm_calls_day = this.karachiToday;
+      return [{ merchant_id: row.merchant_id, outbound_count: row.outbound_count, inbound_count: row.inbound_count, llm_calls: row.llm_calls }];
+    },
     create_merchant_for_user: ({ p_auth_user, p_email, p_shop, p_owner, p_phone, p_attestations }) => {
       const mine = this.rows('merchant_users').find((u) => u.auth_user_id === p_auth_user && u.is_active);
       if (mine) return [{ merchant_id: mine.merchant_id, role: mine.role }];
