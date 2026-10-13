@@ -9,7 +9,12 @@ export const loggerOptions: LoggerOptions = {
   base: { service: 'backend', product: cfg.PRODUCT_NAME },
   // PII redaction (docs/spec/09 §5.1) — extend as fields are added.
   redact: {
-    paths: ['req.headers.authorization', 'req.headers["x-hub-signature-256"]', '*.access_token', '*.token'],
+    // pino's `*` matches one level only; list the nested shapes Meta responses and our rows use.
+    paths: [
+      'req.headers.authorization', 'req.headers["x-hub-signature-256"]',
+      '*.access_token', '*.token', '*.ciphertext', '*.pin',
+      'err.response.access_token', 'body.access_token',
+    ],
     censor: '[redacted]',
   },
 };

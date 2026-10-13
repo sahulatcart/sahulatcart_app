@@ -1,10 +1,19 @@
-// Phone numbers are digits only everywhere they are stored or compared (SRS Part 0.3):
-// WhatsApp sends wa_id as 923001234567, while people type +92 300 1234567 or 03001234567.
+/**
+ * Phone numbers are digits only everywhere they are stored or compared (SRS Part 0.3):
+ * `923001234567`, never `+92 300…`. `customers.wa_id` already arrives that way from Meta,
+ * while people type +92 300 1234567 or 0300-1234567.
+ */
 
-/** Strip everything but digits, and turn a local 0300… into 92300…. Null when nothing is left. */
+/** Just the digits, nothing else (an empty string when there are none). */
+export const digitsOnly = (s: string | null | undefined): string => (s ?? '').replace(/\D/g, '');
+
+/**
+ * Digits only, with the two local spellings folded in: a leading 00 dropped and a local
+ * 0300… turned into 92300…. Null when nothing is left or the input is not a string.
+ */
 export function phoneDigits(input: unknown): string | null {
   if (typeof input !== 'string') return null;
-  let d = input.replace(/\D/g, '');
+  let d = digitsOnly(input);
   if (d.startsWith('00')) d = d.slice(2);
   if (d.length === 11 && d.startsWith('0')) d = `92${d.slice(1)}`;
   return d || null;

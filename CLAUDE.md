@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **18 files, 147 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **23 files, 214 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -178,6 +178,82 @@ Nothing Meta was told we received may be lost:
 
 Tenant routing: one backend, one webhook endpoint; inbound is routed to a merchant by looking up
 `phone_number_id` in `whatsapp_numbers`. Unknown numbers are logged and ignored.
+
+### Outbound credentials (M1, since 2026-10-13)
+
+Every send and media download uses the credentials of the **number it acts for**:
+[whatsapp/credentials.ts](backend/src/whatsapp/credentials.ts) `lookupToken()` goes
+`whatsapp_numbers.access_token_ref` → `whatsapp_secrets` → AES-256-GCM decrypt
+([lib/crypto.ts](backend/src/lib/crypto.ts), key `TOKEN_ENCRYPTION_KEY`, 32 bytes as hex or
+base64, **required in production**). Callers (`sendText`, `sendImage`, `sendDocument`,
+`downloadWhatsAppMedia`, catalog sync) never see a token. Rules that are easy to break:
+- **The env token `META_SYSTEM_USER_TOKEN` is used only for `META_DEFAULT_PHONE_NUMBER_ID`** (the
+  pilot number) until that merchant reconnects through Embedded Signup (M2). Any other number
+  without a secret is refused (`errorCode: 'no_credentials'`), never sent with the platform token.
+- A number that is `disconnected`, or `needs_attention` with `flag_reason='token'`, is refused.
+  This one function is the whole guarantee that a disconnected shop stops sending.
+- Meta error **190** (dead token) on any send calls `markTokenInvalid()`: the number is flagged, the
+  cache dropped, and a `system` notification written. `SendResult.errorCode` carries Meta's code.
+- Lookups are cached 10 minutes per number; `forgetNumber()` after connect, reconnect, disconnect.
+- `whatsapp_secrets` bytea columns go through supabase-js as `\x<hex>` strings (`toBytea`/`fromBytea`).
+- The flow test harness mocks `whatsapp/client` wholesale; client behaviour is tested in
+  `client.test.ts` with a mocked `fetch` and `credentials.test.ts` over `FakeDb`.
+- Migration **0009** (`whatsapp_connect`) adds `attention_message`, `last_test_at`, the connect
+  attempts table and two enum values; it must be applied before a 190 error can be recorded.
+
+### Connect WhatsApp (M2, since 2026-10-13)
+
+[whatsapp/connect.ts](backend/src/whatsapp/connect.ts) runs Meta Embedded Signup server-side;
+[whatsapp/meta-graph.ts](backend/src/whatsapp/meta-graph.ts) holds the Graph calls (every one with
+`appsecret_proof`); [routes/whatsapp.ts](backend/src/routes/whatsapp.ts) is its own route file with
+`requireMerchant()` from `lib/auth.ts` (the hook inside `adminRoutes` is encapsulated there, so new
+route files apply their own); the page is `admin/app/settings/whatsapp/`. Rules:
+- **The browser sends only the single-use `code` plus hints.** The backend verifies the hinted WABA
+  and number against `debug_token` and `/{waba}/phone_numbers`; a hint that doesn't match is a 400.
+- **Connected is proven by a handshake, not an outbound test.** A free-form text to the merchant's
+  phone would be refused (131047: no window open). After the upsert the number is `connecting`;
+  `handleConnectHandshake()` in `webhook.ts` answers the merchant's own first text (phones compared
+  as digits only, `lib/phone.ts`) and sets `connected` only when the reply got a message id. A
+  131042 on that reply means "no payment method on the WABA" → `needs_attention`, `policy`.
+- **133005 is PIN mismatch, not "already registered".** The page asks for the merchant's existing
+  PIN and `POST /whatsapp/retry {pin}` registers with it. 133006 (re-verify) and 133016 (limit) get
+  their own messages. Registration with the same PIN again just succeeds.
+- Steps A.2–A.5 run with the raw token (the `whatsapp_numbers` row doesn't exist yet); only sends
+  after the upsert go through `credentials.ts`. The PIN is stored as a `whatsapp_secrets` row of
+  kind `pin`.
+- One number per merchant: a second connect sets the old row `disconnected` and deletes its secret;
+  a number owned by another merchant is 409 `number_in_use` and the new token is discarded.
+- `whatsapp_connect_attempts.code_hash` makes the route idempotent per code.
+- `GET /api/v1/admin/whatsapp` is IC-4; `connecting` means "awaiting the handshake". With Meta's
+  **test** number the merchant's phone must be one of the five test recipients, and the page says so.
+- Needs `META_APP_ID`, `META_APP_SECRET` and `META_EMBEDDED_SIGNUP_CONFIG_ID` (M7 step 2) on Railway;
+  without the last two the page shows "Meta app is not configured yet". The Graph field names and
+  error codes come from Meta's docs as of mid-2026; re-check them in the dashboard before the first
+  real connect.
+
+### Connection status, account events, disconnect (M3, since 2026-10-13)
+
+- **Account-level webhook fields** (`phone_number_quality_update`, `account_update`,
+  `message_template_status_update`) carry no `metadata.phone_number_id`; the WABA id is
+  `entry[].id`. `parseAccountEvents()` in `parse.ts` extracts them (`parseWebhook()` still ignores
+  them), `claimWebhookPayload()` claims each under `item_type='event'` with id
+  `field:waba:sha256(value)` so a redelivery is a duplicate, and `processClaimed()` runs
+  [whatsapp/account-events.ts](backend/src/whatsapp/account-events.ts) after the ACK. A WABA-level
+  event applies to every number row with that `waba_id`. FLAGGED → `needs_attention`/`quality`;
+  UNFLAGGED clears **only** a quality flag (never token or policy); DISABLED/VIOLATION/RESTRICTION →
+  `policy`; PARTNER_REMOVED → `token` (reconnect). The dashboard subscription for the four fields is
+  M7 step 3; until then nothing arrives.
+- **Disconnect** (`POST /api/v1/admin/whatsapp/disconnect`) deletes the secrets and keeps the row;
+  Meta is not told. Inbound still routes to the row, is stored, and the bot is skipped; the merchant
+  gets one portal notification a day (`remindDisconnected()` in `webhook.ts`, keyed on
+  `data->>action = 'reconnect_whatsapp'`).
+- **Send test** (`POST /whatsapp/test`) texts the merchant's own phone. It only works while their
+  24-hour window with the shop is open; a 131047 puts the number back to `connecting` so the
+  handshake proves it again. This is also what onboarding step 7 (P2) calls.
+- **Business profile sync** (`syncBusinessProfile()`, IC-9; `POST /whatsapp/profile-sync` for P2) pushes
+  name, address, description and hours to the number's WhatsApp profile, best effort, after the
+  handshake. The address comes from `settings.kb.address` until P2 adds `merchants.address`; the
+  picture is not pushed (needs Meta's upload API).
 
 ### Conversation orchestrator
 

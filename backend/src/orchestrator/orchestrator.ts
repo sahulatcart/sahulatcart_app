@@ -842,7 +842,7 @@ async function handlePaymentProof(db: SupabaseClient, ctx: OrchestratorCtx, cc: 
     const amount = payRes.data?.amount ?? 0;
     let ref: string | null = null;
     if (mediaId) {
-      const media = await downloadWhatsAppMedia(mediaId);
+      const media = await downloadWhatsAppMedia(mediaId, ctx.phoneNumberId);
       if (media) ref = await uploadScreenshot(db, ctx.merchantId, orderId, media.buffer, media.mimeType);
     }
     if (pid) {

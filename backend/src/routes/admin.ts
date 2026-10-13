@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { loadConfig } from '../config';
+import { tokenForNumber } from '../whatsapp/credentials';
 import { getServiceClient } from '../lib/supabase';
 import { forbid, isAdminToken, isManager, requireMerchant } from '../lib/auth';
 import { NEW_MERCHANT_SETTINGS } from '../lib/signup';
@@ -35,7 +36,16 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // ── Public runtime config (Supabase URL + publishable anon key — not secret) ──
   app.get('/api/v1/config', async (_req, reply) => {
     const cfg = loadConfig();
-    return reply.send({ supabaseUrl: cfg.SUPABASE_URL, supabaseAnonKey: cfg.SUPABASE_ANON_KEY, signupOpen: cfg.SIGNUP_OPEN });
+    return reply.send({
+      supabaseUrl: cfg.SUPABASE_URL,
+      supabaseAnonKey: cfg.SUPABASE_ANON_KEY,
+      // Self-service signup (P1): whether anyone may join, never the allow-list itself.
+      signupOpen: cfg.SIGNUP_OPEN,
+      // Embedded Signup (M2): the app id and configuration id are public by design; the secret never is.
+      metaAppId: cfg.META_APP_ID ?? null,
+      embeddedSignupConfigId: cfg.META_EMBEDDED_SIGNUP_CONFIG_ID ?? null,
+      graphVersion: cfg.META_GRAPH_API_VERSION,
+    });
   });
 
   // ── Auth (token fallback path; email/password login happens client-side via Supabase) ──
@@ -412,9 +422,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     if (!isManager(req.merchantCtx!)) return forbid(reply);
     const cfg = loadConfig();
     const mid = req.merchantCtx!.merchantId;
-    const token = cfg.META_SYSTEM_USER_TOKEN;
-    const wabaRow = await db.from('whatsapp_numbers').select('waba_id').eq('merchant_id', mid).limit(1).maybeSingle();
+    const wabaRow = await db.from('whatsapp_numbers').select('waba_id, phone_number_id').eq('merchant_id', mid).limit(1).maybeSingle();
     const waba = wabaRow.data?.waba_id;
+    // The merchant's own credentials (M1): the catalog belongs to their WABA, not the platform's.
+    const token = wabaRow.data?.phone_number_id ? await tokenForNumber(db, wabaRow.data.phone_number_id) : null;
     if (!token || !waba) return reply.code(400).send({ error: { code: 'NO_WABA', message: 'WhatsApp/WABA not connected' } });
     // Token in a header, never the URL (URLs end up in proxy and error logs).
     const graph = async <T>(path: string): Promise<T> =>

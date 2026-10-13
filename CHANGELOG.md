@@ -57,6 +57,102 @@ FakeDb gained the RPC twin. Suite: 18 files, 147 tests; both typechecks pass.
 `SIGNUP_ALLOWLIST` set on Railway; the full signup tried on the deployed portal with a Gmail
 "+tag" address (T1–T3).
 
+**Merged with `main` the same day** after M1–M3 landed: `lib/phone.ts` existed on both sides
+(Fazal's `digitsOnly`/`samePhone`, mine with the 0300→92300 fold); the merged file keeps his
+exports and makes `samePhone()` use the fold. His simpler `requireMerchant()` was replaced by this
+one, which `routes/whatsapp.ts` already applies. `/config` now carries both `signupOpen` and the
+Embedded Signup ids. Suite after merge: 23 files, 214 tests.
+
+---
+
+## 2026-10-13 — M3: connection page, account events, send test, disconnect, profile sync
+
+Branch `feat/m3-connection-status`. 21 test files, 192 tests (22 new). Both typechecks clean;
+`next build` compiles the page.
+
+Built: `parseAccountEvents()` (the three account-level webhook fields, keyed by `entry.id`),
+event claiming under the new `item_type='event'` with a payload-hash id, `account-events.ts`
+(quality FLAGGED/UNFLAGGED/UPGRADE/DOWNGRADE/ONBOARDING with tier mapping; account
+DISABLED/VIOLATION/RESTRICTION/PARTNER_REMOVED/VERIFIED; template REJECTED/PAUSED notify until M4
+stores templates), `sendTestMessage()`, `disconnectWhatsApp()`, `syncBusinessProfile()` (A.12,
+called after the handshake and exposed for P2), the daily reminder for a disconnected number, the
+three routes, and the connected card's Send test / Reconnect / Disconnect buttons with a quality dot.
+
+Design points worth knowing: UNFLAGGED restores only a quality flag, so a dead token is never
+"fixed" by a quality webhook; `processClaimed()` marks each event row processed or error like a
+message; a test message after the merchant's 24-hour window has closed cannot be free-form, so
+131047 is handled by returning the number to `connecting` and asking them to text the shop again
+rather than reporting a failure.
+
+Hassle: none worth recording; the FakeDb already supported `data->>action` filters from an earlier
+feature, which the reminder dedupe needed.
+
+Not done: the four webhook fields are not yet subscribed in the Meta dashboard (M7 step 3), so no
+account event reaches production until then; `message_templates` rows (M4) do not exist, so a
+template approval is silent and only a rejection is surfaced.
+
+---
+
+## 2026-10-13 — M2: "Connect WhatsApp" through Meta Embedded Signup
+
+Branch `feat/m2-connect`. 20 test files, 170 tests (21 new in `connect.test.ts`). Backend and
+admin typechecks clean; `next build` compiles the new page.
+
+Built: `whatsapp/meta-graph.ts` (A.1–A.5 with `appsecret_proof`, typed `GraphError`),
+`whatsapp/connect.ts` (`connectWhatsApp`, `retryConnect`, `handleConnectHandshake`,
+`getConnectionStatus`), `routes/whatsapp.ts` (own route file + `requireMerchant()` extracted to
+`lib/auth.ts`, the SRS Part 0.3 rule; Uzair's P1 no longer needs to do that), `lib/phone.ts`
+(digits-only comparisons), the handshake hook in `webhook.ts` (`resolveTenant` now carries `status`
+and the merchant phone), `/api/v1/config` exposing the public Meta ids, `META_EMBEDDED_SIGNUP_CONFIG_ID`
+in config, and the portal page `settings/whatsapp` (SDK load, origin-checked message listener,
+choose-a-number, PIN field, retry, handshake polling, connected card) with a link card on Settings.
+
+What the tests pin down: the exact order of Meta calls; every business-token call carries
+`appsecret_proof` and no token in the URL; hint mismatches keep nothing; another shop's number is
+never taken over and the new token is deleted; the same code twice does one exchange; 133005 →
+PIN field → retry with the PIN finishes; a second connect retires the old number and its secret;
+the handshake only matches the merchant's own phone (digits only) and only while `connecting`;
+131042 → the Meta Billing instruction with `flag_reason='policy'`.
+
+Hassle: `numbers[0]` under `noUncheckedIndexedAccess` left `chosen` possibly undefined through the
+rest of the function (13 errors); a guard after the choice fixed it. Nothing else fought back.
+
+Not done, by design: M3's quality/account webhooks, Disconnect and Send-test buttons (the connected
+card says so); `META_EMBEDDED_SIGNUP_CONFIG_ID` is not yet declared in `.railway/railway.ts` because
+`preserve()` on a variable that doesn't exist yet is untested, and the value only exists after M7
+step 2. **Not tested against Meta**: the Graph shapes are from the docs as of mid-2026; the first
+real run (after business verification, M7) is the check. The one pilot merchant is untouched and
+still sends on the env token.
+
+---
+
+## 2026-10-13 — M1: per-merchant WhatsApp credentials
+
+First feature of the SRS (Stream M). Branch `feat/m1-credentials`. 19 test files, 149 tests.
+
+What changed: `lib/crypto.ts` (AES-256-GCM, `TOKEN_ENCRYPTION_KEY`), `whatsapp/credentials.ts`
+(`storeToken`, `lookupToken`/`tokenForNumber`, `forgetNumber`, `markTokenInvalid`), `client.ts`
+rewritten around one `send()` that resolves the token per number and reports `errorCode`,
+`media.ts` takes the `phoneNumberId`, catalog sync uses the merchant's own token, migration
+`0009_whatsapp_connect.sql` (the whole M1–M3 schema, as Appendix C defines it, so M2/M3 add no
+file). `TOKEN_ENCRYPTION_KEY` is now required when `NODE_ENV=production` and validated.
+
+The one thing that would have taken production down: the SRS said the key is "32 bytes, base64",
+and the first validation accepted only base64. The key on Railway (and in `.env`) is 64 characters,
+which is **hex** from `openssl rand -hex 32`; base64-decoding it gives 48 bytes and the refine would
+have failed, so the backend would have exited at boot on the next deploy while Railway kept serving
+the old container. Found by checking variable *lengths* on Railway (never values) before committing.
+`parseKey()` now accepts both encodings, and `loadConfig()` was run locally with
+`NODE_ENV=production` against the real `.env` to prove it boots.
+
+Two test slips fixed on the way: `Buffer[i] ^= …` trips `noUncheckedIndexedAccess`, and the 190
+test left the stubbed `fetch` answering 401 when it sent from the second merchant.
+
+**Live:** PR #14 merged 2026-10-13; migration 0009 applied to the live database the same day and
+verified (both enum values, the attempts table locked for anon/authenticated, the two columns, the
+index). Still pending: the pilot merchant still sends on the env token (until M2), and `notify()` does not exist
+so `markTokenInvalid` writes the `notifications` row directly, as `handoff()` does.
+
 ---
 
 ## 2026-10-12 — One plan to replace eight, built so Meta approval is a settings change
