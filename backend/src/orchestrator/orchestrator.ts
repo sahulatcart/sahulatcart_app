@@ -14,6 +14,7 @@ import type { NormalizedMessage } from '../whatsapp/types';
 import { resolveProduct, type CatalogItem } from './resolve';
 import { pickUpsell, type UpsellCandidate } from './upsell';
 import { priceGuardOk, sanctionedNumbers } from './guard';
+import { samePhone } from '../lib/phone';
 import { matchZone, type Zone } from './delivery';
 import { confirmBankOrder, confirmCodOrder, createDraftOrder, OUT_OF_STOCK, switchBankOrderToCod, type DeliveryInfo } from './order-service';
 import { todayHoursText } from '../lib/hours';
@@ -199,14 +200,17 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
 async function runTurn(db: SupabaseClient, ctx: OrchestratorCtx, message: NormalizedMessage, budget: { cap: number }): Promise<void> {
   const merchantRes = await db
     .from('merchants')
-    .select('business_name, bot_persona, negotiation_defaults, settings, business_hours')
+    .select('business_name, bot_persona, negotiation_defaults, settings, business_hours, phone')
     .eq('id', ctx.merchantId)
     .single();
   const merchant = merchantRes.data;
   if (!merchant) return;
 
   const settings = (merchant.settings ?? {}) as { botEnabled?: boolean; afterFreeQuota?: string; llmDailyCap?: number };
-  if (settings.botEnabled === false) {
+  // A shop whose bot is off stays silent to buyers. The owner's own phone is the one exception: the
+  // go-live gate (P2 step 7) needs a test order placed while the bot is still off, and only the bot
+  // can place one, so without this no self-signup shop could ever go live.
+  if (settings.botEnabled === false && !samePhone(message.from, merchant.phone as string | null)) {
     logger.info({ merchantId: ctx.merchantId }, 'bot disabled — not replying');
     return;
   }
@@ -639,7 +643,10 @@ const PAY_BANK = 'pay_bank';
 
 interface BankRow { id: string; bank_name: string; account_title: string; account_number: string; iban?: string | null }
 /** "haan", "ji", "ok", "theek hai" — a yes to the COD-only question. Whole-message anchored (free-text rule). */
-const YES_RE = /^\s*(haan|han|ha|ji|g|ok|okay|theek|thik|yes|confirm|kar\s*do|kar\s*dein)\b/i;
+// Whole-message yes only: "ji nahi", "ok pehle size batao" and "han lekin kitne din?" must NOT
+// place an order. Anchored at both ends, and any negation word refuses outright.
+const YES_RE = /^\s*(haan|han|ha|ji|g|ok|okay|theek|thik|yes|confirm|kar\s*do|kar\s*dein)(\s+(hai|h|bhai|ji|g|na))?\s*[.!]*\s*$/i;
+const NO_RE = /\b(nahi|nai|nahin|mat|no|nope|rehne|rehnay|abhi nahi)\b/i;
 
 /**
  * The ways this shop takes payment (P2 step 5, enforced): COD only while `settings.codEnabled` is
@@ -906,7 +913,7 @@ async function handlePayment(db: SupabaseClient, ctx: OrchestratorCtx, cc: Compo
     // otherwise both stay false → falls through to the re-ask below
   }
   // With COD the only method, the question was "confirm?" — a plain yes is a yes.
-  if (!wantsCod && !wantsBank && pm.cod && !pm.bank && YES_RE.test(txt)) wantsCod = true;
+  if (!wantsCod && !wantsBank && pm.cod && !pm.bank && YES_RE.test(txt) && !NO_RE.test(txt)) wantsCod = true;
 
   // Only the methods the merchant enabled (P2 step 5). A disabled method is explained, then the other is used.
   if (wantsCod && !pm.cod) {
