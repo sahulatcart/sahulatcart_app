@@ -5,9 +5,17 @@ import { drainWebhooks, startReplaySweeper } from './whatsapp/webhook';
 import { startRetentionJob } from './lib/retention';
 import { flushPendingDigests } from './lib/notify';
 import { startUnpaidExpiryJob } from './lib/jobs';
+import { initSentry } from './lib/sentry';
 
 async function main(): Promise<void> {
   const cfg = loadConfig(); // fail-fast env validation
+  if (initSentry(cfg)) logger.info('Sentry enabled');
+  // P6 (FR-P6.7): the per-buyer queue, the admin-token lockout and the rate-limit store are all
+  // in-process, so this backend must run as ONE replica. Railway exposes the replica id but not
+  // the count, so the most this can do is say so loudly on every boot.
+  if (process.env.RAILWAY_REPLICA_ID) {
+    logger.warn({ replicaId: process.env.RAILWAY_REPLICA_ID }, 'single-instance backend: if more than one replica is running, per-buyer ordering, the lockout and the rate limits are per process — see CLAUDE.md "Inbound message pipeline"');
+  }
   const app = await buildServer();
 
   try {

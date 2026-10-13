@@ -58,7 +58,12 @@ class Query implements PromiseLike<Result> {
   private run(): Result {
     let rows: Row[];
     const table = this.db.rows(this.table);
-    if (this.op === 'insert') rows = [this.payload].flat().map((r) => this.db.add(this.table, r));
+    if (this.op === 'insert') {
+      // The one unique constraint the code relies on as logic: webhook_events.event_id is the idempotency check.
+      const dup = this.table === 'webhook_events' && [this.payload].flat().some((p) => table.some((r) => r.event_id === p.event_id));
+      if (dup) return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } };
+      rows = [this.payload].flat().map((r) => this.db.add(this.table, r));
+    }
     else if (this.op === 'update') rows = this.matching().map((r) => Object.assign(r, clone(this.payload)));
     else if (this.op === 'delete') rows = this.matching().map((r) => table.splice(table.indexOf(r), 1)[0]!);
     else if (this.op === 'upsert') {

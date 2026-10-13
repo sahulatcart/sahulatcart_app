@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **34 files, 384 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **36 files, 406 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -164,6 +164,9 @@ Nothing Meta was told we received may be lost:
 - **One at a time per buyer.** [lib/keyed-queue.ts](backend/src/lib/keyed-queue.ts) `serialize()` keys on
   merchant + sender, so a burst ("hi", "ye kitne ka?") can't race over one conversation's state. It is
   in-process: correct while the backend runs as **one instance**; more replicas need a DB lock instead.
+  So are the admin-token lockout and the rate-limit store (P6). Railway exposes `RAILWAY_REPLICA_ID`
+  but no count, so the boot only warns when the id is present; a second replica needs all three
+  moved to Postgres (advisory locks / a counter table) or Redis first.
 - **Replay.** `startReplaySweeper()` re-runs messages left `received` for 5–60 minutes (a crash or
   redeploy killed them), at most 3 times, then `dead_letter`. It runs **only when `NODE_ENV=production`**:
   a local backend shares the live DB and WhatsApp token via `.env` and must never answer real customers.
@@ -496,6 +499,18 @@ discriminated union of ~20 reply kinds) and only phrases it.
 
   Or skip login by putting a session straight into `localStorage` `sk_auth`.
 - The backend registers **no CORS** on purpose: nothing calls it from a browser on another origin.
+- **Rate limits** (P6, since 2026-10-13, [lib/rate-limit.ts](backend/src/lib/rate-limit.ts)): signup
+  and login 10/min per IP, WhatsApp connect 5/min, everything else 300/min per shop (per IP before
+  login); the webhook and health routes are exempt. A 429 is `{ error: { code: 'RATE_LIMITED' } }`.
+  `authenticate()` in `lib/auth.ts` is memoised per request so the limiter and the route gate share
+  one lookup. The admin-token lockout is **per IP** (`isAdminToken(tok, req.ip)`); `trustProxy` is
+  on so `req.ip` is Railway's first forwarded hop.
+- **Sentry** (P6): `SENTRY_DSN` (backend) and `NEXT_PUBLIC_SENTRY_DSN` (admin, baked at build);
+  empty means off. Bodies, cookies, query strings and user info are never sent (`dataCollection`
+  in SDK v11, plus `beforeSend`). The Next.js build helper is `@sentry/nextjs/config`.
+- **CI** (`.github/workflows/ci.yml`) runs both typechecks, the backend suite and `next lint` on
+  every PR. Run `npm run lint -w @app/admin` before pushing admin changes; the config is
+  `next/core-web-vitals` and the tree is warning-free.
 - **Notifications go through `notify()`** in [lib/notify.ts](backend/src/lib/notify.ts) (P3, since
   2026-10-13) — never a direct `notifications` insert. It writes the portal row, then fans out in the
   background to Web Push (each owner's/manager's devices, `push_subscriptions`, migration 0014) and

@@ -54,7 +54,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   // ── Auth (token fallback path; email/password login happens client-side via Supabase) ──
   app.post('/api/v1/admin/login', async (req, reply) => {
-    if (!isAdminToken((req.body as { password?: string } | undefined)?.password)) {
+    if (!isAdminToken((req.body as { password?: string } | undefined)?.password, req.ip)) {
       return reply.code(401).send({ error: { code: 'BAD_LOGIN', message: 'galat password' } });
     }
     return reply.send({ token: loadConfig().ADMIN_API_TOKEN });

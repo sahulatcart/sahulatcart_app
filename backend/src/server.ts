@@ -1,5 +1,8 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import helmet from '@fastify/helmet';
+import rateLimit from '@fastify/rate-limit';
+import { exempt, rateLimitError, rateLimitKey, rateLimitMax } from './lib/rate-limit';
+import { attachSentry } from './lib/sentry';
 import { loadConfig } from './config';
 import { loggerOptions } from './lib/logger';
 import { healthRoutes } from './routes/health';
@@ -23,9 +26,27 @@ import { catalogRoutes } from './routes/catalog';
  */
 export async function buildServer(): Promise<FastifyInstance> {
   const cfg = loadConfig();
-  const app = Fastify({ logger: loggerOptions, bodyLimit: cfg.WEBHOOK_MAX_BODY_BYTES });
+  // trustProxy: Railway terminates TLS and sets X-Forwarded-For; req.ip is its first hop, which
+  // the rate limits and the admin-token lockout (P6) key on.
+  const app = Fastify({ logger: loggerOptions, bodyLimit: cfg.WEBHOOK_MAX_BODY_BYTES, trustProxy: true });
 
   await app.register(helmet, { global: true });
+  if (cfg.SENTRY_DSN) attachSentry(app); // P6: 5xx route errors; no-op without a DSN
+  // P6 (FR-P6.3): per-minute limits. Keyed by merchant once signed in, else by IP; the webhook and
+  // health routes are exempt. The store is in-process (one instance).
+  await app.register(rateLimit, {
+    global: true,
+    timeWindow: '1 minute',
+    allowList: (req) => exempt(req.routeOptions?.url ?? req.url),
+    keyGenerator: rateLimitKey,
+    max: (req) => rateLimitMax(req),
+    errorResponseBuilder: (_req, ctx) => rateLimitError(Math.ceil(ctx.ttl / 1000)),
+  });
+  // A rate-limit hit answers in the API's { error } shape (the portal reads error.message); everything else keeps Fastify's default.
+  app.setErrorHandler((err, _req, reply) => {
+    if (err.statusCode === 429) return reply.code(429).send({ error: { code: 'RATE_LIMITED', message: err.message } });
+    return reply.send(err);
+  });
   // No CORS on purpose: nothing calls this API from a browser on another origin — the portal
   // proxies same-origin (admin/app/api/[...path]) — so browsers keep their default block.
 

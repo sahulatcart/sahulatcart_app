@@ -36,6 +36,9 @@ const schema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default('claude-opus-4-8'),
 
+  // Error reporting (P6): a missing DSN means Sentry is never initialised.
+  SENTRY_DSN: z.string().url().optional(),
+
   // Merchant alerts (P3): Web Push (VAPID keys) and email through Resend. A missing key skips that channel.
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
