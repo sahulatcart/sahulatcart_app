@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { getServiceClient } from '../lib/supabase';
 import { forbid, isManager, requireMerchant } from '../lib/auth';
 import { ConnectFailure, connectWhatsApp, disconnectWhatsApp, getConnectionStatus, retryConnect, sendTestMessage, syncBusinessProfile } from '../whatsapp/connect';
+import { resubmitTemplate } from '../whatsapp/templates';
+import { notifyBuyerNow } from '../orchestrator/payment-service';
 
 /**
  * /api/v1/admin/whatsapp/* — the merchant's WhatsApp connection (SRS-Fazal M2, M3).
@@ -73,6 +75,26 @@ export async function whatsappRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/v1/admin/whatsapp/profile-sync', async (req, reply) => {
     if (!isManager(req.merchantCtx!)) return forbid(reply);
     return reply.send({ synced: await syncBusinessProfile(db, req.merchantCtx!.merchantId) });
+  });
+
+  // FR-M4.3 — a rejected template goes back under a new name.
+  app.post('/api/v1/admin/whatsapp/templates/:kind/resubmit', async (req, reply) => {
+    if (!isManager(req.merchantCtx!)) return forbid(reply);
+    const { kind } = req.params as { kind: string };
+    const row = await resubmitTemplate(db, req.merchantCtx!, kind);
+    if (!row) return reply.code(400).send({ error: { code: 'BAD', message: 'Unknown template, no connected number, or Meta refused it' } });
+    return reply.send({ template: row });
+  });
+
+  // FR-M4.6 — the paid buyer notice (the merchant pressed the button that shows the price).
+  app.post('/api/v1/admin/orders/:id/notify-buyer', async (req, reply) => {
+    if (!isManager(req.merchantCtx!)) return forbid(reply);
+    const { id } = req.params as { id: string };
+    const kind = (req.body as { kind?: unknown } | undefined)?.kind;
+    if (kind !== 'payment_update' && kind !== 'order_sent') return reply.code(400).send({ error: { code: 'BAD', message: 'kind must be payment_update or order_sent' } });
+    const r = await notifyBuyerNow(db, req.merchantCtx!, id, kind);
+    if (!r.ok) return reply.code(r.status).send({ error: { code: r.code, message: r.message } });
+    return reply.send({ ok: true, waMessageId: r.waMessageId, template: r.template });
   });
 
   app.post('/api/v1/admin/whatsapp/retry', async (req, reply) => {

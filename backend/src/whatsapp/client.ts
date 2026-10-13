@@ -56,6 +56,18 @@ export function sendImage(phoneNumberId: string, to: string, link: string, capti
   return send(phoneNumberId, to, { type: 'image', image: { link, ...(caption ? { caption } : {}) } }, 'image send');
 }
 
+/** A.8 — a pre-approved template; the only message allowed after the buyer's 24-hour window, and always charged. */
+export function sendTemplate(phoneNumberId: string, to: string, name: string, params: string[], language = 'en'): Promise<SendResult> {
+  const components = params.length ? [{ type: 'body', parameters: params.map((text) => ({ type: 'text', text })) }] : [];
+  return send(phoneNumberId, to, { type: 'template', template: { name, language: { code: language }, components } }, 'template send');
+}
+
+/** A.9 — reply buttons (max 3, titles ≤ 20 chars). One message that replaces a question and its clarifications. */
+export function sendButtons(phoneNumberId: string, to: string, body: string, buttons: { id: string; title: string }[]): Promise<SendResult> {
+  const action = { buttons: buttons.slice(0, 3).map((b) => ({ type: 'reply', reply: { id: b.id, title: b.title.slice(0, 20) } })) };
+  return send(phoneNumberId, to, { type: 'interactive', interactive: { type: 'button', body: { text: body }, action } }, 'buttons send');
+}
+
 /** Send a document (e.g. an order-slip PDF) by public/signed link. */
 export function sendDocument(phoneNumberId: string, to: string, link: string, filename: string, caption?: string): Promise<SendResult> {
   return send(phoneNumberId, to, { type: 'document', document: { link, filename, ...(caption ? { caption } : {}) } }, 'document send');

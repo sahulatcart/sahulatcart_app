@@ -83,9 +83,11 @@ describe('account_update', () => {
 });
 
 describe('message_template_status_update', () => {
-  it('a rejection reaches the merchant as template_status; an approval is silent until M4', async () => {
+  it('a rejection reaches the merchant as template_status; an approval only updates the row', async () => {
+    db.add('message_templates', { merchant_id: 'M1', waba_id: 'WABA1', name: 'payment_update', status: 'pending', rejection_reason: null });
     await handleAccountEvent(db.client, ev('message_template_status_update', { event: 'APPROVED', message_template_name: 'payment_update' }));
     expect(notes()).toHaveLength(0);
+    expect(db.rows('message_templates')[0]!.status).toBe('approved');
     await handleAccountEvent(db.client, ev('message_template_status_update', { event: 'REJECTED', message_template_name: 'payment_update', reason: 'INVALID_FORMAT' }));
     expect(notes()).toHaveLength(1);
     expect(notes()[0]!.type).toBe('template_status');

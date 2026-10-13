@@ -11,6 +11,7 @@ import {
   REG_LIMIT, REG_PIN_MISMATCH, REG_REVERIFY_NEEDED, SEND_BAD_RECIPIENT, SEND_PAYMENT_METHOD_MISSING, SEND_WINDOW_CLOSED,
   type PhoneNumber,
 } from './meta-graph';
+import { ensureTemplates, listTemplates } from './templates';
 import type { NormalizedMessage } from './types';
 
 /**
@@ -49,7 +50,7 @@ export interface ConnectionStatus {
   pinRequired?: boolean;
   isTestNumber?: boolean;
   merchantPhone?: string | null;
-  templates: { name: string; status: string }[];
+  templates: { name: string; status: string; rejectionReason: string | null }[];
 }
 
 const sha256 = (s: string): string => crypto.createHash('sha256').update(s).digest('hex');
@@ -72,6 +73,7 @@ export async function getConnectionStatus(db: SupabaseClient, merchantId: string
     db.from('whatsapp_connect_attempts').select('error_code, status').eq('merchant_id', merchantId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
   ]);
   if (!num) return { status: 'none', templates: [], merchantPhone: merchant?.phone ?? null };
+  const templates = (await listTemplates(db, merchantId)).map((t) => ({ name: t.name, status: t.status, rejectionReason: t.rejection_reason }));
   const status = (['connecting', 'connected', 'needs_attention', 'disconnected'] as const).find((s) => s === num.status) ?? 'needs_attention';
   return {
     status,
@@ -88,7 +90,7 @@ export async function getConnectionStatus(db: SupabaseClient, merchantId: string
     pinRequired: status === 'needs_attention' && attempt?.error_code === String(REG_PIN_MISMATCH),
     isTestNumber: !!cfg.META_DEFAULT_PHONE_NUMBER_ID && num.phone_number_id === cfg.META_DEFAULT_PHONE_NUMBER_ID,
     merchantPhone: merchant?.phone ?? null,
-    templates: [],
+    templates,
   };
 }
 
@@ -390,7 +392,8 @@ export async function handleConnectHandshake(db: SupabaseClient, tenant: Handsha
     await db.from('whatsapp_connect_attempts').update({ status: 'connected' }).match({ merchant_id: tenant.merchant_id, status: 'awaiting_handshake' });
     forgetNumber(tenant.phone_number_id);
     logger.info({ phoneNumberId: tenant.phone_number_id, merchantId: tenant.merchant_id }, 'WhatsApp number connected');
-    void syncBusinessProfile(db, tenant.merchant_id); // best effort; the number is proven working
+    // Best effort, after the number is proven working: the profile, then the two templates (M4).
+    void syncBusinessProfile(db, tenant.merchant_id).then(() => ensureTemplates(db, tenant.merchant_id)).catch((e: unknown) => logger.warn({ err: String(e) }, 'post-handshake setup failed'));
     return true;
   }
   const code = sent.errorCode;

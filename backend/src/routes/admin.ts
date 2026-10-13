@@ -113,7 +113,17 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const items = await db.from('order_items').select('name_snapshot, quantity, unit_price, discount, line_total').eq('order_id', id);
     const payment = await db.from('payments').select('method, amount, status, screenshot_url, claimed_at, verified_at').eq('order_id', id).maybeSingle();
     const claims = await db.from('payment_claims').select('status, amount, rejection_reason, claimed_at').eq('order_id', id).order('created_at', { ascending: false });
-    return reply.send({ order: order.data, items: items.data ?? [], payment: payment.data, claims: claims.data ?? [] });
+    // M4: the buyer's 24-hour window decides whether a confirmation is free (free-form) or a paid template.
+    const conv = order.data.conversation_id ? await db.from('conversations').select('window_expires_at').eq('id', order.data.conversation_id).maybeSingle() : null;
+    return reply.send({
+      order: order.data,
+      items: items.data ?? [],
+      payment: payment.data,
+      claims: claims.data ?? [],
+      windowExpiresAt: conv?.data?.window_expires_at ?? null,
+      pendingBuyerNotice: order.data.pending_buyer_notice ?? null,
+      noticePricePaisa: loadConfig().META_UTILITY_RATE_PAISA,
+    });
   });
 
   app.get('/api/v1/admin/orders/:id/screenshot', async (req, reply) => {

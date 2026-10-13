@@ -133,6 +133,16 @@ export async function registerPhone(phoneNumberId: string, pin: string, token: s
   await graph<{ success?: boolean }>(`${phoneNumberId}/register`, token, { method: 'POST', body: { messaging_product: 'whatsapp', pin } });
 }
 
+/** A.7 — create a message template on the WABA. */
+export interface TemplateComponent { type: 'BODY'; text: string; example?: { body_text: string[][] } }
+export async function createTemplate(
+  wabaId: string,
+  token: string,
+  def: { name: string; language: string; category: 'UTILITY'; components: TemplateComponent[] }
+): Promise<{ id?: string; status?: string; category?: string }> {
+  return graph(`${wabaId}/message_templates`, token, { method: 'POST', body: def });
+}
+
 /** A.12 — the number's WhatsApp business profile (text fields only; the picture needs the upload API). */
 export interface BusinessProfile { about?: string; address?: string; description?: string; email?: string; websites?: string[] }
 export async function updateBusinessProfile(phoneNumberId: string, token: string, profile: BusinessProfile): Promise<void> {

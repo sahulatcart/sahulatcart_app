@@ -7,6 +7,41 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — M4: templates, the 24-hour cost rule, fewer messages per sale
+
+Branch `feat/m4-templates`. 22 test files, 213 tests (21 new). Both typechecks clean; `next build`
+compiles the order page and the WhatsApp page.
+
+Built: migration `0010_message_templates.sql`; `whatsapp/templates.ts` (two UTILITY definitions,
+`ensureTemplates` after the handshake, `resubmitTemplate` with `_vN` names, `applyTemplateStatus`
+from the webhook, `approvedTemplate`); `createTemplate` (A.7), `sendTemplate` (A.8) and
+`sendButtons` (A.9); `notifyBuyer()` rewritten around the cost rule with `pending_buyer_notice` and
+`notifyBuyerNow()` behind `POST /orders/:id/notify-buyer`; `META_UTILITY_RATE_PAISA`; the order
+GET carries `windowExpiresAt`, `pendingBuyerNotice`, `noticePricePaisa`; the orchestrator's
+`askPaymentMethod()` with buttons and the tap-id read; two merged sends; the order page's
+"Free to confirm until…" note and the paid button; the WhatsApp page's template list with Resubmit.
+
+Baseline, measured in the flow tests before the change and asserted after: typed "bank transfer"
+sent 2 messages (details, then the ask), now 1; COD confirmation without a PDF sent 2 (slip, then
+caption), now 1; a verified payment with a PDF sent 2 (text, then the PDF), now 1 document with the
+text as caption. The button tap replaces the "COD ya bank?" clarification round-trips, which the
+tests cannot count but the pilot will.
+
+Three old tests asserted the old behaviour and were updated, not deleted: the verify assertion
+looked at `h.sent.at(-2)` for the text (now the PDF caption at `-1`); the window-closed notification
+title changed from "Could not message the buyer" to "Buyer's window closed"; and a template
+rejection now needs a `message_templates` row (M3's stop-gap notified without one).
+
+Not done, by design: FR-M4.8's "ask for status" hint in the confirmation is left out until P8
+builds the status reply, or buyers would be invited to send a message that today gets a price
+quote; M5's per-message counting; `order_sent` notices are only *sent* here, P4 sets them at
+dispatch (its `courier`/`eta_text` columns do not exist yet, so the template's third parameter falls
+back to a generic line). The templates are created against Meta only once a real number connects
+(M7), so `message_templates` stays empty in production until then. Migration 0010 is **not
+applied** yet; apply after merge.
+
+---
+
 ## 2026-10-13 — M3: connection page, account events, send test, disconnect, profile sync
 
 Branch `feat/m3-connection-status`. 21 test files, 192 tests (22 new). Both typechecks clean;

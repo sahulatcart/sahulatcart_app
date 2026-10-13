@@ -255,6 +255,30 @@ route files apply their own); the page is `admin/app/settings/whatsapp/`. Rules:
   handshake. The address comes from `settings.kb.address` until P2 adds `merchants.address`; the
   picture is not pushed (needs Meta's upload API).
 
+### Templates and the 24-hour cost rule (M4, since 2026-10-13)
+
+Since 1 October 2026 every message past 1,000 a month per number is charged (Pakistan ≈ Rs 4,
+`META_UTILITY_RATE_PAISA`), **including** free-form replies inside the buyer's 24-hour window, and a
+template is **always** charged. So:
+- **Nothing sends a template automatically.** `notifyBuyer()` in `payment-service.ts` sends
+  free-form while the window is open; when it has closed it sends nothing, sets
+  `orders.pending_buyer_notice` and writes a notification; the order page shows a button with the
+  price, and `notifyBuyerNow()` (`POST /api/v1/admin/orders/:id/notify-buyer`) sends the template.
+  It needs an **approved** template (`approvedTemplate()`, newest `_vN` wins) or answers 409.
+- **Two UTILITY templates per shop**, `payment_update` and `order_sent`, defined in
+  [whatsapp/templates.ts](backend/src/whatsapp/templates.ts) and created by `ensureTemplates()` after
+  the handshake. Language `en` (Roman Urdu is Latin script). Rows in `message_templates` (migration
+  **0010**, spec-02 column names, lowercase statuses); the `message_template_status_update` webhook
+  updates them and notifies on rejected/paused (`template_status`). Resubmit creates `_v2`, `_v3`…
+  because Meta refuses a rejected name for 30 days. Create/resubmit write `audit_log` rows.
+- **Fewer messages per sale**: the payment question is two reply buttons (`sendButtons`,
+  `askPaymentMethod()`) when a bank account exists; `handlePayment()` reads the tap id from
+  `message.raw.interactive.button_reply.id` (parse.ts puts only the title in `text`); bank details
+  and the screenshot ask are one message; the no-PDF COD confirmation is one message; a verified
+  payment with a PDF is one document send with the text as caption. The flow tests assert the counts.
+- The flow harness's client mock now records `type`, `buttons`, `template`, `params`; `tap(id,
+  title)` simulates a button reply.
+
 ### Conversation orchestrator
 
 [backend/src/orchestrator/orchestrator.ts](backend/src/orchestrator/orchestrator.ts) is the state machine
