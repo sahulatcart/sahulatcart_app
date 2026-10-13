@@ -133,6 +133,12 @@ export async function registerPhone(phoneNumberId: string, pin: string, token: s
   await graph<{ success?: boolean }>(`${phoneNumberId}/register`, token, { method: 'POST', body: { messaging_product: 'whatsapp', pin } });
 }
 
+/** A.12 — the number's WhatsApp business profile (text fields only; the picture needs the upload API). */
+export interface BusinessProfile { about?: string; address?: string; description?: string; email?: string; websites?: string[] }
+export async function updateBusinessProfile(phoneNumberId: string, token: string, profile: BusinessProfile): Promise<void> {
+  await graph<{ success?: boolean }>(`${phoneNumberId}/whatsapp_business_profile`, token, { method: 'POST', body: { messaging_product: 'whatsapp', ...profile } });
+}
+
 // Registration error codes (Meta Cloud API). Re-check against the live docs when M2 first runs.
 export const REG_PIN_MISMATCH = 133005;
 export const REG_REVERIFY_NEEDED = 133006;

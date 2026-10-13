@@ -6,7 +6,8 @@ export interface WebhookPayload {
   entry?: WebhookEntry[];
 }
 export interface WebhookEntry {
-  id?: string;
+  id?: string; // the WABA id — the only routing key account-level fields carry
+  time?: number;
   changes?: WebhookChange[];
 }
 export interface WebhookChange {
@@ -54,6 +55,13 @@ export interface NormalizedMessage {
 export interface NormalizedStatus {
   waMessageId: string;
   status: 'sent' | 'delivered' | 'read' | 'failed';
+}
+/** A change whose field is not `messages`: quality, account and template events (M3). */
+export interface AccountEvent {
+  field: string;
+  wabaId: string;
+  entryTime: number | null;
+  value: Record<string, unknown>;
 }
 export interface ParsedChange {
   phoneNumberId: string;

@@ -4,13 +4,15 @@ import { loadConfig } from '../config';
 import { logger } from '../lib/logger';
 import { getServiceClient } from '../lib/supabase';
 import { verifySignature } from './signature';
-import { parseWebhook } from './parse';
+import crypto from 'node:crypto';
+import { parseAccountEvents, parseWebhook } from './parse';
+import { handleAccountEvent } from './account-events';
 import { downloadWhatsAppMedia } from './media';
 import { getLlmClient } from '../llm';
 import { runOrchestrator } from '../orchestrator/orchestrator';
 import { serialize } from '../lib/keyed-queue';
 import { handleConnectHandshake } from './connect';
-import type { NormalizedMessage, NormalizedStatus, WebhookPayload } from './types';
+import type { AccountEvent, NormalizedMessage, NormalizedStatus, WebhookPayload } from './types';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -36,7 +38,7 @@ const inFlight = new Map<string, Promise<void>>();
 async function claimEvent(
   db: SupabaseClient,
   eventId: string,
-  itemType: 'message' | 'status',
+  itemType: 'message' | 'status' | 'event',
   payload: unknown
 ): Promise<'new' | 'duplicate' | 'failed'> {
   const { error } = await db
@@ -181,6 +183,11 @@ async function handleInboundMessage(
     .update({ last_message_at: new Date().toISOString(), window_expires_at: new Date(Date.now() + WINDOW_MS).toISOString() })
     .eq('id', convo.id);
 
+  // M3: no credentials, no reply; the message is in the inbox and the merchant is reminded daily.
+  if (tenant.status === 'disconnected') {
+    await remindDisconnected(db, tenant);
+    return;
+  }
   // M2: while the number is still `connecting`, the merchant's own first text is the handshake
   // that proves the connection; it is stored above but never answered by the bot.
   if (await handleConnectHandshake(db, tenant, msg)) return;
@@ -207,6 +214,12 @@ async function handleStatus(db: SupabaseClient, st: NormalizedStatus): Promise<v
 
 /** One change of a payload whose messages are durably recorded and ready to process. */
 export interface ClaimedChange { tenant: Tenant; messages: NormalizedMessage[]; statuses: NormalizedStatus[] }
+/** An account-level event with its webhook_events id, so it can be marked processed. */
+export interface ClaimedEvent { eventId: string; event: AccountEvent }
+
+/** Dedupe key for an account event: same field, WABA and payload ⇒ a redelivery. */
+export const accountEventId = (ev: AccountEvent): string =>
+  `${ev.field}:${ev.wabaId}:${crypto.createHash('sha256').update(JSON.stringify(ev.value)).digest('hex').slice(0, 32)}`;
 
 /**
  * Before Meta gets its 200: record every message of the payload in webhook_events, so a crash
@@ -217,9 +230,17 @@ export interface ClaimedChange { tenant: Tenant; messages: NormalizedMessage[]; 
 export async function claimWebhookPayload(
   payload: WebhookPayload,
   db = getServiceClient()
-): Promise<{ changes: ClaimedChange[]; complete: boolean }> {
+): Promise<{ changes: ClaimedChange[]; events: ClaimedEvent[]; complete: boolean }> {
   const changes: ClaimedChange[] = [];
+  const events: ClaimedEvent[] = [];
   let complete = true;
+  // Account-level fields (M3) need no tenant lookup: the handler resolves rows by WABA.
+  for (const ev of parseAccountEvents(payload)) {
+    const eventId = accountEventId(ev);
+    const claim = await claimEvent(db, eventId, 'event', ev);
+    if (claim === 'new') events.push({ eventId, event: ev });
+    if (claim === 'failed') complete = false;
+  }
   for (const change of parseWebhook(payload)) {
     let tenant: Tenant | null;
     try {
@@ -242,15 +263,49 @@ export async function claimWebhookPayload(
     }
     changes.push({ tenant, messages, statuses: change.statuses });
   }
-  return { changes, complete };
+  return { changes, events, complete };
 }
 
-/** After the ACK: run the claimed messages (each in its buyer's queue) and apply statuses. */
-export async function processClaimed(changes: ClaimedChange[], db = getServiceClient()): Promise<void> {
+/** After the ACK: run the claimed messages (each in its buyer's queue), statuses and account events. */
+export async function processClaimed(changes: ClaimedChange[], db = getServiceClient(), events: ClaimedEvent[] = []): Promise<void> {
   for (const { tenant, messages, statuses } of changes) {
     await Promise.all(messages.map((msg) => dispatch(db, tenant, msg)));
     for (const st of statuses) await handleStatus(db, st);
   }
+  for (const { eventId, event } of events) {
+    try {
+      await handleAccountEvent(db, event);
+      await db.from('webhook_events').update({ status: 'processed', processed_at: new Date().toISOString(), payload: null }).eq('event_id', eventId);
+    } catch (e) {
+      const err = e instanceof Error ? e.message : String(e);
+      logger.error({ err, eventId }, 'account event failed');
+      await db.from('webhook_events').update({ status: 'error', error: err.slice(0, 500) }).eq('event_id', eventId);
+    }
+  }
+}
+
+/**
+ * A disconnected number still receives messages (routing is by phone_number_id) but has no
+ * credentials to answer with. The merchant is reminded at most once a day, in the portal.
+ */
+async function remindDisconnected(db: SupabaseClient, tenant: Tenant): Promise<void> {
+  const since = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+  const { data: recent } = await db
+    .from('notifications')
+    .select('id')
+    .eq('merchant_id', tenant.merchant_id)
+    .eq('data->>action', 'reconnect_whatsapp')
+    .gt('created_at', since)
+    .limit(1);
+  if (recent?.length) return;
+  await db.from('notifications').insert({
+    merchant_id: tenant.merchant_id,
+    type: 'system',
+    title: 'Customers are messaging while WhatsApp is disconnected',
+    body: 'The bot cannot reply until the number is reconnected from Settings → WhatsApp. Their messages are in the inbox.',
+    data: { action: 'reconnect_whatsapp' },
+    channel: 'portal',
+  });
 }
 
 /** Replay messages that a crash or redeploy left claimed but unprocessed. */
@@ -335,9 +390,9 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
     // Record every message, then ACK and process out of band (docs/spec/04 §2.7). Recording
     // first means nothing Meta was told we received can be lost; if it fails, a 500 makes Meta retry.
     const db = getServiceClient();
-    const { changes, complete } = await claimWebhookPayload(req.body as WebhookPayload, db);
+    const { changes, events, complete } = await claimWebhookPayload(req.body as WebhookPayload, db);
     reply.code(complete ? 200 : 500).send(complete ? 'EVENT_RECEIVED' : 'retry');
-    void processClaimed(changes, db).catch((err) =>
+    void processClaimed(changes, db, events).catch((err) =>
       logger.error({ err: err instanceof Error ? err.message : String(err) }, 'webhook processing failed')
     );
   });

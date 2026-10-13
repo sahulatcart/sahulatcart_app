@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { getServiceClient } from '../lib/supabase';
 import { forbid, isManager, requireMerchant } from '../lib/auth';
-import { ConnectFailure, connectWhatsApp, getConnectionStatus, retryConnect } from '../whatsapp/connect';
+import { ConnectFailure, connectWhatsApp, disconnectWhatsApp, getConnectionStatus, retryConnect, sendTestMessage, syncBusinessProfile } from '../whatsapp/connect';
 
 /**
  * /api/v1/admin/whatsapp/* — the merchant's WhatsApp connection (SRS-Fazal M2, M3).
@@ -45,6 +45,34 @@ export async function whatsappRoutes(app: FastifyInstance): Promise<void> {
       }
       throw e;
     }
+  });
+
+  // FR-M3.3 — also what onboarding step 7 (P2) calls.
+  app.post('/api/v1/admin/whatsapp/test', async (req, reply) => {
+    if (!isManager(req.merchantCtx!)) return forbid(reply);
+    try {
+      return reply.send(await sendTestMessage(db, req.merchantCtx!));
+    } catch (e) {
+      if (e instanceof ConnectFailure) { const { status, ...rest } = e.err; return reply.code(status).send({ error: rest }); }
+      throw e;
+    }
+  });
+
+  // FR-M3.4
+  app.post('/api/v1/admin/whatsapp/disconnect', async (req, reply) => {
+    if (!isManager(req.merchantCtx!)) return forbid(reply);
+    try {
+      return reply.send(await disconnectWhatsApp(db, req.merchantCtx!));
+    } catch (e) {
+      if (e instanceof ConnectFailure) { const { status, ...rest } = e.err; return reply.code(status).send({ error: rest }); }
+      throw e;
+    }
+  });
+
+  // IC-9 — P2 calls this after the shop profile step saves.
+  app.post('/api/v1/admin/whatsapp/profile-sync', async (req, reply) => {
+    if (!isManager(req.merchantCtx!)) return forbid(reply);
+    return reply.send({ synced: await syncBusinessProfile(db, req.merchantCtx!.merchantId) });
   });
 
   app.post('/api/v1/admin/whatsapp/retry', async (req, reply) => {

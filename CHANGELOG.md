@@ -7,6 +7,34 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — M3: connection page, account events, send test, disconnect, profile sync
+
+Branch `feat/m3-connection-status`. 21 test files, 192 tests (22 new). Both typechecks clean;
+`next build` compiles the page.
+
+Built: `parseAccountEvents()` (the three account-level webhook fields, keyed by `entry.id`),
+event claiming under the new `item_type='event'` with a payload-hash id, `account-events.ts`
+(quality FLAGGED/UNFLAGGED/UPGRADE/DOWNGRADE/ONBOARDING with tier mapping; account
+DISABLED/VIOLATION/RESTRICTION/PARTNER_REMOVED/VERIFIED; template REJECTED/PAUSED notify until M4
+stores templates), `sendTestMessage()`, `disconnectWhatsApp()`, `syncBusinessProfile()` (A.12,
+called after the handshake and exposed for P2), the daily reminder for a disconnected number, the
+three routes, and the connected card's Send test / Reconnect / Disconnect buttons with a quality dot.
+
+Design points worth knowing: UNFLAGGED restores only a quality flag, so a dead token is never
+"fixed" by a quality webhook; `processClaimed()` marks each event row processed or error like a
+message; a test message after the merchant's 24-hour window has closed cannot be free-form, so
+131047 is handled by returning the number to `connecting` and asking them to text the shop again
+rather than reporting a failure.
+
+Hassle: none worth recording; the FakeDb already supported `data->>action` filters from an earlier
+feature, which the reminder dedupe needed.
+
+Not done: the four webhook fields are not yet subscribed in the Meta dashboard (M7 step 3), so no
+account event reaches production until then; `message_templates` rows (M4) do not exist, so a
+template approval is silent and only a rejection is surfaced.
+
+---
+
 ## 2026-10-13 — M2: "Connect WhatsApp" through Meta Embedded Signup
 
 Branch `feat/m2-connect`. 20 test files, 170 tests (21 new in `connect.test.ts`). Backend and

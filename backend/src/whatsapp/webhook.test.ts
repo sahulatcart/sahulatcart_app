@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { claimWebhookPayload } from './webhook';
+import { accountEventId, claimWebhookPayload } from './webhook';
 import type { WebhookPayload } from './types';
 
 const payload = (ids: string[]): WebhookPayload => ({
@@ -66,5 +66,31 @@ describe('claimWebhookPayload (before the 200 to Meta)', () => {
     expect(complete).toBe(false);
     expect(changes).toHaveLength(0);
     expect(inserted).toHaveLength(0);
+  });
+});
+
+describe('account events (M3)', () => {
+  const eventPayload: WebhookPayload = {
+    entry: [{ id: 'WABA1', time: 1, changes: [{ field: 'phone_number_quality_update', value: { display_phone_number: '1', event: 'FLAGGED' } as never }] }],
+  };
+
+  it('is claimed under item_type event with a payload-derived id, so a redelivery is a duplicate', async () => {
+    const seen = new Set<string>();
+    const { db } = stubDb({ insert: (id) => { if (seen.has(id)) return { code: '23505', message: 'dup' }; seen.add(id); return null; } });
+    const first = await claimWebhookPayload(eventPayload, db);
+    expect(first.complete).toBe(true);
+    expect(first.events).toHaveLength(1);
+    expect(first.events[0]!.eventId).toMatch(/^phone_number_quality_update:WABA1:[0-9a-f]{32}$/);
+    expect(first.events[0]!.eventId).toBe(accountEventId(first.events[0]!.event));
+    const again = await claimWebhookPayload(eventPayload, db);
+    expect(again.events).toHaveLength(0);
+    expect(again.complete).toBe(true);
+  });
+
+  it('a failed claim makes the payload incomplete so Meta redelivers', async () => {
+    const { db } = stubDb({ insert: () => ({ code: '08006', message: 'connection failure' }) });
+    const r = await claimWebhookPayload(eventPayload, db);
+    expect(r.complete).toBe(false);
+    expect(r.events).toHaveLength(0);
   });
 });

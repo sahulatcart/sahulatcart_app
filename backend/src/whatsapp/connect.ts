@@ -7,7 +7,7 @@ import type { MerchantCtx } from '../lib/auth';
 import { sendText } from './client';
 import { forgetNumber, storeToken, tokenForNumber } from './credentials';
 import {
-  GraphError, exchangeCode, grantedAssets, listPhoneNumbers, registerPhone, subscribeApp,
+  GraphError, exchangeCode, grantedAssets, listPhoneNumbers, registerPhone, subscribeApp, updateBusinessProfile,
   REG_LIMIT, REG_PIN_MISMATCH, REG_REVERIFY_NEEDED, SEND_BAD_RECIPIENT, SEND_PAYMENT_METHOD_MISSING, SEND_WINDOW_CLOSED,
   type PhoneNumber,
 } from './meta-graph';
@@ -282,6 +282,91 @@ export async function retryConnect(db: SupabaseClient, ctx: MerchantCtx, pin?: s
   return getConnectionStatus(db, ctx.merchantId);
 }
 
+/** The plain-words reason a send to the merchant's own phone failed, and how it flags the number. */
+function sendFailure(code: number | string | undefined): { message: string; flagReason: 'policy' | 'manual' } {
+  if (code === SEND_PAYMENT_METHOD_MISSING) return { flagReason: 'policy', message: 'Add a payment method to your WhatsApp Business account in Meta Business Manager (Billing), then press Retry.' };
+  if (code === SEND_BAD_RECIPIENT) return { flagReason: 'manual', message: 'This number cannot message your phone. Check the phone you saved in your shop profile is a WhatsApp number, then press Retry.' };
+  if (code === SEND_WINDOW_CLOSED) return { flagReason: 'manual', message: 'Meta refused the reply. Send another message from your phone and we will try again.' };
+  return { flagReason: 'manual', message: `The test reply failed (${String(code ?? 'unknown')}). Press Retry, or reconnect.` };
+}
+
+/**
+ * FR-M3.7 — push the shop's name, address, description and hours to the number's WhatsApp
+ * business profile. Best effort: a failure is logged, never surfaced to a buyer flow. The address
+ * comes from the knowledgebase (`settings.kb.address`) until P2 adds `merchants.address`.
+ */
+export async function syncBusinessProfile(db: SupabaseClient, merchantId: string): Promise<boolean> {
+  const [{ data: num }, { data: m }] = await Promise.all([
+    db.from('whatsapp_numbers').select('phone_number_id, status').eq('merchant_id', merchantId).in('status', ['connected', 'connecting']).limit(1).maybeSingle(),
+    db.from('merchants').select('business_name, settings, business_hours, email').eq('id', merchantId).maybeSingle(),
+  ]);
+  if (!num || !m) return false;
+  const token = await tokenForNumber(db, num.phone_number_id);
+  if (!token) return false;
+  const kb = ((m.settings as { kb?: { address?: string; hours?: string; delivery?: string } } | null)?.kb) ?? {};
+  const hoursText = kb.hours?.trim();
+  const profile = {
+    about: String(m.business_name ?? '').slice(0, 139),
+    ...(kb.address?.trim() ? { address: kb.address.trim().slice(0, 256) } : {}),
+    description: [hoursText ? `Hours: ${hoursText}` : '', kb.delivery?.trim() ? `Delivery: ${kb.delivery.trim()}` : ''].filter(Boolean).join('. ').slice(0, 512) || `${m.business_name} on WhatsApp`,
+    ...(m.email ? { email: String(m.email).slice(0, 128) } : {}),
+  };
+  try {
+    await updateBusinessProfile(num.phone_number_id, token, profile);
+    return true;
+  } catch (e) {
+    logger.warn({ err: (e as Error).message, merchantId }, 'business profile sync failed');
+    return false;
+  }
+}
+
+/**
+ * FR-M3.3 — send the test line to the merchant's own phone again. Works while their 24-hour window
+ * with the shop is open (they texted it recently); when it has closed, Meta refuses (131047) and the
+ * number goes back to `connecting` so the handshake proves it again.
+ */
+export async function sendTestMessage(db: SupabaseClient, ctx: MerchantCtx): Promise<ConnectionStatus> {
+  const cfg = loadConfig();
+  const [{ data: num }, { data: m }] = await Promise.all([
+    db.from('whatsapp_numbers').select('phone_number_id').eq('merchant_id', ctx.merchantId).neq('status', 'disconnected').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    db.from('merchants').select('business_name, phone').eq('id', ctx.merchantId).maybeSingle(),
+  ]);
+  if (!num) throw new ConnectFailure({ status: 400, code: 'bad_request', message: 'No number to test. Connect WhatsApp first.' });
+  const to = digitsOnly(m?.phone);
+  if (!to) throw new ConnectFailure({ status: 400, code: 'bad_request', message: 'Save your own phone number in the shop profile first.' });
+  const sent = await sendText(num.phone_number_id, to, `${m?.business_name ?? 'Your shop'} ↔ ${cfg.PRODUCT_NAME}: test message. Bot is number se jawab de raha hai ✓`);
+  const now = new Date().toISOString();
+  if (sent.waMessageId) {
+    await db.from('whatsapp_numbers').update({ status: 'connected', flag_reason: null, attention_message: null, last_test_at: now }).eq('phone_number_id', num.phone_number_id);
+  } else if (sent.errorCode === SEND_WINDOW_CLOSED) {
+    await db.from('whatsapp_numbers').update({ status: 'connecting', flag_reason: null, attention_message: null }).eq('phone_number_id', num.phone_number_id);
+  } else if (sent.errorCode === 'disconnected' || sent.errorCode === 'token_invalid' || sent.errorCode === 'no_credentials') {
+    throw new ConnectFailure({ status: 400, code: 'bad_request', message: 'This number has no usable credentials. Reconnect WhatsApp.' });
+  } else {
+    const f = sendFailure(sent.errorCode);
+    await db.from('whatsapp_numbers').update({ status: 'needs_attention', flag_reason: f.flagReason, attention_message: f.message, last_test_at: now }).eq('phone_number_id', num.phone_number_id);
+  }
+  forgetNumber(num.phone_number_id);
+  return getConnectionStatus(db, ctx.merchantId);
+}
+
+/**
+ * FR-M3.4 — stop sending from this number. Secrets are deleted and the row kept (conversations
+ * reference it); Meta is not told, so the merchant keeps their number and WABA. Inbound messages
+ * still arrive and are stored; the merchant is reminded daily.
+ */
+export async function disconnectWhatsApp(db: SupabaseClient, ctx: MerchantCtx): Promise<ConnectionStatus> {
+  const { data: rows } = await db.from('whatsapp_numbers').select('phone_number_id, access_token_ref').eq('merchant_id', ctx.merchantId).neq('status', 'disconnected');
+  if (!rows?.length) throw new ConnectFailure({ status: 400, code: 'bad_request', message: 'No connected number.' });
+  for (const r of rows) {
+    if (r.access_token_ref) await db.from('whatsapp_secrets').delete().eq('id', r.access_token_ref);
+    await db.from('whatsapp_numbers').update({ status: 'disconnected', access_token_ref: null, flag_reason: null, attention_message: null }).eq('phone_number_id', r.phone_number_id);
+    forgetNumber(r.phone_number_id);
+  }
+  await db.from('whatsapp_secrets').delete().match({ merchant_id: ctx.merchantId, kind: 'pin' });
+  return getConnectionStatus(db, ctx.merchantId);
+}
+
 export interface HandshakeTenant {
   phone_number_id: string;
   merchant_id: string;
@@ -305,18 +390,11 @@ export async function handleConnectHandshake(db: SupabaseClient, tenant: Handsha
     await db.from('whatsapp_connect_attempts').update({ status: 'connected' }).match({ merchant_id: tenant.merchant_id, status: 'awaiting_handshake' });
     forgetNumber(tenant.phone_number_id);
     logger.info({ phoneNumberId: tenant.phone_number_id, merchantId: tenant.merchant_id }, 'WhatsApp number connected');
+    void syncBusinessProfile(db, tenant.merchant_id); // best effort; the number is proven working
     return true;
   }
   const code = sent.errorCode;
-  const message =
-    code === SEND_PAYMENT_METHOD_MISSING
-      ? 'Add a payment method to your WhatsApp Business account in Meta Business Manager (Billing), then press Retry.'
-      : code === SEND_BAD_RECIPIENT
-        ? 'This number cannot message your phone. Check the phone you saved in your shop profile is a WhatsApp number, then press Retry.'
-        : code === SEND_WINDOW_CLOSED
-          ? 'Meta refused the reply. Send another message from your phone and we will try again.'
-          : `The test reply failed (${String(code ?? 'unknown')}). Press Retry, or reconnect.`;
-  const flagReason = code === SEND_PAYMENT_METHOD_MISSING ? 'policy' : 'manual';
+  const { message, flagReason } = sendFailure(code);
   await db.from('whatsapp_numbers').update({ status: 'needs_attention', flag_reason: flagReason, attention_message: message, last_test_at: now }).eq('phone_number_id', tenant.phone_number_id);
   await db.from('whatsapp_connect_attempts').update({ error_code: String(code ?? 'send'), error_message: message }).match({ merchant_id: tenant.merchant_id, status: 'awaiting_handshake' });
   forgetNumber(tenant.phone_number_id);
