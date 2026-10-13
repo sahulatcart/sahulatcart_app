@@ -32,6 +32,10 @@ const schema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default('claude-opus-4-8'),
 
+  // Self-service signup (P1): closed to all but the allow-list until SIGNUP_OPEN=true.
+  SIGNUP_OPEN: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
+  SIGNUP_ALLOWLIST: z.string().default(''), // comma-separated emails, case-insensitive
+
   // Secrets
   TOKEN_ENCRYPTION_KEY: z.string().optional(),
   SERVICE_HMAC_SECRET: z.string().optional(),

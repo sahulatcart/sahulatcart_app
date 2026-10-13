@@ -58,9 +58,40 @@ async function adminCtx(): Promise<MerchantCtx | null> {
   return mid ? { merchantId: mid, role: 'owner', isPlatformAdmin: true } : null;
 }
 
-async function jwtCtx(token: string): Promise<MerchantCtx | null> {
+/** A verified Supabase user — who they are, with the metadata the signup form stored. */
+export interface AuthUser {
+  id: string;
+  email: string;
+  metadata: Record<string, unknown>;
+}
+
+/** The Bearer value when it looks like a JWT (three dot-separated parts), else null. */
+function bearerJwt(req: FastifyRequest): string | null {
+  const authz = req.headers.authorization;
+  const bearer = authz?.startsWith('Bearer ') ? authz.slice(7).trim() : null;
+  return bearer && bearer.split('.').length === 3 ? bearer : null;
+}
+
+/**
+ * Verify the JWT only — no merchant membership required. This is the one path a user takes
+ * before they own a shop (POST /api/v1/signup/bootstrap). Everything else goes through resolveCtx.
+ */
+export async function resolveAuthUser(req: FastifyRequest): Promise<AuthUser | null> {
+  const token = bearerJwt(req);
+  if (!token) return null;
   const { data, error } = await getAnonClient().auth.getUser(token);
-  if (error || !data.user) return null;
+  if (error || !data.user?.email) return null;
+  return { id: data.user.id, email: data.user.email, metadata: (data.user.user_metadata ?? {}) as Record<string, unknown> };
+}
+
+/** A valid JWT whose user owns no shop yet: the portal redirects to /auth/confirmed, which bootstraps one. */
+export const NO_MEMBERSHIP = { error: { code: 'no_membership', message: 'This login has no shop yet' } };
+
+type Authn = { kind: 'ctx'; ctx: MerchantCtx } | { kind: 'no_membership' } | { kind: 'anonymous' };
+
+async function jwtAuthn(token: string): Promise<Authn> {
+  const { data, error } = await getAnonClient().auth.getUser(token);
+  if (error || !data.user) return { kind: 'anonymous' };
   const mu = await getServiceClient()
     .from('merchant_users')
     .select('id, merchant_id, role')
@@ -69,8 +100,32 @@ async function jwtCtx(token: string): Promise<MerchantCtx | null> {
     .order('created_at', { ascending: true })
     .limit(1)
     .maybeSingle();
-  if (!mu.data) return null;
-  return { merchantId: mu.data.merchant_id as string, role: mu.data.role as Role, memberId: mu.data.id as string, isPlatformAdmin: false };
+  if (!mu.data) return { kind: 'no_membership' };
+  return { kind: 'ctx', ctx: { merchantId: mu.data.merchant_id as string, role: mu.data.role as Role, memberId: mu.data.id as string, isPlatformAdmin: false } };
+}
+
+async function authenticate(req: FastifyRequest): Promise<Authn> {
+  const jwt = bearerJwt(req);
+  if (jwt) return jwtAuthn(jwt);
+  const authz = req.headers.authorization;
+  const bearer = authz?.startsWith('Bearer ') ? authz.slice(7).trim() : null;
+  const ctx = isAdminToken(bearer ?? req.headers['x-admin-token']) ? await adminCtx() : null;
+  return ctx ? { kind: 'ctx', ctx } : { kind: 'anonymous' };
+}
+
+/**
+ * preHandler for every merchant route (SRS Part 0.3): resolves the caller's shop into
+ * req.merchantCtx or ends the request — 401 with no login, 401 `no_membership` for a user
+ * without a shop, and 403 for a caller that has no shop to act on (a platform admin without a
+ * membership, once M6 lets resolveCtx return one). New route files apply it themselves:
+ *   app.addHook('preHandler', requireMerchant)
+ */
+export async function requireMerchant(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const a = await authenticate(req);
+  if (a.kind === 'anonymous') return reply.code(401).send({ error: { code: 'UNAUTHORIZED', message: 'login required' } });
+  if (a.kind === 'no_membership') return reply.code(401).send(NO_MEMBERSHIP);
+  if (!a.ctx.merchantId) return reply.code(403).send({ error: { code: 'NO_SHOP', message: 'This account has no shop to act on' } });
+  req.merchantCtx = a.ctx;
 }
 
 /**
@@ -81,11 +136,8 @@ async function jwtCtx(token: string): Promise<MerchantCtx | null> {
  * merchant_id is ALWAYS derived here — never taken from client input.
  */
 export async function resolveCtx(req: FastifyRequest): Promise<MerchantCtx | null> {
-  const authz = req.headers.authorization;
-  const bearer = authz?.startsWith('Bearer ') ? authz.slice(7).trim() : null;
-  // A JWT has three dot-separated parts; any other bearer value is an admin-token attempt.
-  if (bearer && bearer.split('.').length === 3) return jwtCtx(bearer);
-  return isAdminToken(bearer ?? req.headers['x-admin-token']) ? adminCtx() : null;
+  const a = await authenticate(req);
+  return a.kind === 'ctx' ? a.ctx : null;
 }
 
 /**

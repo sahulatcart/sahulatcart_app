@@ -4,6 +4,7 @@ import { loadConfig } from './config';
 import { loggerOptions } from './lib/logger';
 import { healthRoutes } from './routes/health';
 import { adminRoutes } from './routes/admin';
+import { signupRoutes } from './routes/signup';
 import { webhookRoutes } from './whatsapp/webhook';
 
 /**
@@ -24,6 +25,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(healthRoutes);
   await app.register(webhookRoutes); // Phase 2: /api/v1/webhook/whatsapp
   await app.register(adminRoutes); // Phase 5: merchant admin API (pilot token-gated)
+  await app.register(signupRoutes); // P1: self-service signup gate + bootstrap
 
   return app;
 }
