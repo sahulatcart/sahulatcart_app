@@ -1,9 +1,11 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Clock, MessageSquare, ShoppingBag, Sparkles, Wallet } from 'lucide-react';
+import { ArrowRight, Bell, Clock, MessageSquare, ShoppingBag, Sparkles, Wallet } from 'lucide-react';
 import AppShell, { EmptyState, PageHead, PaymentPill, StatusPill } from '../components/AppShell';
 import { apiJson, rs } from '../lib/api';
+import { enablePush, pushState } from '../lib/push';
+import { useToast } from '../components/Toast';
 
 interface Dash {
   ordersToday: number; revenueToday: number; pendingPayments: number; activeChats: number;
@@ -37,6 +39,7 @@ export default function Dashboard() {
     <AppShell>
       <PageHead title="Dashboard" sub="Your shop at a glance — today, in Pakistan time" />
 
+      <PushNudge />
       {setup && (
         <div className="callout">
           <div className="row" style={{ flexWrap: 'nowrap' }}>
@@ -85,5 +88,41 @@ export default function Dashboard() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+/** "Turn on phone notifications" (P3): shown once per device while push is possible but not yet on. */
+function PushNudge() {
+  const toast = useToast();
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let dismissed = false;
+    try { dismissed = localStorage.getItem('sk_push_nudge') === 'off'; } catch { /* storage blocked */ }
+    if (dismissed) return;
+    pushState().then((st) => setShow(st === 'available')).catch(() => {});
+  }, []);
+  if (!show) return null;
+  async function enable() {
+    setBusy(true);
+    try { await enablePush(); toast('This device will get alerts for new orders', 'success'); setShow(false); }
+    catch (e) { toast((e as Error).message, 'error'); }
+    finally { setBusy(false); }
+  }
+  function later() {
+    try { localStorage.setItem('sk_push_nudge', 'off'); } catch { /* storage blocked */ }
+    setShow(false);
+  }
+  return (
+    <div className="callout">
+      <div className="row" style={{ flexWrap: 'nowrap' }}>
+        <div className="ico"><Bell aria-hidden /></div>
+        <div><div className="strong">Get a notification for every new order</div><div className="hint">On this device, even when the portal is closed. Change it any time in Settings → Notifications.</div></div>
+      </div>
+      <div className="row" style={{ gap: 8 }}>
+        <button className="btn ghost" onClick={later} disabled={busy}>Not now</button>
+        <button className="btn" onClick={enable} disabled={busy}><Bell aria-hidden /> Turn on</button>
+      </div>
+    </div>
   );
 }

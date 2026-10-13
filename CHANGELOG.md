@@ -7,6 +7,57 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — P3: merchant alerts — `notify()`, Web Push, email, the digest rule
+
+**Outcome** — a merchant no longer has to keep the portal open to learn of an order. Every
+notification now goes through one function, [lib/notify.ts](backend/src/lib/notify.ts) `notify()`
+(IC-3), which writes the portal row and then sends a Web Push to each owner's/manager's devices and
+an email to their address, by their preferences. Never WhatsApp (decided 2026-10-13). Branch
+`feat/p3-alerts`, week 4 of SRS-Uzair v1.1. Needs the VAPID and Resend variables on Railway
+(Appendix B) and migration 0014; without them the channels are silently skipped and only the portal
+row is written, exactly as before.
+
+**How it is built.** `notify()` awaits the `notifications` insert and starts the fan-out in the
+background (`void …catch(log)`, FR-P3.7); tests wait for it with `flushNotifications()`. Members are
+`merchant_users` with role owner/manager, `is_active`, and `notification_prefs` (`{ push, email }`,
+both on by default; staff never get alerts). Push goes through the `web-push` package
+([lib/push.ts](backend/src/lib/push.ts)); a 404/410 from the push service deletes that
+subscription. Email is Resend's HTTP API with plain `fetch` ([lib/email.ts](backend/src/lib/email.ts)),
+plain text plus a minimal HTML version with the portal link (`ADMIN_ORIGIN`). **The digest rule:**
+more than five emails in five minutes for one merchant → the rest wait and go out as one
+"N new notifications" email when the window closes; push is not batched. The counter is
+in-process, which is right for the one backend instance we run. The nine producers (handoff,
+new order, payment claim, cancel, the window-closed notice, M1's dead-token flag, M3's account
+events and disconnected reminder, M4's template status) were switched; `grep "from('notifications').insert"`
+now finds only `notify.ts`.
+
+**Routes** in a new [routes/notifications.ts](backend/src/routes/notifications.ts) (own auth hook):
+`GET/PATCH /admin/notification-prefs`, `POST/DELETE /admin/push-subscriptions` (one row per device,
+upsert on the endpoint), `POST /admin/notifications/test { channel }`. All need a portal login — the
+shared admin token has no member to alert, so it gets 400. `/config` adds `vapidPublicKey`.
+
+**Portal.** `public/sw.js` shows the payload and opens its `url` on tap, focusing an open portal
+window if there is one; `public/manifest.json` makes the portal installable (standalone, teal
+theme). The icons are the existing SVG and the 180px apple-touch-icon — no 192/512 PNGs were
+generated, since the repo has no image tooling; Chrome accepts the SVG, iOS uses the PNG.
+`lib/push.ts` registers the worker, subscribes with the server's key and posts the subscription.
+Settings → Notifications: the two channel switches, this device's state (on / available /
+blocked / unsupported / "add to Home Screen first, iOS 16.4+"), and a test button per channel. The
+dashboard shows a one-time "turn on phone notifications" callout while push is possible but off.
+
+**Tests.** `lib/notify.test.ts` (fan-out per prefs, staff and other shops excluded, 410 deletes
+the subscription, unconfigured channels skipped, an email failure never reaches the caller, the
+digest after five in five minutes with fake timers, individual emails again afterwards) and
+`routes/notifications.test.ts` (malformed subscription, upsert per device, prefs read, test push,
+test email 409 while unconfigured, unsubscribe, prefs patch). Suite: 28 files, 289 tests.
+
+**Still to do for the "done when" (needs the owner/Fazal):** generate the VAPID pair
+(`npx web-push generate-vapid-keys`) and set it with `RESEND_API_KEY` on Railway; apply 0014; verify
+the domain in Resend so `ALERT_EMAIL_FROM` can move off the test sender; then T18 on Android Chrome
+and an iPhone with the portal on the Home Screen.
+
+---
+
 ## 2026-10-13 — P2, part 2: the seven panels, COD enforced, the greeting, the live-merchant back-fill
 
 **Outcome** — onboarding is complete end to end. Every panel of the wizard saves on its own

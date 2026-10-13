@@ -42,6 +42,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       supabaseAnonKey: cfg.SUPABASE_ANON_KEY,
       // Self-service signup (P1): whether anyone may join, never the allow-list itself.
       signupOpen: cfg.SIGNUP_OPEN,
+      // Web Push (P3): the public VAPID key is public by design; null means push is not set up.
+      vapidPublicKey: cfg.VAPID_PUBLIC_KEY ?? null,
       // Embedded Signup (M2): the app id and configuration id are public by design; the secret never is.
       metaAppId: cfg.META_APP_ID ?? null,
       embeddedSignupConfigId: cfg.META_EMBEDDED_SIGNUP_CONFIG_ID ?? null,

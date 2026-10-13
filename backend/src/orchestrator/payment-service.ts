@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BotState } from '@app/shared';
 import { loadConfig } from '../config';
 import { logger } from '../lib/logger';
+import { notify } from '../lib/notify';
 import { sendDocument, sendTemplate, sendText } from '../whatsapp/client';
 import { approvedTemplate, type TemplateKind } from '../whatsapp/templates';
 import { signedSlipUrl } from './slip';
@@ -112,13 +113,11 @@ async function notifyBuyer(db: SupabaseClient, order: OrderRow, text: string, sl
     ? 'The WhatsApp message could not be sent.'
     : `The buyer last messaged over 24 hours ago, so WhatsApp allows only a paid template now (about ${price}).`;
   await db.from('orders').update({ pending_buyer_notice: notice }).eq('id', order.id);
-  await db.from('notifications').insert({
-    merchant_id: order.merchant_id,
+  await notify(db, order.merchant_id, {
     type: 'system',
     title: windowOpen ? `Could not message the buyer — order ${order.order_number ?? ''}`.trim() : `Buyer's window closed — order ${order.order_number ?? ''}`.trim(),
     body: windowOpen ? `${why} Please contact ${waId ?? 'the buyer'} and tell them: "${text}"` : `${why} Open the order to send it, or contact ${waId ?? 'the buyer'} yourself.`,
     data: { orderId: order.id, action: notice },
-    channel: 'portal',
   });
 }
 

@@ -36,6 +36,14 @@ const schema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default('claude-opus-4-8'),
 
+  // Merchant alerts (P3): Web Push (VAPID keys) and email through Resend. A missing key skips that channel.
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().default('mailto:support@sahulatcart.com'),
+  RESEND_API_KEY: z.string().optional(),
+  ALERT_EMAIL_FROM: z.string().default('Sahulatcart <onboarding@resend.dev>'), // Resend's test sender until the domain is verified
+  ADMIN_ORIGIN: z.string().url().default('https://appadmin-production-0a30.up.railway.app'), // links in emails
+
   // Self-service signup (P1): closed to all but the allow-list until SIGNUP_OPEN=true.
   SIGNUP_OPEN: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
   SIGNUP_ALLOWLIST: z.string().default(''), // comma-separated emails, case-insensitive
