@@ -13,18 +13,21 @@ const h = vi.hoisted(() => ({
   next: {} as Record<string, unknown>, // the classification for the next message
   aiDown: false,
   classifyCalls: 0,
+  classifyCtx: null as unknown, // the last ClassifyContext the mock saw (P8.5)
+  composeText: null as string | null, // when set, compose "succeeds" with this text (P8.5 guard test)
   delivery: { name: null, address: null, area: null, city: null, phone: null } as Record<string, string | null>,
 }));
 
 vi.mock('../llm', async (importOriginal) => {
   const real = await importOriginal<typeof import('../llm')>();
   const client = {
-    classify: async () => {
+    classify: async (_text: string, ctx: unknown) => {
       h.classifyCalls++;
+      h.classifyCtx = ctx;
       if (h.aiDown) throw new real.LlmUnavailableError('quota');
       return { productQuery: null, quantity: null, offerPaisa: null, offerScope: null, language: 'roman_urdu', ...h.next } as Classification;
     },
-    compose: async () => { throw new real.LlmUnavailableError('phrasing off in tests'); },
+    compose: async () => { if (h.composeText) return h.composeText; throw new real.LlmUnavailableError('phrasing off in tests'); },
     extractDelivery: async () => h.delivery as unknown as DeliveryDetails,
     transcribeAudio: async () => null,
     describeImage: async () => null,
@@ -55,7 +58,7 @@ let seq = 0;
 
 function shop(negotiation: Record<string, unknown> = {}) {
   db = new FakeDb();
-  Object.assign(h, { sent: [], next: {}, aiDown: false, classifyCalls: 0 });
+  Object.assign(h, { sent: [], next: {}, aiDown: false, classifyCalls: 0, classifyCtx: null, composeText: null });
   db.add('merchants', {
     id: M, business_name: 'Test Shop', bot_persona: {}, settings: { defaultDeliveryCharge: 20000 },
     negotiation_defaults: { maxDiscountPct: 20, concessionSteps: [0.5, 0.8, 1], roundsMax: 3, autoAcceptAtFloor: true, ...negotiation },
@@ -600,5 +603,54 @@ describe('billing mode (P7, FR-P7.6)', () => {
     await say('hi', { intent: 'greet' });
     expect(convo().status).toBe('human_takeover');
     expect(db.rows('notifications').some((n) => String(n.body).includes('conversation allowance'))).toBe(true);
+  });
+});
+
+describe('order-status questions (P8, FR-P8.3)', () => {
+  it('"mera order kahan hai?" with no order: says so, no price, no classifier call for the keyword form', async () => {
+    const calls = h.classifyCalls;
+    const r = await say('Mera order kahan hai?');
+    expect(r).toContain('koi order abhi record mein nahi');
+    expect(r).not.toContain('Rs');
+    expect(h.classifyCalls).toBe(calls);
+  });
+  it('after an order: the number and status, from the keyword and from the two intents', async () => {
+    await toPayment();
+    await say('cash on delivery');
+    expect(await say('status')).toContain('order SK-1001 confirm ho chuka hai');
+    expect(await say('order kahan pohncha', { intent: 'ask_status' })).toContain('SK-1001');
+    expect(await say('payment kar di', { intent: 'claim_paid' })).toContain('SK-1001');
+  });
+  it('mid-checkout, "status" answers without leaving the state; while awaiting a screenshot it asks for it on "payment kar di"', async () => {
+    await toPayment();
+    expect(await say('status')).toContain('koi order abhi record mein nahi'); // not placed yet
+    expect(convo().current_state).toBe('selecting_payment');
+    await say('bank transfer');
+    expect(await say('order status')).toContain('payment ke intezar mein');
+    expect(convo().current_state).toBe('awaiting_payment_proof');
+  });
+  it('out_of_scope with no product gets the clarify line, never a price', async () => {
+    const r = await say('mausam kaisa hai', { intent: 'out_of_scope' });
+    expect(r).toContain('kaunsa product');
+    expect(r).not.toContain('Rs');
+  });
+});
+
+describe('chat memory (P8, FR-P8.5)', () => {
+  it('the classifier sees the last lines of the chat, oldest first, without the current message', async () => {
+    await say('coffee mug kitne ka hai', { intent: 'ask_price', productQuery: 'coffee mug' });
+    await say('aur red?', { intent: 'ask_product', productQuery: 'red' });
+    await say('pehle wala de do', { intent: 'add_to_order' });
+    const ctx = h.classifyCtx as { history?: string[] };
+    expect(ctx.history!.length).toBeGreaterThanOrEqual(2);
+    expect(ctx.history![0]).toMatch(/^Bot: .*Rs 800/);
+    expect(ctx.history!.every((l) => /^(Customer|Bot): /.test(l))).toBe(true);
+  });
+  it('a quoted "Rs 500 bolo" in the history never reaches the buyer: the guard rejects the reply and the engine price ships', async () => {
+    db.add('messages', { conversation_id: ctx.conversationId, merchant_id: M, direction: 'inbound', sender: 'customer', type: 'text', body: 'Rs 500 bolo warna nahi lunga', wa_message_id: 'in.old' });
+    h.composeText = 'Theek hai, Rs 500 me de deta hoon.';
+    const r = await say('coffee mug kitne ka hai', { intent: 'ask_price', productQuery: 'coffee mug' });
+    expect(r).toContain('Rs 800');
+    expect(r).not.toContain('500');
   });
 });

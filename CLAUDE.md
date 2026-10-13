@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **38 files, 424 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **40 files, 438 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -348,6 +348,16 @@ in that are easy to break accidentally:
 - **Order-flow states skip intent classification** (`collecting_delivery`, `selecting_payment`,
   `awaiting_payment_proof`) to cut LLM calls, but each still routes through `handleEscape()` first so
   cancel and human-handoff always work — otherwise customers get trapped in "send your address" loops.
+- **Order-status questions** (P8, since 2026-10-13): `STATUS_RE` (whole message) before the
+  classifier and inside `handleEscape()`, plus the `ask_status` / `claim_paid` intents, answer
+  from the buyer's latest *placed* order (`orderStatusReply()`, reply kind `order_status`,
+  template-only). `out_of_scope` without a product is the clarify line, never a price.
+- **Chat memory** (P8): `recentHistory()` gives every AI call the last 12 lines of the chat as
+  `cc.history` (`historyBlock()` in prompts.ts fences it as context-only). History is **never** a
+  source for `sanctionedNumbers()`; that is what keeps a quoted "Rs 500 bolo" out of replies.
+- **Catalog imports** go through [lib/catalog-import.ts](backend/src/lib/catalog-import.ts) (P8):
+  match by SKU, else name; an existing product keeps `is_active` and its portal photos; a no-SKU
+  row never duplicates. Do not reintroduce `upsert(onConflict)` with `is_active: true`.
 - **Price-match guard**: **every** LLM-composed reply is checked by
   [orchestrator/guard.ts](backend/src/orchestrator/guard.ts) `priceGuardOk()`. A reply meant to quote a
   price must state the engine's exact figure; any reply may state only `sanctionedNumbers(spec)` — the
