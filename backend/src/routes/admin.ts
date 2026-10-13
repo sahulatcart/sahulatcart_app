@@ -6,6 +6,7 @@ import { getServiceClient } from '../lib/supabase';
 import { forbid, isAdminToken, isManager, requireMerchant } from '../lib/auth';
 import { NEW_MERCHANT_SETTINGS } from '../lib/signup';
 import { computeReadiness } from '../lib/readiness';
+import { startOfTodayKarachi } from '../lib/hours';
 import { cancelOrder, markCodCollected, rejectPayment, verifyPayment, type ActionResult, type Actor } from '../orchestrator/payment-service';
 import { signedScreenshotUrl } from '../whatsapp/media';
 import { sendText } from '../whatsapp/client';
@@ -82,7 +83,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // ── Dashboard ──
   app.get('/api/v1/admin/dashboard', async (req, reply) => {
     const mid = req.merchantCtx!.merchantId;
-    const since = startOfTodayUtc();
+    const since = startOfTodayKarachi(); // "today" is the merchant's day, not UTC's (P5)
     const [ordersToday, pending, recent, activeChats, toPrepare, toDispatch] = await Promise.all([
       db.from('orders').select('total', { count: 'exact' }).eq('merchant_id', mid).gte('created_at', since).not('order_number', 'is', null),
       db.from('orders').select('id', { count: 'exact', head: true }).eq('merchant_id', mid).eq('payment_status', 'claimed'),
@@ -167,14 +168,14 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // ── Inbox / Conversations ──
   app.get('/api/v1/admin/conversations', async (req, reply) => {
     const mid = req.merchantCtx!.merchantId;
-    const { data } = await db.from('conversations').select('id, status, current_state, last_message_at, unread_count, customers(name, wa_id)').eq('merchant_id', mid).neq('status', 'closed').order('last_message_at', { ascending: false, nullsFirst: false }).limit(50);
+    const { data } = await db.from('conversations').select('id, status, current_state, last_message_at, unread_count, customers(name, wa_id, wa_opt_in_status, is_blocked)').eq('merchant_id', mid).neq('status', 'closed').order('last_message_at', { ascending: false, nullsFirst: false }).limit(50);
     return reply.send({ conversations: data ?? [] });
   });
 
   app.get('/api/v1/admin/conversations/:id', async (req, reply) => {
     const mid = req.merchantCtx!.merchantId;
     const { id } = req.params as { id: string };
-    const convo = await db.from('conversations').select('id, status, current_state, window_expires_at, customers(name, wa_id)').eq('id', id).eq('merchant_id', mid).maybeSingle();
+    const convo = await db.from('conversations').select('id, status, current_state, window_expires_at, customers(id, name, wa_id, wa_opt_in_status, wa_opt_in_at, is_blocked)').eq('id', id).eq('merchant_id', mid).maybeSingle();
     if (!convo.data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'conversation not found' } });
     const messages = await db.from('messages').select('direction, sender, type, body, status, created_at').eq('conversation_id', id).order('created_at', { ascending: true }).limit(200);
     await db.from('conversations').update({ unread_count: 0 }).eq('id', id);
@@ -265,7 +266,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/admin/products', async (req, reply) => {
     const mid = req.merchantCtx!.merchantId;
     const cols = isManager(req.merchantCtx!) ? 'id, sku, name, description, price, cost, stock, track_stock, is_active, negotiable, max_discount_pct, min_price, images' : 'id, sku, name, description, price, stock, track_stock, is_active, negotiable, max_discount_pct, min_price, images';
-    const { data } = await db.from('products').select(cols as '*').eq('merchant_id', mid).order('created_at', { ascending: true });
+    const { data } = await db.from('products').select(cols as '*').eq('merchant_id', mid).is('deleted_at', null).order('created_at', { ascending: true });
     const cfg2 = loadConfig();
     const products = (data ?? []).map((p: Record<string, unknown>) => ({
       ...p,
@@ -278,7 +279,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const mid = req.merchantCtx!.merchantId;
     const { id } = req.params as { id: string };
     const cols = isManager(req.merchantCtx!) ? '*' : 'id, sku, name, description, price, stock, track_stock, is_active, negotiable, max_discount_pct, min_price, images, attributes, created_at';
-    const { data } = await db.from('products').select(cols as '*').eq('id', id).eq('merchant_id', mid).maybeSingle();
+    const { data } = await db.from('products').select(cols as '*').eq('id', id).eq('merchant_id', mid).is('deleted_at', null).maybeSingle();
     if (!data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'product not found' } });
     const cfg2 = loadConfig();
     const p = data as Record<string, unknown>;

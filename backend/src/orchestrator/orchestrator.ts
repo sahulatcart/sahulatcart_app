@@ -199,6 +199,23 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
 }
 
 async function runTurn(db: SupabaseClient, ctx: OrchestratorCtx, message: NormalizedMessage, budget: { cap: number }): Promise<void> {
+  // P5 (IC-8): opted-out and blocked customers are store-only, before any LLM call. The message
+  // is already saved; bumping unread_count is what makes it show in the inbox. The exact words
+  // "start" / "shuru" re-opt a customer in and get one welcome.
+  const cust = await db.from('customers').select('wa_opt_in_status, is_blocked').eq('id', ctx.customerId).maybeSingle();
+  const silent = cust.data?.is_blocked ? 'blocked' : cust.data?.wa_opt_in_status === 'out' ? 'opted out' : null;
+  if (silent) {
+    if (silent === 'opted out' && START_RE.test(message.text ?? '')) {
+      await db.from('customers').update({ wa_opt_in_status: 'in', wa_opt_in_source: 'keyword', wa_opt_in_at: new Date().toISOString() }).eq('id', ctx.customerId);
+      await reply(db, ctx, 'Khush aamdeed! Aap dobara hamare messages receive karenge. Kaise madad kar sakte hain?', 'greeting', {});
+      return;
+    }
+    const c = await db.from('conversations').select('unread_count').eq('id', ctx.conversationId).maybeSingle();
+    await db.from('conversations').update({ unread_count: ((c.data?.unread_count as number | undefined) ?? 0) + 1 }).eq('id', ctx.conversationId);
+    logger.info({ customerId: ctx.customerId, why: silent }, 'customer silent, not replying');
+    return;
+  }
+
   const merchantRes = await db
     .from('merchants')
     .select('business_name, bot_persona, negotiation_defaults, settings, business_hours, phone, status')
@@ -277,6 +294,9 @@ async function runTurn(db: SupabaseClient, ctx: OrchestratorCtx, message: Normal
     return;
   }
 
+  // P5 (FR-P5.2): the exact STOP words work in every state, before any LLM call.
+  if (message.type !== 'image' && STOP_RE.test(text)) return optOut(db, ctx, context);
+
   // M5: past the free 1,000 messages a month, a shop set to "hand off" stops selling to NEW
   // conversations; a buyer already in checkout finishes (the states below), never dropped.
   if (settings.afterFreeQuota === 'handoff' && !ORDER_FLOW_STATES.includes(state) && (await outboundThisMonth(db, ctx.phoneNumberId)) >= FREE_QUOTA) {
@@ -315,11 +335,7 @@ async function runTurn(db: SupabaseClient, ctx: OrchestratorCtx, message: Normal
     : single ?? (mentioned ? null : catalog.find((c) => c.id === activeId) ?? null);
 
   // ── Intent routing ──
-  if (cls.intent === 'stop') {
-    await db.from('customers').update({ wa_opt_in_status: 'out', wa_opt_in_at: new Date().toISOString() }).eq('id', ctx.customerId);
-    await reply(db, ctx, 'Theek hai, aainda message nahi karenge. Shukriya!', 'completed', context);
-    return;
-  }
+  if (cls.intent === 'stop') return optOut(db, ctx, context);
   if (cls.intent === 'human_request' || cls.intent === 'complaint') {
     await handoff(db, ctx, cc, context, convoRes.data?.current_state as BotState);
     return;
@@ -706,6 +722,16 @@ async function askPaymentMethod(db: SupabaseClient, ctx: OrchestratorCtx, cc: Co
 
 // NOTE: these run on address/free-text too — keep patterns multi-word or unambiguous
 // (e.g. "Malik" is a common name; "Band Road" is a real street) to avoid false triggers.
+// P5: whole-message keywords only, so "band karo" alone is an opt-out while "order band karo" stays a cancel.
+const STOP_RE = /^\s*(stop|unsubscribe|band karo|bandh karo|msg mat karo)\s*$/i;
+const START_RE = /^\s*(start|shuru)\s*$/i;
+
+/** One goodbye, then silence for good (until "start"). Shared by the keyword and the classifier. */
+async function optOut(db: SupabaseClient, ctx: OrchestratorCtx, context: Record<string, unknown>): Promise<void> {
+  await db.from('customers').update({ wa_opt_in_status: 'out', wa_opt_in_at: new Date().toISOString() }).eq('id', ctx.customerId);
+  await reply(db, ctx, 'Theek hai, aainda message nahi karenge. Shukriya!', 'completed', context);
+}
+
 const CANCEL_RE = /\bcancel\b|cancle|band kar do|band karo|rehne d|rehnay d|nahi chahiye|nai chahiye|nahin chahiye|chhor d|chor d|khatam kar|order wapis|mind badal/;
 const HUMAN_RE = /insaan se|insan se|operator|agent se|baat kara|baat karwa|baat karva|complaint|shikayat|shikayet|kisi se baat|talk to (a )?(human|person)/;
 const COD_RE = /\bcod\b|\bcash\b|delivery pe|delivery par|ghar pe d|hath me d/;

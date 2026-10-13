@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   sent: [] as { to: string; body: string; type?: string; buttons?: string[]; template?: string; params?: string[] }[],
   next: {} as Record<string, unknown>, // the classification for the next message
   aiDown: false,
+  classifyCalls: 0,
   delivery: { name: null, address: null, area: null, city: null, phone: null } as Record<string, string | null>,
 }));
 
@@ -19,6 +20,7 @@ vi.mock('../llm', async (importOriginal) => {
   const real = await importOriginal<typeof import('../llm')>();
   const client = {
     classify: async () => {
+      h.classifyCalls++;
       if (h.aiDown) throw new real.LlmUnavailableError('quota');
       return { productQuery: null, quantity: null, offerPaisa: null, offerScope: null, language: 'roman_urdu', ...h.next } as Classification;
     },
@@ -53,7 +55,7 @@ let seq = 0;
 
 function shop(negotiation: Record<string, unknown> = {}) {
   db = new FakeDb();
-  Object.assign(h, { sent: [], next: {}, aiDown: false });
+  Object.assign(h, { sent: [], next: {}, aiDown: false, classifyCalls: 0 });
   db.add('merchants', {
     id: M, business_name: 'Test Shop', bot_persona: {}, settings: { defaultDeliveryCharge: 20000 },
     negotiation_defaults: { maxDiscountPct: 20, concessionSteps: [0.5, 0.8, 1], roundsMax: 3, autoAcceptAtFloor: true, ...negotiation },
@@ -492,5 +494,76 @@ describe('M6: suspension', () => {
     await say('salam', { intent: 'greet' });
     expect(h.sent.length).toBe(before);
     expect(convo().current_state).toBe('greeting');
+  });
+});
+
+describe('opt-out and block (P5)', () => {
+  const customer = () => db.rows('customers')[0]!;
+  const quiet = async () => {
+    const calls = h.classifyCalls; const sent = h.sent.length; const unread = convo().unread_count;
+    expect(await say('hi', { intent: 'greet' })).toBe('');
+    expect(h.classifyCalls).toBe(calls); // no LLM call
+    expect(h.sent.length).toBe(sent);
+    expect(convo().unread_count).toBe(unread + 1); // but it shows in the inbox
+  };
+
+  it('an opted-out customer gets no reply and costs no AI call', async () => {
+    customer().wa_opt_in_status = 'out';
+    await quiet();
+  });
+
+  it('a blocked customer is silent the same way', async () => {
+    customer().is_blocked = true;
+    await quiet();
+  });
+
+  it('"stop" in any state: one goodbye, then silence', async () => {
+    const reach: Record<string, () => Promise<unknown>> = {
+      greeting: async () => undefined,
+      product_qa: () => say('coffee mug kitne ka hai', { intent: 'ask_price', productQuery: 'coffee mug' }),
+      negotiating: async () => { await say('coffee mug kitne ka hai', { intent: 'ask_price', productQuery: 'coffee mug' }); await say('600 me de do', { intent: 'make_offer', offerPaisa: 60000 }); },
+      collecting_delivery: async () => { await say('coffee mug kitne ka hai', { intent: 'ask_price', productQuery: 'coffee mug' }); await say('theek hai', { intent: 'accept' }); },
+      selecting_payment: () => toPayment(),
+      awaiting_payment_proof: async () => { await toPayment(); await say('bank transfer'); },
+    };
+    for (const [state, go] of Object.entries(reach)) {
+      shop();
+      await go();
+      expect(convo().current_state, state).toBe(state);
+      expect(await say('STOP'), state).toContain('aainda message nahi karenge');
+      expect(customer().wa_opt_in_status, state).toBe('out');
+      await quiet();
+    }
+  });
+
+  it('the stop words are whole-message only: "order band karo" during checkout is a cancel, not an opt-out', async () => {
+    await toPayment();
+    expect(await say('order band karo')).toContain('cancel kar diya');
+    expect(customer().wa_opt_in_status).toBeUndefined();
+  });
+
+  it('"start" re-opts in with one welcome, and the bot answers again', async () => {
+    await say('stop');
+    expect(await say('start')).toContain('Khush aamdeed');
+    expect(customer()).toMatchObject({ wa_opt_in_status: 'in', wa_opt_in_source: 'keyword' });
+    expect(await say('coffee mug kitne ka hai', { intent: 'ask_price', productQuery: 'coffee mug' })).toContain('Rs 800');
+  });
+
+  it('the classifier\'s own "stop" intent opts out the same way', async () => {
+    expect(await say('mujhe message mat karna', { intent: 'stop' })).toContain('aainda message nahi karenge');
+    expect(customer().wa_opt_in_status).toBe('out');
+  });
+});
+
+describe('stock double-order guard (P5, FR-P5.7)', () => {
+  it('a buyer with an open order cannot start a second one for more than what is left', async () => {
+    await say('2 coffee mug', { intent: 'ask_price', productQuery: 'coffee mug', quantity: 2 });
+    await say('theek hai', { intent: 'accept' });
+    h.delivery = dha;
+    await say('address');
+    expect(await say('cash on delivery')).toContain('confirm');
+    expect(stock()).toBe(1); // the first order holds 2 of 3
+    expect(await say('3 aur coffee mug', { intent: 'ask_price', productQuery: 'coffee mug', quantity: 3 })).toContain('sirf 1 available');
+    expect(db.rows('orders').filter((o) => o.status === 'confirmed')).toHaveLength(1);
   });
 });

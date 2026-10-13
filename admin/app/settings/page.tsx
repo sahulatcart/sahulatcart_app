@@ -15,7 +15,7 @@ interface Settings {
   business_name: string;
   negotiation_defaults: { maxDiscountPct?: number; roundsMax?: number; stalemateAction?: 'handoff' | 'hold_and_close'; bulkTiers?: Tier[] };
   settings: { botEnabled?: boolean; defaultDeliveryCharge?: number; upsellEnabled?: boolean; kb?: Kb; afterFreeQuota?: 'continue' | 'handoff'; llmDailyCap?: number; unpaidExpiryHours?: number };
-  bot_persona: { name?: string; style?: string } | null;
+  bot_persona: { name?: string; style?: string; greeting?: string } | null;
   bankAccounts: { id: string; bank_name: string; account_title: string; account_number: string; is_default: boolean }[];
   deliveryZones: Zone[];
   readiness?: { ready: boolean; failing: string[]; steps: Record<string, { ok: boolean; reason?: string }> };
@@ -37,8 +37,9 @@ export default function SettingsPage() {
   const [bank, setBank] = useState({ bank_name: '', account_title: '', account_number: '' });
   const [name, setName] = useState('');
   const [expiryHours, setExpiryHours] = useState('24');
+  const [persona, setPersona] = useState({ name: '', greeting: '' });
   const load = () => apiJson<Settings>('/api/v1/admin/settings')
-    .then((d) => { setS(d); setName(d.business_name ?? ''); setExpiryHours(String(d.settings.unpaidExpiryHours ?? 24)); })
+    .then((d) => { setS(d); setName(d.business_name ?? ''); setExpiryHours(String(d.settings.unpaidExpiryHours ?? 24)); setPersona({ name: d.bot_persona?.name ?? '', greeting: d.bot_persona?.greeting ?? '' }); })
     .catch(() => {});
   useEffect(() => { load(); }, []);
 
@@ -55,6 +56,9 @@ export default function SettingsPage() {
     if (await patch({ businessName: v }, 'Shop name saved')) load();
   }
 
+  async function savePersona() {
+    if (await patch({ botPersona: { name: persona.name.trim(), greeting: persona.greeting.trim() } }, 'Bot name and greeting saved')) load();
+  }
   async function saveExpiry() {
     if (await patch({ settings: { unpaidExpiryHours: Number(expiryHours) } }, 'Saved')) load();
   }
@@ -151,6 +155,14 @@ export default function SettingsPage() {
             </div>
             <label className="switch"><input type="checkbox" aria-label="Bot active" checked={botOn} disabled={notReady} onChange={(e) => toggleBot(e.target.checked)} /><span className="track" /></label>
           </div>
+        </div>
+        <div className="card-head" style={{ borderBottom: '1px solid var(--border)', display: 'block' }}>
+          <div className="form-row">
+            <div className="field" style={{ flex: '1 1 160px' }}><label htmlFor="bot-name">Bot name</label><input id="bot-name" maxLength={40} placeholder="e.g. Sana" value={persona.name} onChange={(e) => setPersona({ ...persona, name: e.target.value })} /></div>
+            <div className="field" style={{ flex: '3 1 260px' }}><label htmlFor="bot-greet">Greeting</label><input id="bot-greet" maxLength={200} placeholder="Assalam-o-Alaikum! Ali Garments mein khush aamdeed." value={persona.greeting} onChange={(e) => setPersona({ ...persona, greeting: e.target.value })} /></div>
+            <button className="btn" onClick={savePersona} disabled={persona.name === (s.bot_persona?.name ?? '') && persona.greeting === (s.bot_persona?.greeting ?? '')}><Save aria-hidden /> Save</button>
+          </div>
+          <div className="help">The first line a new customer gets; your business hours are added after it.</div>
         </div>
         <div className="card-head" style={{ borderBottom: 0 }}>
           <div className="setting-row" style={{ width: '100%' }}>
