@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../lib/logger';
+import { notify } from '../lib/notify';
 import { digitsOnly } from '../lib/phone';
 import { forgetNumber } from './credentials';
 import { applyTemplateStatus } from './templates';
@@ -20,7 +21,7 @@ const TIER: Record<string, Tier> = { TIER_250: 'unverified', TIER_1K: 'tier_1', 
 
 async function notifyMerchants(db: SupabaseClient, merchantIds: string[], type: 'system' | 'template_status', title: string, body: string, data: Record<string, unknown>): Promise<void> {
   for (const merchant_id of new Set(merchantIds)) {
-    await db.from('notifications').insert({ merchant_id, type, title, body, data, channel: 'portal' });
+    await notify(db, merchant_id, { type, title, body, data });
   }
 }
 

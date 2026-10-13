@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { loadConfig } from '../config';
 import { logger } from '../lib/logger';
+import { notify } from '../lib/notify';
 import { decrypt, encrypt, fromBytea, toBytea } from '../lib/crypto';
 
 /**
@@ -124,12 +125,5 @@ export async function markTokenInvalid(db: SupabaseClient, phoneNumberId: string
     .select('merchant_id')
     .maybeSingle();
   if (!num) return;
-  await db.from('notifications').insert({
-    merchant_id: num.merchant_id,
-    type: 'system',
-    title: 'WhatsApp disconnected',
-    body: message,
-    data: { phoneNumberId, action: 'reconnect_whatsapp' },
-    channel: 'portal',
-  });
+  await notify(db, num.merchant_id, { type: 'system', title: 'WhatsApp disconnected', body: message, data: { phoneNumberId, action: 'reconnect_whatsapp' } });
 }

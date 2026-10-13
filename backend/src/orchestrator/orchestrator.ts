@@ -18,6 +18,7 @@ import { samePhone } from '../lib/phone';
 import { matchZone, type Zone } from './delivery';
 import { confirmBankOrder, confirmCodOrder, createDraftOrder, OUT_OF_STOCK, switchBankOrderToCod, type DeliveryInfo } from './order-service';
 import { todayHoursText } from '../lib/hours';
+import { notify } from '../lib/notify';
 import type { PaymentMethodKind } from '../llm/types';
 
 export interface OrchestratorCtx {
@@ -554,14 +555,7 @@ async function handoff(
     .from('conversations')
     .update({ status: 'human_takeover', current_state: 'handoff', context: { ...context, resume_state: resumeFrom ?? 'greeting' } })
     .eq('id', ctx.conversationId);
-  await db.from('notifications').insert({
-    merchant_id: ctx.merchantId,
-    type: 'takeover_request',
-    title: 'Bot needs help',
-    body: note,
-    data: { conversationId: ctx.conversationId },
-    channel: 'portal',
-  });
+  await notify(db, ctx.merchantId, { type: 'takeover_request', title: 'Bot needs help', body: note, data: { conversationId: ctx.conversationId } });
   await reply(db, ctx, await safeCompose({ kind: 'handoff' }, cc), 'handoff', context, /*updateState*/ false);
 }
 
@@ -810,14 +804,7 @@ async function handleEscape(
         await db.from('orders').update({ status: 'cancelled' }).eq('id', orderId).eq('status', o.data.status);
         await db.rpc('release_stock', { p_order: orderId }); // no-op if nothing was reserved
         await db.from('order_status_history').insert({ order_id: orderId, from_status: o.data.status, to_status: 'cancelled', changed_by: 'customer' });
-        await db.from('notifications').insert({
-          merchant_id: ctx.merchantId,
-          type: 'system',
-          title: 'Order cancelled by customer',
-          body: 'The customer cancelled during checkout.',
-          data: { orderId },
-          channel: 'portal',
-        });
+        await notify(db, ctx.merchantId, { type: 'system', title: 'Order cancelled by customer', body: 'The customer cancelled during checkout.', data: { orderId } });
       }
     }
     // Abandon this conversation's open negotiations so they are not reused by a future order.
@@ -978,7 +965,7 @@ async function handlePaymentProof(db: SupabaseClient, ctx: OrchestratorCtx, cc: 
       await db.from('payment_claims').insert({ payment_id: pid, order_id: orderId, merchant_id: ctx.merchantId, screenshot_url: ref, amount, status: 'claimed' });
       await db.from('payments').update({ status: 'claimed', claimed_at: new Date().toISOString(), screenshot_url: ref }).eq('id', pid);
       await db.from('orders').update({ payment_status: 'claimed' }).eq('id', orderId);
-      await db.from('notifications').insert({ merchant_id: ctx.merchantId, type: 'payment_claim', title: 'Payment claim', body: 'Customer sent a payment screenshot — verify it.', data: { orderId, paymentId: pid }, channel: 'portal' });
+      await notify(db, ctx.merchantId, { type: 'payment_claim', title: 'Payment claim', body: 'Customer sent a payment screenshot — verify it.', data: { orderId, paymentId: pid } });
     }
     await reply(db, ctx, await safeCompose({ kind: 'payment_received' }, cc), 'awaiting_payment_proof', context);
     return;
