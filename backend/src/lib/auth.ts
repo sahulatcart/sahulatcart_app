@@ -9,11 +9,20 @@ export interface MerchantCtx {
   role: Role;
   memberId?: string; // merchant_users.id — what the *_by_user_id audit columns reference
   isPlatformAdmin: boolean;
+  /** merchants.status === 'suspended' (M6): the bot is silent and the portal is read-only. */
+  suspended?: boolean;
+}
+/** The platform owner (M6): a `platform_admins` row, or the pilot admin token. May have no shop. */
+export interface PlatformCtx {
+  authUserId: string | null;
+  email: string | null;
+  via: 'jwt' | 'token';
 }
 
 declare module 'fastify' {
   interface FastifyRequest {
     merchantCtx?: MerchantCtx;
+    platformCtx?: PlatformCtx;
   }
 }
 
@@ -87,21 +96,41 @@ export async function resolveAuthUser(req: FastifyRequest): Promise<AuthUser | n
 /** A valid JWT whose user owns no shop yet: the portal redirects to /auth/confirmed, which bootstraps one. */
 export const NO_MEMBERSHIP = { error: { code: 'no_membership', message: 'This login has no shop yet' } };
 
-type Authn = { kind: 'ctx'; ctx: MerchantCtx } | { kind: 'no_membership' } | { kind: 'anonymous' };
+type Authn =
+  | { kind: 'ctx'; ctx: MerchantCtx; platform?: PlatformCtx }
+  | { kind: 'platform'; platform: PlatformCtx } // a platform admin with no shop of their own (IC-7)
+  | { kind: 'no_membership' }
+  | { kind: 'anonymous' };
+
+/** Is this auth user an active platform admin? (`platform_admins`, 0001.) */
+export async function platformAdminFor(authUserId: string): Promise<{ email: string | null } | null> {
+  const { data } = await getServiceClient().from('platform_admins').select('email').eq('auth_user_id', authUserId).eq('is_active', true).maybeSingle();
+  return data ? { email: (data.email as string | null) ?? null } : null;
+}
 
 async function jwtAuthn(token: string): Promise<Authn> {
   const { data, error } = await getAnonClient().auth.getUser(token);
   if (error || !data.user) return { kind: 'anonymous' };
-  const mu = await getServiceClient()
-    .from('merchant_users')
-    .select('id, merchant_id, role')
-    .eq('auth_user_id', data.user.id)
-    .eq('is_active', true)
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (!mu.data) return { kind: 'no_membership' };
-  return { kind: 'ctx', ctx: { merchantId: mu.data.merchant_id as string, role: mu.data.role as Role, memberId: mu.data.id as string, isPlatformAdmin: false } };
+  const [mu, admin] = await Promise.all([
+    getServiceClient()
+      .from('merchant_users')
+      .select('id, merchant_id, role, merchants(status)')
+      .eq('auth_user_id', data.user.id)
+      .eq('is_active', true)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    platformAdminFor(data.user.id),
+  ]);
+  const platform: PlatformCtx | undefined = admin ? { authUserId: data.user.id, email: admin.email ?? data.user.email ?? null, via: 'jwt' } : undefined;
+  // IC-7: a platform admin without a membership is never "no_membership" (that would bootstrap a shop for them).
+  if (!mu.data) return platform ? { kind: 'platform', platform } : { kind: 'no_membership' };
+  const status = (mu.data as { merchants?: { status?: string } | null }).merchants?.status;
+  return {
+    kind: 'ctx',
+    ctx: { merchantId: mu.data.merchant_id as string, role: mu.data.role as Role, memberId: mu.data.id as string, isPlatformAdmin: !!platform, suspended: status === 'suspended' },
+    platform,
+  };
 }
 
 async function authenticate(req: FastifyRequest): Promise<Authn> {
@@ -110,8 +139,14 @@ async function authenticate(req: FastifyRequest): Promise<Authn> {
   const authz = req.headers.authorization;
   const bearer = authz?.startsWith('Bearer ') ? authz.slice(7).trim() : null;
   const ctx = isAdminToken(bearer ?? req.headers['x-admin-token']) ? await adminCtx() : null;
-  return ctx ? { kind: 'ctx', ctx } : { kind: 'anonymous' };
+  if (!ctx) return { kind: 'anonymous' };
+  const { data: m } = await getServiceClient().from('merchants').select('status').eq('id', ctx.merchantId).maybeSingle();
+  ctx.suspended = m?.status === 'suspended';
+  return { kind: 'ctx', ctx, platform: { authUserId: null, email: null, via: 'token' } };
 }
+
+/** Routes a suspended shop may still use: the portal needs them to show the suspension notice. */
+const SUSPENDED_OK = new Set(['GET /api/v1/admin/me', 'GET /api/v1/admin/settings', 'GET /api/v1/admin/notifications', 'POST /api/v1/admin/notifications/read']);
 
 /**
  * preHandler for every merchant route (SRS Part 0.3): resolves the caller's shop into
@@ -124,8 +159,22 @@ export async function requireMerchant(req: FastifyRequest, reply: FastifyReply):
   const a = await authenticate(req);
   if (a.kind === 'anonymous') return reply.code(401).send({ error: { code: 'UNAUTHORIZED', message: 'login required' } });
   if (a.kind === 'no_membership') return reply.code(401).send(NO_MEMBERSHIP);
-  if (!a.ctx.merchantId) return reply.code(403).send({ error: { code: 'NO_SHOP', message: 'This account has no shop to act on' } });
+  if (a.kind === 'platform') return reply.code(403).send({ error: { code: 'NO_SHOP', message: 'This account has no shop to act on; open the platform console' } });
+  if (a.ctx.suspended && !SUSPENDED_OK.has(`${req.method} ${req.routeOptions?.url ?? ''}`)) {
+    return reply.code(403).send({ error: { code: 'merchant_suspended', message: 'This shop is suspended. The portal is read-only until the suspension is lifted.' } });
+  }
   req.merchantCtx = a.ctx;
+  if (a.platform) req.platformCtx = a.platform;
+}
+
+/** preHandler for /api/v1/platform/* (M6): the platform owner, with or without a shop, or the pilot token. */
+export async function requirePlatformAdmin(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const a = await authenticate(req);
+  if (a.kind === 'anonymous') return reply.code(401).send({ error: { code: 'UNAUTHORIZED', message: 'login required' } });
+  const platform = a.kind === 'platform' ? a.platform : a.kind === 'ctx' ? a.platform : undefined;
+  if (!platform) return reply.code(403).send({ error: { code: 'PLATFORM_ONLY', message: 'Platform owners only' } });
+  req.platformCtx = platform;
+  if (a.kind === 'ctx') req.merchantCtx = a.ctx;
 }
 
 /**

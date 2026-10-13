@@ -200,12 +200,17 @@ export async function runOrchestrator(db: SupabaseClient, ctx: OrchestratorCtx, 
 async function runTurn(db: SupabaseClient, ctx: OrchestratorCtx, message: NormalizedMessage, budget: { cap: number }): Promise<void> {
   const merchantRes = await db
     .from('merchants')
-    .select('business_name, bot_persona, negotiation_defaults, settings, business_hours, phone')
+    .select('business_name, bot_persona, negotiation_defaults, settings, business_hours, phone, status')
     .eq('id', ctx.merchantId)
     .single();
   const merchant = merchantRes.data;
   if (!merchant) return;
 
+  // M6: a suspended shop never replies; the message is stored (the webhook already did that).
+  if (merchant.status === 'suspended') {
+    logger.info({ merchantId: ctx.merchantId }, 'merchant suspended — not replying');
+    return;
+  }
   const settings = (merchant.settings ?? {}) as { botEnabled?: boolean; afterFreeQuota?: string; llmDailyCap?: number };
   // A shop whose bot is off stays silent to buyers. The owner's own phone is the one exception: the
   // go-live gate (P2 step 7) needs a test order placed while the bot is still off, and only the bot

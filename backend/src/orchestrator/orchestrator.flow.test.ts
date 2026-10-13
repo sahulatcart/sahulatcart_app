@@ -484,3 +484,13 @@ describe('go-live: the owner can test while the bot is off; a plain yes places a
     expect(order().status).toBe('confirmed');
   });
 });
+
+describe('M6: suspension', () => {
+  it('a suspended shop stores the message and never replies', async () => {
+    db.rows('merchants')[0]!.status = 'suspended';
+    const before = h.sent.length;
+    await say('salam', { intent: 'greet' });
+    expect(h.sent.length).toBe(before);
+    expect(convo().current_state).toBe('greeting');
+  });
+});

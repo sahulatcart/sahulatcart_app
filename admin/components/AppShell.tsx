@@ -2,7 +2,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
-import { ArrowLeft, BarChart3, Bell, LayoutDashboard, LogOut, Menu, MessagesSquare, Package, Settings, ShoppingBag, X, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, BarChart3, Bell, LayoutDashboard, LogOut, Menu, MessagesSquare, Package, Settings, ShieldCheck, ShoppingBag, X, type LucideIcon } from 'lucide-react';
 import { apiJson, hasSession, signOut } from '../lib/api';
 import Wordmark from '../components/Wordmark';
 import ThemeToggle from './ThemeToggle';
@@ -35,6 +35,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(0);
+  const [platformAdmin, setPlatformAdmin] = useState(false);
+  const [suspension, setSuspension] = useState<string | null>(null);
 
   useEffect(() => {
     hasSession().then((ok) => { if (!ok) router.replace('/login'); else setReady(true); });
@@ -56,6 +58,14 @@ export default function AppShell({ children }: { children: ReactNode }) {
     window.addEventListener('notifications', load);
     return () => { clearInterval(t); window.removeEventListener('notifications', load); };
   }, [ready]);
+  // M6: the console link shows only to platform admins; a suspended shop sees why it is read-only.
+  useEffect(() => {
+    if (!ready) return;
+    apiJson<{ isPlatformAdmin: boolean }>('/api/v1/platform/me').then((r) => setPlatformAdmin(!!r.isPlatformAdmin)).catch(() => setPlatformAdmin(false));
+    apiJson<{ merchant?: { status?: string; settings?: { suspension?: { reason?: string } } } }>('/api/v1/admin/me')
+      .then((r) => setSuspension(r.merchant?.status === 'suspended' ? (r.merchant.settings?.suspension?.reason ?? 'no reason given') : null))
+      .catch(() => {});
+  }, [ready]);
   if (!ready) return null;
 
   const logout = async () => { await signOut(); router.replace('/login'); };
@@ -76,6 +86,14 @@ export default function AppShell({ children }: { children: ReactNode }) {
           {open && <button className="btn subtle icon-btn drawer-close" onClick={() => setOpen(false)} aria-label="Close menu"><X /></button>}
         </div>
         <nav>
+          {platformAdmin && (
+            <div>
+              <div className="nav-section">Platform</div>
+              <div className="nav-group">
+                <Link href="/platform" className={`nav-link ${pathname.startsWith('/platform') ? 'active' : ''}`} aria-current={pathname.startsWith('/platform') ? 'page' : undefined}><ShieldCheck aria-hidden /> All shops</Link>
+              </div>
+            </div>
+          )}
           {NAV.map(({ section, items }) => (
             <div key={section}>
               <div className="nav-section">{section}</div>
@@ -117,7 +135,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
             </Link>
           )}
         </header>
-        <main id="main" className="content" tabIndex={-1}>{children}</main>
+        <main id="main" className="content" tabIndex={-1}>
+          {suspension && <div className="callout" role="alert" style={{ marginBottom: 16, borderColor: 'var(--danger-border)', background: 'var(--danger-tint)' }}><div className="strong">This shop is suspended.</div><div className="hint">Reason: {suspension}. The bot is not replying and the portal is read-only. Contact support to resolve this.</div></div>}
+          {children}
+        </main>
       </div>
     </div>
   );

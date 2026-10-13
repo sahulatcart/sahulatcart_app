@@ -7,6 +7,34 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — M6: the platform owner's console and suspension
+
+Branch `feat/m6-platform-console`. 28 test files, 299 tests (9 new). Both typechecks clean;
+`next build` compiles `/platform`.
+
+Built: `requirePlatformAdmin()` and the platform path in `jwtAuthn()` (a `platform_admins` row with
+or without a shop; the pilot token keeps working), `routes/platform.ts` (`/me`, the merchant list
+with connection, owner, last message, orders and messages this month, connect attempts, suspend
+with a reason, unsuspend), suspension enforced in the orchestrator and in `requireMerchant()` with
+a small allow-list so the portal can still show why, the `/platform` page with search and the
+suspend switch, the Platform link in the nav for admins, a suspension banner on every portal page,
+and `api()` sending a platform admin without a shop to `/platform` instead of looping. IC-7 from
+Uzair's P1 review is closed here: the bootstrap route refuses a platform admin with 409.
+
+Hassles, all in the test harness: route modules capture `getServiceClient()` once at registration,
+so a test that replaces the fake DB instance per test talks to a stale one (three failures that
+looked like empty tables); `FakeDb.reset()` fixes that pattern. The fake lacked `gte`/`lte` (the
+orders-this-month query); added. The fake's clock starts on 2026-09-01, so a seeded order is "last
+month" unless `created_at` is set. And the local `backend/node_modules` was lost twice to the
+tracked-symlink episode; `npm ci` restores it.
+
+To add the owner as a platform admin after merge, one SQL (never a migration):
+`insert into platform_admins (auth_user_id, email) select id, email from auth.users where email = '<owner email>';`
+Record the date here when run. `platform_admins` has 0 rows today, so the console is empty and
+unreachable by JWT until then; the pilot admin token reaches it.
+
+---
+
 ## 2026-10-13 — M5: the message meter and the AI budget; the admin build fixed
 
 Branch `feat/m5-usage-meter`. 27 test files, 288 tests (14 new). Both typechecks clean; `next

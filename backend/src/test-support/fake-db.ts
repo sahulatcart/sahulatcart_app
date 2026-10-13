@@ -39,6 +39,8 @@ class Query implements PromiseLike<Result> {
   is(c: string, v: null) { return this.where((r) => get(r, c) === v); }
   not(c: string, _op: 'is', v: null) { return this.where((r) => get(r, c) !== v); }
   gt(c: string, v: string | number) { return this.where((r) => (get(r, c) as string | number) > v); }
+  gte(c: string, v: string | number) { return this.where((r) => (get(r, c) as string | number) >= v); }
+  lte(c: string, v: string | number) { return this.where((r) => (get(r, c) as string | number) <= v); }
   lt(c: string, v: string | number) { return this.where((r) => (get(r, c) as string | number) < v); }
   match(o: Row) { Object.entries(o).forEach(([k, v]) => this.eq(k, v)); return this; }
   order(c: string, o?: { ascending?: boolean }) { this.sort = [c, o?.ascending !== false]; return this; }
@@ -149,6 +151,8 @@ export class FakeDb {
     }),
   };
 
+  /** Empty every table (route modules capture the client once, so tests reset rather than replace it). */
+  reset(): void { this.tables = {}; this.counters = {}; this.removed = []; }
   rows(table: string): Row[] { return (this.tables[table] ??= []); }
   add(table: string, r: Row): Row {
     const row = { id: crypto.randomUUID(), created_at: new Date((this.clock += 1000)).toISOString(), ...clone(r) };
