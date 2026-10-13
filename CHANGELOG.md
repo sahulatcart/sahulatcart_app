@@ -7,6 +7,64 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — P1: self-service signup, email confirmation, password reset, automatic shop
+
+**Outcome** — a shop owner can sign up at `/signup`, confirm by email, and land on onboarding with
+their own empty shop; "Forgot password?" works end to end. Built on branch `feat/p1-signup` from
+SRS-Uzair v1.1 (Stream P, week 1). Not yet deployed; migration 0012 not yet applied.
+
+**How it fits together.** Accounts live in Supabase Auth, as before. The backend only does two
+things: gate who may join (`POST /api/v1/signup/check`, `SIGNUP_OPEN` / `SIGNUP_ALLOWLIST`), and
+turn a confirmed login into a shop (`POST /api/v1/signup/bootstrap` → `create_merchant_for_user()`
+RPC, migration 0012). The shop's name, owner and phone travel in the auth user's metadata, set by
+the signup form, so the bootstrap call needs no body. The new shop has `botEnabled:false`
+(and 0012 changes the column default to match), so no shop answers buyers before onboarding.
+
+**Decisions taken while building, per the SRS:**
+- **One user, one shop, enforced by the database.** `merchant_users` was unique only on
+  `(merchant_id, auth_user_id)`; two bootstrap calls racing could make two shops. 0012 adds a
+  unique index on `auth_user_id` and the RPC catches the violation and returns the shop that won.
+- **Phone numbers are digits only** ([lib/phone.ts](backend/src/lib/phone.ts)): `+92 300 1234567`,
+  `0300-1234567` and `923001234567` all store as `923001234567`, which is what WhatsApp sends as
+  `wa_id`. P2's test-order check compares with `samePhone()`.
+- **The auth gate moved out of `routes/admin.ts`** into `requireMerchant()` in
+  [lib/auth.ts](backend/src/lib/auth.ts), so new route files apply it themselves. A valid JWT with no
+  shop now gets `401 { code: 'no_membership' }` instead of a plain 401, and the portal's `api()`
+  sends that case to `/auth/confirmed` (which bootstraps) instead of `/login` — that was the login
+  loop. A caller with no `merchantId` gets 403 `NO_SHOP`; nothing produces that today, but M6's
+  platform admin without a membership will.
+- **Attestations** (no prohibited goods, opt-in only) are two required checkboxes on the form and
+  land in `settings.attestations` with a timestamp; P2's readiness check reads them.
+- **`POST /api/v1/admin/merchants`** (platform admin) now also creates the shop with the bot off.
+
+**Portal.** `/signup`, `/auth/confirmed`, `/reset`, `/auth/reset`; `/login` gained the two links.
+The two-column sign-in screen became `components/AuthLayout.tsx`, shared by all five pages. The
+signup page asks `/signup/check` *before* calling Supabase, so a refused email never leaves a
+stray auth user. A repeat signup is detected two ways: Supabase's `user_already_exists`, and the
+quieter "user with zero identities" answer it gives when email confirmation is on.
+
+**Site.** "Start free" on the home hero and the first pricing plan, pointing at the portal's
+`/signup`; `site.js` keeps the path when it rewrites railway links to localhost.
+
+**Tests.** [lib/auth.test.ts](backend/src/lib/auth.test.ts) runs the real routes with `app.inject()`
+over FakeDb, with `./supabase` mocked so `auth.getUser()` answers from a table of test tokens:
+`no_membership` for a user without a shop, 403 `signup_closed` off the allow-list, one shop and one
+owner row for an allow-listed user, a second bootstrap returning the same shop, and the same JWT
+passing the gate afterwards. [lib/phone.test.ts](backend/src/lib/phone.test.ts) covers the formats.
+FakeDb gained the RPC twin. Suite: 18 files, 147 tests; both typechecks pass.
+
+**Still to do for P1's "done when":** Fazal flips Supabase's "Confirm email" on and runs 0012;
+`SIGNUP_ALLOWLIST` set on Railway; the full signup tried on the deployed portal with a Gmail
+"+tag" address (T1–T3).
+
+**Merged with `main` the same day** after M1–M3 landed: `lib/phone.ts` existed on both sides
+(Fazal's `digitsOnly`/`samePhone`, mine with the 0300→92300 fold); the merged file keeps his
+exports and makes `samePhone()` use the fold. His simpler `requireMerchant()` was replaced by this
+one, which `routes/whatsapp.ts` already applies. `/config` now carries both `signupOpen` and the
+Embedded Signup ids. Suite after merge: 23 files, 214 tests.
+
+---
+
 ## 2026-10-13 — M3: connection page, account events, send test, disconnect, profile sync
 
 Branch `feat/m3-connection-status`. 21 test files, 192 tests (22 new). Both typechecks clean;

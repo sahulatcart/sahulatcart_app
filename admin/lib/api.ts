@@ -8,9 +8,57 @@ export async function api(path: string, opts: RequestInit = {}): Promise<Respons
   if (opts.body != null) headers['Content-Type'] = 'application/json';
   const res = await fetch(path, { ...opts, headers });
   if (res.status === 401 && typeof window !== 'undefined' && !path.includes('/config')) {
-    window.location.href = '/login';
+    // A valid login with no shop yet is sent to bootstrap one, not back to /login (that was a loop).
+    const j = (await res.clone().json().catch(() => null)) as { error?: { code?: string } } | null;
+    window.location.href = j?.error?.code === 'no_membership' ? '/auth/confirmed' : '/login';
   }
   return res;
+}
+
+// ── Self-service signup and password reset (P1). Auth lives in Supabase; the backend only
+// gates signup and creates the shop. The portal's own origin is the redirect target.
+
+export interface SignupData {
+  shopName: string;
+  ownerName: string;
+  phone: string;
+  attestations: { noProhibitedGoods: true; optInOnly: true };
+}
+
+/** Is this email allowed to create a shop right now (allow-list until signup opens)? */
+export async function checkSignup(email: string): Promise<boolean> {
+  const r = await fetch('/api/v1/signup/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+  const j = (await r.json().catch(() => null)) as { allowed?: boolean } | null;
+  return j?.allowed === true;
+}
+
+/** Create the auth user; Supabase emails a confirmation link that lands on /auth/confirmed. */
+export async function signUp(email: string, password: string, data: SignupData): Promise<{ ok: true } | { ok: false; exists: boolean; message: string }> {
+  const sb = await getSupabase();
+  const { data: res, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}/auth/confirmed`, data } });
+  if (error) {
+    const exists = (error as { code?: string }).code === 'user_already_exists' || /already/i.test(error.message);
+    return { ok: false, exists, message: error.message };
+  }
+  // With "Confirm email" on, a repeat signup is answered with a user that has no identities.
+  if (res.user && Array.isArray(res.user.identities) && res.user.identities.length === 0) return { ok: false, exists: true, message: 'already registered' };
+  return { ok: true };
+}
+
+/** Turn the confirmed login into a shop (idempotent); the response carries { merchantId, role }. */
+export function bootstrap(): Promise<Response> {
+  return api('/api/v1/signup/bootstrap', { method: 'POST', body: '{}' });
+}
+
+export async function sendPasswordReset(email: string): Promise<void> {
+  const sb = await getSupabase();
+  await sb.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/auth/reset` });
+}
+
+export async function updatePassword(password: string): Promise<string | null> {
+  const sb = await getSupabase();
+  const { error } = await sb.auth.updateUser({ password });
+  return error ? error.message : null;
 }
 
 /** The server's error message from a failed response, for a toast. */

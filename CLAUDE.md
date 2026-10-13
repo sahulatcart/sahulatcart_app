@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **16 files, 125 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **23 files, 214 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -340,6 +340,15 @@ discriminated union of ~20 reply kinds) and only phrases it.
   `ADMIN_API_TOKEN` (as `x-admin-token` or a non-JWT Bearer) scoped to the default merchant. The token is
   compared in constant time, and after 10 wrong guesses every admin-token attempt is refused for 15
   minutes (`isAdminToken()`); portal JWT logins are unaffected.
+- **The gate is `requireMerchant()`** in `lib/auth.ts`, applied as a `preHandler`. New route groups go
+  in their own file (`routes/signup.ts`, `routes/onboarding.ts`, …) registered from `server.ts`, and
+  apply it themselves — do not add more routes to `routes/admin.ts`. It answers 401 `UNAUTHORIZED`
+  with no login, 401 `no_membership` for a valid JWT whose user owns no shop (the portal then sends
+  them to `/auth/confirmed` to create one), and 403 `NO_SHOP` when there is no `merchantId` to act
+  on. `resolveAuthUser()` verifies the JWT alone, for the one call made before a shop exists.
+- **Phone numbers are digits only** everywhere they are stored or compared — `923001234567`, never
+  `+92 300…` — because that is what WhatsApp sends as `wa_id`. Normalise with `phoneDigits()` and
+  compare with `samePhone()` from [lib/phone.ts](backend/src/lib/phone.ts).
 - `merchant_id` is **always** derived server-side from verified auth — never from client input. By-id
   endpoints ownership-check and return 404 (not 403) cross-tenant.
 - `isManager()` (owner/manager/platform-admin) gates everything staff may not do, per the canonical
@@ -394,8 +403,11 @@ discriminated union of ~20 reply kinds) and only phrases it.
   notifies the merchant to reach the buyer another way. The inbox disables replies and says why.
 
 **There is no default merchant password.** `db/seed.mjs` creates the merchant row but no auth user.
-Logins are created invite-only via `POST /api/v1/admin/merchants`, which calls
-`db.auth.admin.createUser({ email, password })`. Credentials live in Supabase Auth, not in this repo.
+Merchants join through `/signup` (self-service, P1): Supabase Auth creates the user and emails a
+confirmation link that lands on `/auth/confirmed`, which calls `POST /api/v1/signup/bootstrap` →
+`create_merchant_for_user()` (migration 0012) to create the shop and owner row, with the bot off.
+Until `SIGNUP_OPEN=true` only emails on `SIGNUP_ALLOWLIST` may join. The platform admin can still
+create one via `POST /api/v1/admin/merchants`. Credentials live in Supabase Auth, not in this repo.
 Locally the portal cannot authenticate at all without `.env` + a running backend: `/api/v1/config`
 returns 502 and the client throws `supabaseUrl is required`.
 

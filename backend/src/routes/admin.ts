@@ -3,7 +3,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { loadConfig } from '../config';
 import { tokenForNumber } from '../whatsapp/credentials';
 import { getServiceClient } from '../lib/supabase';
-import { forbid, isAdminToken, isManager, resolveCtx } from '../lib/auth';
+import { forbid, isAdminToken, isManager, requireMerchant } from '../lib/auth';
+import { NEW_MERCHANT_SETTINGS } from '../lib/signup';
 import { cancelOrder, markCodCollected, rejectPayment, verifyPayment, type ActionResult, type Actor } from '../orchestrator/payment-service';
 import { signedScreenshotUrl } from '../whatsapp/media';
 import { sendText } from '../whatsapp/client';
@@ -29,9 +30,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // ── Auth gate for every admin route except the public ones ──
   app.addHook('preHandler', async (req, reply) => {
     if (PUBLIC.has(req.routeOptions?.url ?? '')) return;
-    const ctx = await resolveCtx(req);
-    if (!ctx) return reply.code(401).send({ error: { code: 'UNAUTHORIZED', message: 'login required' } });
-    req.merchantCtx = ctx;
+    return requireMerchant(req, reply);
   });
 
   // ── Public runtime config (Supabase URL + publishable anon key — not secret) ──
@@ -40,6 +39,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({
       supabaseUrl: cfg.SUPABASE_URL,
       supabaseAnonKey: cfg.SUPABASE_ANON_KEY,
+      // Self-service signup (P1): whether anyone may join, never the allow-list itself.
+      signupOpen: cfg.SIGNUP_OPEN,
       // Embedded Signup (M2): the app id and configuration id are public by design; the secret never is.
       metaAppId: cfg.META_APP_ID ?? null,
       embeddedSignupConfigId: cfg.META_EMBEDDED_SIGNUP_CONFIG_ID ?? null,
@@ -68,7 +69,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     if (!b.businessName || !b.ownerEmail || !b.ownerPassword) return reply.code(400).send({ error: { code: 'BAD', message: 'businessName, ownerEmail, ownerPassword required' } });
     const created = await db.auth.admin.createUser({ email: b.ownerEmail, password: b.ownerPassword, email_confirm: true });
     if (created.error || !created.data.user) return reply.code(400).send({ error: { code: 'AUTH', message: created.error?.message ?? 'could not create user' } });
-    const m = await db.from('merchants').insert({ business_name: b.businessName, owner_name: b.ownerName ?? null, email: b.ownerEmail, status: 'active' }).select('id').single();
+    // Bot off until onboarding, same as a self-service shop (FR-P1.5).
+    const m = await db.from('merchants').insert({ business_name: b.businessName, owner_name: b.ownerName ?? null, email: b.ownerEmail, status: 'active', settings: NEW_MERCHANT_SETTINGS }).select('id').single();
     if (m.error || !m.data) { await db.auth.admin.deleteUser(created.data.user.id); return reply.code(400).send({ error: { code: 'DB', message: m.error?.message } }); }
     await db.from('merchant_users').insert({ merchant_id: m.data.id, auth_user_id: created.data.user.id, email: b.ownerEmail, name: b.ownerName ?? null, role: 'owner', is_active: true });
     return reply.send({ merchantId: m.data.id, userId: created.data.user.id });

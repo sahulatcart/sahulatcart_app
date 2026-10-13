@@ -1,0 +1,148 @@
+// P1 signup and the auth gate, through the real HTTP routes (app.inject) over FakeDb.
+// Supabase is mocked: the DB is the in-memory fake, and auth.getUser() answers from a table
+// of known test tokens. No network, no real project.
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
+import type { FastifyInstance } from 'fastify';
+import { FakeDb } from '../test-support/fake-db';
+import { signupAllowed, signupProfile } from './signup';
+
+// Before any import of config: the allow-list that the "closed" and "open" cases test against.
+vi.hoisted(() => {
+  process.env.SIGNUP_OPEN = 'false';
+  process.env.SIGNUP_ALLOWLIST = 'Ali@Shop.pk, second@shop.pk';
+});
+
+const fake = new FakeDb();
+const USERS: Record<string, { id: string; email: string; user_metadata: Record<string, unknown> }> = {
+  'jwt.ali.sig': {
+    id: 'user-ali',
+    email: 'ali@shop.pk',
+    user_metadata: { shopName: 'Ali Garments', ownerName: 'Ali Raza', phone: '+92 300 1234567', attestations: { noProhibitedGoods: true, optInOnly: true } },
+  },
+  'jwt.stranger.sig': { id: 'user-stranger', email: 'stranger@example.com', user_metadata: { shopName: 'X Store', ownerName: 'Xy', phone: '03001112223' } },
+};
+
+vi.mock('./supabase', () => ({
+  getServiceClient: () => fake.client,
+  getAnonClient: () => ({
+    auth: {
+      getUser: async (token: string) => {
+        const u = USERS[token];
+        return u ? { data: { user: u }, error: null } : { data: { user: null }, error: { message: 'invalid JWT' } };
+      },
+    },
+  }),
+}));
+
+let app: FastifyInstance;
+beforeAll(async () => {
+  const { buildServer } = await import('../server');
+  app = await buildServer();
+  await app.ready();
+});
+afterAll(() => app.close());
+
+const auth = (token: string) => ({ authorization: `Bearer ${token}` });
+
+describe('signupAllowed (the SIGNUP_OPEN / SIGNUP_ALLOWLIST gate)', () => {
+  it('is case-insensitive and ignores spaces in the list', () => {
+    const cfg = { SIGNUP_OPEN: false, SIGNUP_ALLOWLIST: ' Ali@Shop.pk ,second@shop.pk' };
+    expect(signupAllowed('ALI@shop.pk', cfg)).toBe(true);
+    expect(signupAllowed('second@shop.pk', cfg)).toBe(true);
+    expect(signupAllowed('third@shop.pk', cfg)).toBe(false);
+    expect(signupAllowed('', cfg)).toBe(false);
+  });
+  it('lets everyone in once SIGNUP_OPEN is true', () => {
+    expect(signupAllowed('anyone@example.com', { SIGNUP_OPEN: true, SIGNUP_ALLOWLIST: '' })).toBe(true);
+  });
+});
+
+describe('signupProfile (what the form stored in the auth user)', () => {
+  it('normalises the phone to digits and stamps the attestations', () => {
+    const p = signupProfile(USERS['jwt.ali.sig']!.user_metadata);
+    expect(p).toMatchObject({ shopName: 'Ali Garments', ownerName: 'Ali Raza', phone: '923001234567' });
+    expect('attestations' in p && p.attestations).toMatchObject({ noProhibitedGoods: true, optInOnly: true });
+  });
+  it('refuses a short name, a control character, or a non-Pakistani phone', () => {
+    expect(signupProfile({ shopName: 'A', ownerName: 'Ali', phone: '+923001234567' })).toHaveProperty('error');
+    expect(signupProfile({ shopName: 'Ali\u0007Store', ownerName: 'Ali', phone: '+923001234567' })).toHaveProperty('error');
+    expect(signupProfile({ shopName: 'Ali Store', ownerName: 'Ali', phone: '+1 300 1234567' })).toHaveProperty('error');
+  });
+  it('leaves attestations null unless both boxes were ticked', () => {
+    const p = signupProfile({ shopName: 'Ali Store', ownerName: 'Ali', phone: '+923001234567', attestations: { noProhibitedGoods: true } });
+    expect('attestations' in p && p.attestations).toBeNull();
+  });
+});
+
+describe('POST /api/v1/signup/check', () => {
+  it('answers from the allow-list without touching auth', async () => {
+    const yes = await app.inject({ method: 'POST', url: '/api/v1/signup/check', payload: { email: 'ali@shop.pk' } });
+    const no = await app.inject({ method: 'POST', url: '/api/v1/signup/check', payload: { email: 'stranger@example.com' } });
+    expect(yes.json()).toEqual({ allowed: true });
+    expect(no.json()).toEqual({ allowed: false });
+  });
+});
+
+describe('GET /api/v1/config', () => {
+  it('exposes signupOpen but never the allow-list', async () => {
+    const r = await app.inject({ method: 'GET', url: '/api/v1/config' });
+    expect(r.json()).toMatchObject({ signupOpen: false });
+    expect(JSON.stringify(r.json())).not.toContain('shop.pk');
+  });
+});
+
+describe('the auth gate (requireMerchant)', () => {
+  it('a valid JWT with no shop gets 401 no_membership, not a plain 401', async () => {
+    const r = await app.inject({ method: 'GET', url: '/api/v1/admin/me', headers: auth('jwt.ali.sig') });
+    expect(r.statusCode).toBe(401);
+    expect(r.json().error.code).toBe('no_membership');
+  });
+  it('a bad token is a plain 401', async () => {
+    const r = await app.inject({ method: 'GET', url: '/api/v1/admin/me', headers: auth('jwt.bad.sig') });
+    expect(r.statusCode).toBe(401);
+    expect(r.json().error.code).toBe('UNAUTHORIZED');
+  });
+});
+
+describe('POST /api/v1/signup/bootstrap', () => {
+  it('needs a login', async () => {
+    const r = await app.inject({ method: 'POST', url: '/api/v1/signup/bootstrap' });
+    expect(r.statusCode).toBe(401);
+  });
+
+  it('refuses an email that is not on the allow-list while signup is closed (403 signup_closed), creating nothing', async () => {
+    const r = await app.inject({ method: 'POST', url: '/api/v1/signup/bootstrap', headers: auth('jwt.stranger.sig') });
+    expect(r.statusCode).toBe(403);
+    expect(r.json().error.code).toBe('signup_closed');
+    expect(fake.rows('merchants')).toHaveLength(0);
+  });
+
+  it('creates one shop and one owner row for an allow-listed user, with the bot off', async () => {
+    const r = await app.inject({ method: 'POST', url: '/api/v1/signup/bootstrap', headers: auth('jwt.ali.sig') });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toMatchObject({ role: 'owner' });
+    const m = fake.rows('merchants');
+    expect(m).toHaveLength(1);
+    expect(m[0]).toMatchObject({ business_name: 'Ali Garments', owner_name: 'Ali Raza', email: 'ali@shop.pk', phone: '923001234567', status: 'active' });
+    expect(m[0]!.settings).toMatchObject({ botEnabled: false, onboardingCompletedAt: null });
+    expect(m[0]!.settings.attestations).toMatchObject({ noProhibitedGoods: true, optInOnly: true });
+    expect(fake.rows('merchant_users')).toHaveLength(1);
+    expect(fake.rows('merchant_users')[0]).toMatchObject({ auth_user_id: 'user-ali', role: 'owner', merchant_id: m[0]!.id });
+  });
+
+  it('a second bootstrap returns the same shop and creates nothing (idempotent)', async () => {
+    const first = fake.rows('merchants')[0]!.id;
+    const r = await app.inject({ method: 'POST', url: '/api/v1/signup/bootstrap', headers: auth('jwt.ali.sig') });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().merchantId).toBe(first);
+    expect(fake.rows('merchants')).toHaveLength(1);
+    expect(fake.rows('merchant_users')).toHaveLength(1);
+  });
+
+  it('after bootstrap the same JWT passes the auth gate', async () => {
+    const r = await app.inject({ method: 'GET', url: '/api/v1/admin/me', headers: auth('jwt.ali.sig') });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toMatchObject({ role: 'owner', isPlatformAdmin: false });
+    expect(r.json().merchant.business_name).toBe('Ali Garments');
+  });
+});

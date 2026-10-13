@@ -92,8 +92,16 @@ export class FakeDb {
   private clock = Date.parse('2026-09-01T00:00:00Z');
   private counters: Record<string, number> = {};
 
-  /** Test doubles of the SQL functions in db/migrations 0006 and 0008 (those are tested in Postgres). */
+  /** Test doubles of the SQL functions in db/migrations 0006, 0008 and 0012 (those are tested in Postgres). */
   rpcs: Record<string, (args: Row) => unknown> = {
+    create_merchant_for_user: ({ p_auth_user, p_email, p_shop, p_owner, p_phone, p_attestations }) => {
+      const mine = this.rows('merchant_users').find((u) => u.auth_user_id === p_auth_user && u.is_active);
+      if (mine) return [{ merchant_id: mine.merchant_id, role: mine.role }];
+      const settings = { botEnabled: false, codEnabled: true, paymentInstructions: '', defaultDeliveryCharge: 0, freeDeliveryThreshold: 0, lowStockThreshold: 3, onboardingCompletedAt: null, metaCatalog: null, ...(p_attestations ? { attestations: p_attestations } : {}) };
+      const m = this.add('merchants', { business_name: p_shop, owner_name: p_owner, email: p_email, phone: p_phone, status: 'active', settings });
+      this.add('merchant_users', { merchant_id: m.id, auth_user_id: p_auth_user, email: p_email, name: p_owner, role: 'owner', is_active: true });
+      return [{ merchant_id: m.id, role: 'owner' }];
+    },
     next_order_number: ({ p_merchant }) => `SK-${(this.counters[p_merchant] = (this.counters[p_merchant] ?? 1000) + 1)}`,
     reserve_stock: ({ p_order }) => {
       const order = this.rows('orders').find((o) => o.id === p_order)!;
