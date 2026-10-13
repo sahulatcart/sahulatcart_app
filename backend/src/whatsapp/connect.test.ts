@@ -5,7 +5,7 @@ import { loadConfig } from '../config';
 const fake = { db: new FakeDb() };
 vi.mock('../lib/supabase', () => ({ getServiceClient: () => fake.db.client }));
 
-import { ConnectFailure, connectWhatsApp, getConnectionStatus, handleConnectHandshake, retryConnect } from './connect';
+import { ConnectFailure, connectWhatsApp, disconnectWhatsApp, getConnectionStatus, handleConnectHandshake, retryConnect, sendTestMessage, syncBusinessProfile } from './connect';
 import { forgetAllNumbers, tokenForNumber } from './credentials';
 import type { NormalizedMessage } from './types';
 
@@ -27,6 +27,7 @@ function defaultMeta() {
     '/WABA1/subscribed_apps': () => ok({ success: true }),
     '/PN1/register': () => ok({ success: true }),
     '/PN1/messages': () => ok({ messages: [{ id: 'wamid.HANDSHAKE' }] }),
+    '/PN1/whatsapp_business_profile': () => ok({ success: true }),
   };
 }
 
@@ -255,5 +256,76 @@ describe('getConnectionStatus', () => {
     cfg.META_DEFAULT_PHONE_NUMBER_ID = 'PN1';
     await connect({ code: 'CODE-1' });
     expect((await getConnectionStatus(fake.db.client, 'M1')).isTestNumber).toBe(true);
+  });
+});
+
+describe('M3: test message, disconnect, profile sync', () => {
+  beforeEach(async () => {
+    await connect({ code: 'CODE-1', hints: { wabaId: 'WABA1', phoneNumberId: 'PN1' } });
+    await handleConnectHandshake(fake.db.client, tenant(), inbound('923007777777'));
+    await new Promise((r) => setTimeout(r, 0)); // the best-effort profile sync runs after the handshake
+    calls = [];
+  });
+
+  it('the handshake pushes the business profile (best effort)', async () => {
+    fake.db.rows('merchants')[0]!.settings = { kb: { address: 'Shop 4, Liberty Market, Lahore', hours: '10am-9pm', delivery: '2-3 din' } };
+    expect(await syncBusinessProfile(fake.db.client, 'M1')).toBe(true);
+    const c = calls.find((x) => x.url.pathname.endsWith('/PN1/whatsapp_business_profile'))!;
+    expect(c.method).toBe('POST');
+    expect(c.body).toMatchObject({ messaging_product: 'whatsapp', about: 'Ali Store', address: 'Shop 4, Liberty Market, Lahore' });
+    expect(String(c.body!.description)).toContain('10am-9pm');
+    expect(c.url.searchParams.get('appsecret_proof')).toBeTruthy();
+  });
+
+  it('profile sync failing never throws', async () => {
+    meta['/PN1/whatsapp_business_profile'] = () => graphErr(100, 'Invalid parameter');
+    expect(await syncBusinessProfile(fake.db.client, 'M1')).toBe(false);
+  });
+
+  it('send test: success stamps last_test_at and keeps connected', async () => {
+    const before = numberRow().last_test_at;
+    await new Promise((r) => setTimeout(r, 2));
+    const s = await sendTestMessage(fake.db.client, ctx);
+    expect(s.status).toBe('connected');
+    expect(calls[0]!.body).toMatchObject({ to: '923007777777', type: 'text' });
+    expect(numberRow().last_test_at).not.toBe(before);
+  });
+
+  it('send test: a closed window (131047) sends the number back to the handshake', async () => {
+    meta['/PN1/messages'] = () => graphErr(131047, 'Re-engagement message');
+    const s = await sendTestMessage(fake.db.client, ctx);
+    expect(s.status).toBe('connecting');
+    expect(s.awaitingHandshake).toBe(true);
+    meta['/PN1/messages'] = () => ok({ messages: [{ id: 'wamid.AGAIN' }] });
+    expect(await handleConnectHandshake(fake.db.client, tenant(), inbound('923007777777'))).toBe(true);
+    expect(numberRow().status).toBe('connected');
+  });
+
+  it('send test: payment method missing flags the number', async () => {
+    meta['/PN1/messages'] = () => graphErr(131042, 'Business eligibility payment issue');
+    const s = await sendTestMessage(fake.db.client, ctx);
+    expect(s.status).toBe('needs_attention');
+    expect(s.flagReason).toBe('policy');
+  });
+
+  it('send test needs a saved merchant phone', async () => {
+    fake.db.rows('merchants')[0]!.phone = null;
+    expect((await failure(sendTestMessage(fake.db.client, ctx))).message).toContain('phone');
+  });
+
+  it('disconnect deletes the secrets, keeps the row, and the number can no longer send', async () => {
+    expect(fake.db.rows('whatsapp_secrets')).toHaveLength(2); // token + pin
+    const s = await disconnectWhatsApp(fake.db.client, ctx);
+    expect(s.status).toBe('none'); // no non-disconnected number to show
+    expect(numberRow().status).toBe('disconnected');
+    expect(numberRow().access_token_ref).toBeNull();
+    expect(fake.db.rows('whatsapp_secrets')).toHaveLength(0);
+    expect(await tokenForNumber(fake.db.client, 'PN1')).toBeNull();
+    expect((await failure(disconnectWhatsApp(fake.db.client, ctx))).code).toBe('bad_request');
+  });
+
+  it('after disconnect, send test asks to reconnect', async () => {
+    await disconnectWhatsApp(fake.db.client, ctx);
+    expect((await failure(sendTestMessage(fake.db.client, ctx))).message).toContain('Connect WhatsApp');
   });
 });

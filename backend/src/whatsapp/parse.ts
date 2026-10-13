@@ -1,5 +1,6 @@
 import type { MessageType } from '@app/shared';
 import type {
+  AccountEvent,
   NormalizedMessage,
   NormalizedStatus,
   ParsedChange,
@@ -41,6 +42,21 @@ export function extractText(msg: RawMessage): string | null {
     default:
       return null;
   }
+}
+
+/**
+ * Pure: the account-level changes (`field !== 'messages'`), which carry no `metadata` and are
+ * keyed by `entry.id`, the WABA id. `parseWebhook()` below only sees message changes.
+ */
+export function parseAccountEvents(payload: WebhookPayload): AccountEvent[] {
+  const out: AccountEvent[] = [];
+  for (const entry of payload.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      if (!change.field || change.field === 'messages' || !entry.id || !change.value) continue;
+      out.push({ field: change.field, wabaId: entry.id, entryTime: entry.time ?? null, value: change.value as unknown as Record<string, unknown> });
+    }
+  }
+  return out;
 }
 
 /** Pure: turn a raw webhook payload into normalized per-change messages/statuses. */

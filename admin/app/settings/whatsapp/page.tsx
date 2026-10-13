@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, MessageCircle, Phone, RefreshCw, Smartphone } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, MessageCircle, Phone, RefreshCw, Send, Smartphone, Unplug } from 'lucide-react';
 import AppShell, { BackLink, PageHead, Pill } from '../../../components/AppShell';
 import { api, apiError, apiJson, dt } from '../../../lib/api';
 import { useToast } from '../../../components/Toast';
@@ -112,6 +112,26 @@ export default function WhatsAppPage() {
     );
   }
 
+  async function sendTest() {
+    setBusy('Sending…');
+    const r = await api('/api/v1/admin/whatsapp/test', { method: 'POST' });
+    if (!r.ok) toast(await apiError(r), 'error');
+    else {
+      const s = (await r.json()) as Status;
+      setSt(s);
+      toast(s.status === 'connected' ? 'Test message sent to your phone' : s.status === 'connecting' ? 'Your 24-hour window has closed — text your shop number again' : s.message ?? 'Could not send', s.status === 'connected' ? 'success' : 'info');
+    }
+    setBusy(null);
+  }
+
+  async function disconnect() {
+    if (!window.confirm('Disconnect this number? The bot will stop replying to customers until you reconnect. Your WhatsApp account and number stay yours.')) return;
+    setBusy('Disconnecting…');
+    const r = await api('/api/v1/admin/whatsapp/disconnect', { method: 'POST' });
+    if (!r.ok) toast(await apiError(r), 'error'); else { setSt((await r.json()) as Status); toast('Disconnected. The bot is off.', 'info'); }
+    setBusy(null);
+  }
+
   async function retry() {
     setBusy('Retrying…');
     const r = await api('/api/v1/admin/whatsapp/retry', { method: 'POST', body: JSON.stringify(pin ? { pin } : {}) });
@@ -196,11 +216,15 @@ export default function WhatsAppPage() {
           </div>
           <dl className="hint" style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '6px 16px', marginTop: 14 }}>
             <dt>Display name</dt><dd>{st.displayName ?? '—'} {st.verifiedNameStatus && st.verifiedNameStatus !== 'APPROVED' && <Pill kind="warning">{st.verifiedNameStatus.toLowerCase().replace(/_/g, ' ')}</Pill>}</dd>
-            <dt>Quality</dt><dd>{st.qualityRating ?? 'unknown'}</dd>
+            <dt>Quality</dt><dd><span aria-hidden style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 5, marginRight: 6, background: st.qualityRating === 'green' ? 'var(--success)' : st.qualityRating === 'yellow' ? 'var(--warning)' : st.qualityRating === 'red' ? 'var(--danger)' : 'var(--muted)' }} />{st.qualityRating ?? 'unknown'}</dd>
             <dt>Limit</dt><dd>{TIER[st.messagingTier ?? 'unverified'] ?? st.messagingTier}</dd>
             <dt>Last checked</dt><dd>{dt(st.lastTestAt)}</dd>
           </dl>
-          <p className="hint" style={{ marginTop: 12 }}>Reconnect, Disconnect and the test-message button arrive with the next update of this page.</p>
+          <div className="card-foot" style={{ marginTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn ghost" onClick={sendTest} disabled={!!busy}><Send aria-hidden /> {busy ?? 'Send test message'}</button>
+            <button className="btn ghost" onClick={connect} disabled={!!busy}><MessageCircle aria-hidden /> Reconnect</button>
+            <button className="btn danger-ghost" onClick={disconnect} disabled={!!busy}><Unplug aria-hidden /> Disconnect</button>
+          </div>
         </div>
       )}
     </AppShell>

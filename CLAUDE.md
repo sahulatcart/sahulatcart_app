@@ -231,6 +231,30 @@ route files apply their own); the page is `admin/app/settings/whatsapp/`. Rules:
   error codes come from Meta's docs as of mid-2026; re-check them in the dashboard before the first
   real connect.
 
+### Connection status, account events, disconnect (M3, since 2026-10-13)
+
+- **Account-level webhook fields** (`phone_number_quality_update`, `account_update`,
+  `message_template_status_update`) carry no `metadata.phone_number_id`; the WABA id is
+  `entry[].id`. `parseAccountEvents()` in `parse.ts` extracts them (`parseWebhook()` still ignores
+  them), `claimWebhookPayload()` claims each under `item_type='event'` with id
+  `field:waba:sha256(value)` so a redelivery is a duplicate, and `processClaimed()` runs
+  [whatsapp/account-events.ts](backend/src/whatsapp/account-events.ts) after the ACK. A WABA-level
+  event applies to every number row with that `waba_id`. FLAGGED → `needs_attention`/`quality`;
+  UNFLAGGED clears **only** a quality flag (never token or policy); DISABLED/VIOLATION/RESTRICTION →
+  `policy`; PARTNER_REMOVED → `token` (reconnect). The dashboard subscription for the four fields is
+  M7 step 3; until then nothing arrives.
+- **Disconnect** (`POST /api/v1/admin/whatsapp/disconnect`) deletes the secrets and keeps the row;
+  Meta is not told. Inbound still routes to the row, is stored, and the bot is skipped; the merchant
+  gets one portal notification a day (`remindDisconnected()` in `webhook.ts`, keyed on
+  `data->>action = 'reconnect_whatsapp'`).
+- **Send test** (`POST /whatsapp/test`) texts the merchant's own phone. It only works while their
+  24-hour window with the shop is open; a 131047 puts the number back to `connecting` so the
+  handshake proves it again. This is also what onboarding step 7 (P2) calls.
+- **Business profile sync** (`syncBusinessProfile()`, IC-9; `POST /whatsapp/profile-sync` for P2) pushes
+  name, address, description and hours to the number's WhatsApp profile, best effort, after the
+  handshake. The address comes from `settings.kb.address` until P2 adds `merchants.address`; the
+  picture is not pushed (needs Meta's upload API).
+
 ### Conversation orchestrator
 
 [backend/src/orchestrator/orchestrator.ts](backend/src/orchestrator/orchestrator.ts) is the state machine
