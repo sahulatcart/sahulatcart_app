@@ -7,6 +7,63 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-13 — P6: Sentry, rate limits, per-IP lockout, the missing tests, CI
+
+Branch `feat/p6-reliability`, from `main` at `9cee8b4` (after P5 #29). 36 test files, 406 tests
+(22 new). Both typechecks clean; `next lint` clean with no warnings; `next build` clean. No
+migration. Three new dependencies: `@fastify/rate-limit`, `@sentry/node`, `@sentry/nextjs`
+(plus `eslint` / `eslint-config-next` as admin devDependencies).
+
+**What landed (SRS-Uzair v1.1 week 7, FR-P6.1–6.7).**
+- **Sentry** ([lib/sentry.ts](backend/src/lib/sentry.ts)): `initSentry()` in index.ts before the
+  server is built, `setupFastifyErrorHandler` for 5xx route errors, unhandled rejections through
+  the SDK's defaults. `SENTRY_DSN` empty = off. Request bodies hold addresses and phones, so
+  body, cookie, query and user collection are off and `beforeSend` drops `request.data` as a
+  second guard. Release = `RAILWAY_GIT_COMMIT_SHA`. Admin: `instrumentation.ts` (+
+  `onRequestError`), the three `sentry.*.config.ts` files, `withSentryConfig` in
+  next.config.mjs with source maps and telemetry off, so the build never talks to Sentry.
+  `NEXT_PUBLIC_SENTRY_DSN` is baked at build time. Both DSNs are declared in
+  `.railway/railway.ts` and `.env.example`; the values, the Sentry project and the "email on new
+  issue" alert rule are Fazal's (ops), as is the external uptime check on `/readyz` (FR-P6.2).
+- **Rate limits** ([lib/rate-limit.ts](backend/src/lib/rate-limit.ts), `@fastify/rate-limit`,
+  global): signup 10/min/IP, login 10/min/IP, WhatsApp connect 5/min, everything else 300/min; the
+  webhook, `/healthz`, `/readyz` and `/` are exempt. The key is `bucket:m:<merchantId>` once
+  signed in, else `bucket:ip:<ip>`, so a signup burst never eats the API allowance. 429s come
+  back as `{ error: { code: 'RATE_LIMITED' } }` through a small `setErrorHandler` in server.ts.
+  `trustProxy: true` so `req.ip` is the first X-Forwarded-For hop Railway sets.
+- **Admin-token lockout per IP** (`isAdminToken(tok, ip)`): ten wrong guesses lock that IP for
+  15 minutes; the owner elsewhere still gets in. The map prunes itself past 10,000 entries.
+- **`authenticate()` is memoised per request** (WeakMap) so the limiter can ask who is calling
+  before the route's own gate does, without a second Supabase round trip.
+- **Tests**: `routes/admin.test.ts` (auth matrix, cross-tenant 404s and lists, manager-only
+  routes, the 11th login is 429 and another IP is not, the per-IP lockout) and
+  `whatsapp/webhook.route.test.ts` (a signed Meta payload through the HTTP route: signature →
+  claim → process → one reply; a redelivery is a duplicate; an unknown number is ignored; the
+  webhook carries no rate-limit header).
+- **CI**: `.github/workflows/ci.yml` runs `npm ci`, build:shared, both typechecks, the backend
+  suite and `next lint` on every PR and on pushes to main. Root `npm run lint` now runs the
+  admin lint. Branch protection requiring it is Fazal's (GitHub settings).
+- **Single instance** (FR-P6.7): Railway exposes `RAILWAY_REPLICA_ID` but no replica count, so the
+  boot logs a loud warning naming everything that is per process (buyer queue, lockout, rate
+  limits) whenever the id is present. CLAUDE.md says what a second replica would need.
+
+**Hassles.**
+- Sentry SDK v11 renamed `sendDefaultPii` to `dataCollection` (typecheck caught it) and moved
+  `withSentryConfig` to the `@sentry/nextjs/config` subpath: importing it from the package root
+  under ESM gives "is not a function" with no hint where it went.
+- `@fastify/rate-limit`'s `errorResponseBuilder` result is *thrown*, so it needs
+  `statusCode: 429` or Fastify answers 500. Returning the `{ error }` body directly looked right
+  and was a 500. The `{ error }` shape is built in `setErrorHandler` instead.
+- The redelivery test sent a second reply: `FakeDb` had no unique constraints, and the webhook's
+  idempotency *is* the `webhook_events.event_id` constraint. The fake now raises `23505` for
+  that one table; other uniques (merchant_users one-shop) are still the P1 follow-up.
+- The lockout cannot be observed through HTTP any more: ten wrong logins from one IP hit the
+  10/min limit at the same time as the lockout. It is tested on `isAdminToken()` directly.
+
+**Open.** Fazal: Sentry project + DSNs on Railway + alert rule; uptime check; branch protection.
+A second replica needs the per-buyer queue, lockout and rate-limit store moved to the database
+or Redis before it is safe.
+
 ## 2026-10-13 — P5: opt-out enforcement, STOP keyword, and the small gaps
 
 Branch `feat/p5-opt-out`, from `main` at `8d43f34` (after P4 #28). 34 test files, 384 tests

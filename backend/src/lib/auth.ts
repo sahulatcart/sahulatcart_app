@@ -43,24 +43,30 @@ export async function defaultMerchantId(): Promise<string | undefined> {
   return defaultMerchantCache;
 }
 
-// Brute-force brake on the shared admin token: after 10 wrong guesses, every admin-token
-// attempt (right or wrong) is refused until the 15-minute window rolls over. Portal
-// logins use Supabase JWTs and are unaffected.
+// Brute-force brake on the shared admin token: after 10 wrong guesses FROM ONE IP, every
+// admin-token attempt from that IP (right or wrong) is refused until its 15-minute window rolls
+// over (P6, FR-P6.4: a stranger's guesses cannot lock the owner out). Portal logins use
+// Supabase JWTs and are unaffected. In-process: one instance only.
 const MAX_FAILS = 10;
 const FAIL_WINDOW_MS = 15 * 60_000;
-let fails = { n: 0, since: 0 };
+const fails = new Map<string, { n: number; since: number }>();
 const sha256 = (s: string): Buffer => crypto.createHash('sha256').update(s).digest();
 
 /** Constant-time check against ADMIN_API_TOKEN (hashing equalises lengths for timingSafeEqual). */
-export function isAdminToken(tok: unknown): boolean {
+export function isAdminToken(tok: unknown, ip = 'unknown'): boolean {
   const want = loadConfig().ADMIN_API_TOKEN;
   if (!want || typeof tok !== 'string' || !tok) return false;
-  if (Date.now() - fails.since > FAIL_WINDOW_MS) fails = { n: 0, since: Date.now() };
-  if (fails.n >= MAX_FAILS) return false;
+  const now = Date.now();
+  if (fails.size > 10_000) for (const [k, f] of fails) if (now - f.since > FAIL_WINDOW_MS) fails.delete(k);
+  let f = fails.get(ip);
+  if (!f || now - f.since > FAIL_WINDOW_MS) { f = { n: 0, since: now }; fails.set(ip, f); }
+  if (f.n >= MAX_FAILS) return false;
   const ok = crypto.timingSafeEqual(sha256(tok), sha256(want));
-  if (!ok) fails.n++;
+  if (!ok) f.n++;
   return ok;
 }
+/** Tests only. */
+export const _resetAdminTokenFails = (): void => fails.clear();
 
 async function adminCtx(): Promise<MerchantCtx | null> {
   const mid = await defaultMerchantId();
@@ -96,7 +102,7 @@ export async function resolveAuthUser(req: FastifyRequest): Promise<AuthUser | n
 /** A valid JWT whose user owns no shop yet: the portal redirects to /auth/confirmed, which bootstraps one. */
 export const NO_MEMBERSHIP = { error: { code: 'no_membership', message: 'This login has no shop yet' } };
 
-type Authn =
+export type Authn =
   | { kind: 'ctx'; ctx: MerchantCtx; platform?: PlatformCtx }
   | { kind: 'platform'; platform: PlatformCtx } // a platform admin with no shop of their own (IC-7)
   | { kind: 'no_membership' }
@@ -133,12 +139,20 @@ async function jwtAuthn(token: string): Promise<Authn> {
   };
 }
 
-async function authenticate(req: FastifyRequest): Promise<Authn> {
+// Memoised per request: the rate limiter (P6) asks who is calling before the route's own gate does.
+const authnCache = new WeakMap<FastifyRequest, Promise<Authn>>();
+export function authenticate(req: FastifyRequest): Promise<Authn> {
+  let p = authnCache.get(req);
+  if (!p) { p = authenticateOnce(req); authnCache.set(req, p); }
+  return p;
+}
+
+async function authenticateOnce(req: FastifyRequest): Promise<Authn> {
   const jwt = bearerJwt(req);
   if (jwt) return jwtAuthn(jwt);
   const authz = req.headers.authorization;
   const bearer = authz?.startsWith('Bearer ') ? authz.slice(7).trim() : null;
-  const ctx = isAdminToken(bearer ?? req.headers['x-admin-token']) ? await adminCtx() : null;
+  const ctx = isAdminToken(bearer ?? req.headers['x-admin-token'], req.ip) ? await adminCtx() : null;
   if (!ctx) return { kind: 'anonymous' };
   const { data: m } = await getServiceClient().from('merchants').select('status').eq('id', ctx.merchantId).maybeSingle();
   ctx.suspended = m?.status === 'suspended';
