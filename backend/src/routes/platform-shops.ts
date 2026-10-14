@@ -8,6 +8,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { PLANS, type Plan } from '@app/shared';
 import { loadConfig } from '../config';
 import { getServiceClient } from '../lib/supabase';
+import { logger } from '../lib/logger';
 import { requirePlatformAdmin } from '../lib/auth';
 import { botMode, conversationsThisMonth, getSubscription } from '../lib/billing';
 import { getUsage } from '../lib/usage';
@@ -17,6 +18,8 @@ import { getConnectionStatus } from '../whatsapp/connect';
 
 const MERCHANT_COLS = ['id', 'business_name', 'owner_name', 'email', 'phone', 'address', 'category', 'logo_url', 'status', 'plan', 'created_at', 'business_hours', 'bot_persona', 'negotiation_defaults', 'settings'] as const;
 const notFound = (reply: FastifyReply, what: string) => reply.code(404).send({ error: { code: 'NOT_FOUND', message: `${what} not found` } });
+/** Fail closed: the page promises that every look is recorded, so a look that could not be recorded shows nothing. */
+const unrecorded = (reply: FastifyReply) => reply.code(503).send({ error: { code: 'AUDIT_UNAVAILABLE', message: 'This view could not be recorded in the audit log, so it is not shown. Try again in a minute.' } });
 /** The columns named in the select, and nothing else: the fake DB returns whole rows, and the real one must never be trusted to hide an account number by accident. */
 const pick = (rows: Record<string, unknown>[] | null, cols: readonly string[]) => (rows ?? []).map((r) => Object.fromEntries(cols.map((c) => [c, r[c] ?? null])));
 
@@ -25,8 +28,12 @@ export async function platformShopRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', requirePlatformAdmin);
 
   const shop = async (id: string) => (await db.from('merchants').select('*').eq('id', id).maybeSingle()).data as Record<string, unknown> | null;
-  const viewed = (merchantId: string, entity: 'merchant' | 'conversation', entityId: string, userId: string | null) =>
-    db.from('audit_log').insert({ merchant_id: merchantId, actor: 'platform', user_id: userId, action: 'platform_view', entity, entity_id: entityId, diff: {} });
+  /** Writes the platform_view audit row; false when it could not be written (the caller then shows nothing). */
+  const viewed = async (merchantId: string, entity: 'merchant' | 'conversation', entityId: string, userId: string | null): Promise<boolean> => {
+    const { error } = await db.from('audit_log').insert({ merchant_id: merchantId, actor: 'platform', user_id: userId, action: 'platform_view', entity, entity_id: entityId, diff: {} });
+    if (error) logger.warn({ err: error.message, merchantId, entity, entityId }, 'platform_view audit row not written; view refused');
+    return !error;
+  };
 
   app.get('/api/v1/platform/merchants/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
@@ -44,7 +51,7 @@ export async function platformShopRoutes(app: FastifyInstance): Promise<void> {
       db.from('invoices').select('id, plan, period_start, period_end, amount_paisa, status, reference, claimed_at, paid_at, created_at').eq('merchant_id', id).order('period_start', { ascending: false }).limit(12),
     ]);
     const plan = (sub?.plan ?? (m.plan as Plan | undefined) ?? 'pilot') as Plan;
-    await viewed(id, 'merchant', id, req.platformCtx!.authUserId);
+    if (!(await viewed(id, 'merchant', id, req.platformCtx!.authUserId))) return unrecorded(reply);
     return reply.send({
       merchant: Object.fromEntries(MERCHANT_COLS.map((c) => [c, m[c] ?? null])),
       members: pick(members.data, ['id', 'email', 'name', 'role', 'is_active']),
@@ -85,7 +92,7 @@ export async function platformShopRoutes(app: FastifyInstance): Promise<void> {
     const convo = await db.from('conversations').select('id, status, current_state, window_expires_at, unread_count, customers(name, wa_id, wa_opt_in_status, is_blocked)').match({ id: cid, merchant_id: id }).maybeSingle();
     if (!convo.data) return notFound(reply, 'conversation');
     const messages = await db.from('messages').select('direction, sender, type, body, status, created_at').eq('conversation_id', cid).order('created_at', { ascending: false }).limit(200);
-    await viewed(id, 'conversation', cid, req.platformCtx!.authUserId);
+    if (!(await viewed(id, 'conversation', cid, req.platformCtx!.authUserId))) return unrecorded(reply);
     return reply.send({ conversation: convo.data, messages: (messages.data ?? []).reverse() });
   });
 

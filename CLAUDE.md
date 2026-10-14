@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **44 files, 496 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **44 files, 504 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 

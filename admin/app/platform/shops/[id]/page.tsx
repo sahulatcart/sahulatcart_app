@@ -41,7 +41,7 @@ export default function PlatformShop() {
   const [products, setProducts] = useState<Product[] | null>(null);
   const [openChat, setOpenChat] = useState<string | null>(null);
   const [msgs, setMsgs] = useState<Record<string, Msg[]>>({});
-  const fail = useCallback((what: string) => () => toast(`Could not load ${what}`, 'error'), [toast]);
+  const fail = useCallback((what: string) => (e: unknown) => toast((e as Error)?.message || `Could not load ${what}`, 'error'), [toast]);
   const base = `/api/v1/platform/merchants/${id}`;
 
   useEffect(() => { apiJson<Detail>(base).then(setD).catch(fail('this shop')); }, [base, fail]);
