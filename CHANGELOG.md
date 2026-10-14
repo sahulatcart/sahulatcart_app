@@ -7,6 +7,25 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-14 — Live: sign-up moved into the panel; the two Railway variables deleted
+
+Uzair's U3 (PR #43) deployed at 15:10. The panel still read both values from Railway
+(`source: env`) and `platform_settings` was empty, so the lead first copied the live values in
+through the panel's own `PUT /api/v1/platform/signup` (pilot token): `open false` and the same five
+allow-listed emails, checked identical to the env list before and after without printing them. The
+route wrote its `signup_settings_changed` audit row (count only). The panel then reported
+`source: db` for both.
+
+Then `SIGNUP_ALLOWLIST` and `SIGNUP_OPEN` were deleted from `@app/backend` with
+`railway variable delete` (the `railway config plan` route failed: the `railway/iac` SDK is not
+installed in the checkout, and installing it would have touched the lockfile). The deletes
+redeployed the backend (15:14, SUCCESS). Checked on the new container: an allow-listed address is
+allowed, a stranger is refused, `/api/v1/config` says `signupOpen false`, the panel still says
+`source: db`. `.railway/railway.ts` no longer declares the two (a comment says why), so a future
+`config apply` will not recreate them; `.env.example` marks them as fallback only.
+
+---
+
 ## 2026-10-14 — Review follow-ups on U1 and U2: the shop view fails closed; repeat clicks alert nobody
 
 Branch `fix/panel-review-followups`. The lead's review of PRs #40 (U1) and #42 (U2), both merged

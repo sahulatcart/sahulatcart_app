@@ -574,7 +574,9 @@ confirmation link that lands on `/auth/confirmed`, which calls `POST /api/v1/sig
 Sign-up is open or allow-listed from `/platform/access` (U3, since 2026-10-14:
 `platform_settings` keys `signup_open` / `signup_allowlist`, read by `signupGate()` and cached
 60 s); the env vars `SIGNUP_OPEN` / `SIGNUP_ALLOWLIST` are only the fallback per key until a value
-is saved, and active platform admins are always allowed. The JWT must carry
+is saved, and active platform admins are always allowed. **Both values live in the panel since
+2026-10-14 and the two vars were deleted from Railway**, so production falls back to closed and
+empty if the rows ever vanish: a lost row can only close sign-up, never open it. Do not re-add them. The JWT must carry
 `email_confirmed_at`, or bootstrap is 401. One login, one shop, ever: a deactivated membership is
 409 `inactive_membership` (support reinstates it) and an email another shop uses is 409
 `email_in_use` (migration 0019; the fake twin raises the same codes). The platform admin can still
