@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { CheckCheck, Inbox } from 'lucide-react';
 import AppShell, { EmptyState, PageHead, Pill } from '../../../components/AppShell';
-import PlatformTabs from '../../../components/PlatformTabs';
 import { api, apiError, apiJson, dt } from '../../../lib/api';
 import { useToast } from '../../../components/Toast';
 
@@ -33,10 +32,9 @@ export default function PlatformInbox() {
   const unread = (rows ?? []).filter((r) => !r.read_at).length;
 
   return (
-    <AppShell>
+    <AppShell variant="platform">
       <PageHead title="Inbox" sub="Invoice claims, plan requests, WhatsApp numbers in trouble and failed jobs. Emailed to every platform admin as they happen."
         action={<button className="btn ghost sm" onClick={markAll} disabled={busy || unread === 0}><CheckCheck aria-hidden /> Mark all read</button>} />
-      <PlatformTabs />
       <div className="card">
         {rows && rows.length === 0 && <EmptyState icon={Inbox} title="Nothing here" hint="Claims, plan requests, WhatsApp flags and job failures land here as they happen." />}
         {rows && rows.length > 0 && (

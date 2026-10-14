@@ -59,6 +59,32 @@ hour even when the DB outage stopped it being delivered; concurrent 190s duplica
 network error leaves "Mark all read" busy.
 
 ---
+## 2026-10-14 — The founders' console gets its own shell
+
+Branch `feat/platform-shell`, from `main` at `ac930b6` (after U3 #43). Not in the panel plan:
+Uzair asked for the console to stop sharing the merchant dashboard's nav, since five console
+sections beside eight merchant pages was getting messy. Portal only; the backend is untouched.
+Admin typecheck, `next lint` and `next build` clean.
+
+**What changed.**
+- `AppShell` takes `variant: 'merchant' | 'platform'`. The platform variant has its own nav
+  (Shops, Inbox, Access, Audit, Jobs), the tag "Platform console" under the wordmark, the founders'
+  inbox count on its Inbox link, and makes none of the merchant calls (no shop status, no merchant
+  notifications, no bell in the top bar). Anyone who is not a platform admin is sent home. The
+  merchant variant lost the "Platform console" nav section. One shell, not two: the drawer, the
+  theme toggle and the logout are shared.
+- The two areas meet through one link in the sidebar foot: "Switch to console" for a merchant who
+  is also a platform admin, "Switch to my shop" for an admin who also owns a shop. Nobody else sees
+  either.
+- After login a platform admin with no shop lands on `/platform`; everyone else on their shop.
+- The console wears the forest accent (mint in dark mode) through `.shell[data-area="platform"]`
+  re-pointing the `--brand*` tokens in both theme blocks, so the two areas are never confused at a
+  glance. Brand tokens untouched; no raw hex in a rule.
+- The tabs row is gone: `PlatformTabs.tsx` deleted, the seven console pages wrap in
+  `<AppShell variant="platform">` and nothing else changed in them, Fazal's three included.
+
+**Hassles.** None. The variant touched one file for the shell and one line per page.
+
 ## 2026-10-14 — U3: the sign-up gate from the panel
 
 Branch `feat/signup-gate-db` (docs/launch/PLATFORM-PANEL-UZAIR.md, U3), from `main` at `79ff749`

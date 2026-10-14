@@ -76,6 +76,15 @@
    Set by the boot script in layout.tsx (saved choice, else the OS setting)
    and by ThemeToggle. Built on brand navy; only semantic tokens change —
    the brand tokens above stay verbatim. */
+/* The founders' console (AppShell variant="platform") wears the forest accent so the two areas are
+   never confused at a glance. Semantic tokens only; the brand tokens never change. */
+.shell[data-area="platform"] {
+  --brand: var(--color-forest);
+  --brand-ink: var(--color-forest);
+  --brand-tint: #EEF3EF;   /* forest @ 8% on white  */
+  --brand-tint-2: #DCE6DF; /* forest @ 16% on white */
+}
+
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg: var(--color-navy);
@@ -114,6 +123,12 @@
 }
 /* The two wordmark gradients are drawn for light surfaces. On dark, the brand's own
    treatment (the marketing site's nav): white "Sahulat", --grad-glow "cart". */
+[data-theme="dark"] .shell[data-area="platform"] {
+  --brand: var(--color-mint);
+  --brand-ink: var(--color-mint);
+  --brand-tint: rgba(194, 255, 180, .12);
+  --brand-tint-2: rgba(194, 255, 180, .24);
+}
 [data-theme="dark"] .wm-sahulat { background-image: none; color: #fff; }
 [data-theme="dark"] .wm-cart { background-image: var(--grad-glow); }
 [data-theme="dark"] .toast { border: 1px solid var(--border-strong); }

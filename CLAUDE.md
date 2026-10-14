@@ -325,6 +325,10 @@ send in `client.ts`, every inbound in `webhook.ts`, and every AI call through `c
   is read-only (the shop id from the URL only, 404 never 403, no `unread_count` write, never an
   account number) and every detail or chat read writes a `platform_view` audit row. `FakeDb`
   returns whole rows whatever the select names, so a route that must hide columns picks them in code.
+- **The console is `<AppShell variant="platform">`** (since 2026-10-14): its own nav, the forest
+  accent via `.shell[data-area="platform"]`, no merchant calls, non-admins sent home. A page under
+  `admin/app/platform/` must use that variant; the merchant shell shows no console item, and the
+  only crossing is the "Switch to…" link in the sidebar foot for people who have both.
 - **A page file may export only the page.** `next build` refuses a named export from
   `app/**/page.tsx` ("does not match the required types of a Next.js Page"), while `tsc` is happy.
   Shared pieces go in `admin/components/`. This took the admin deploy down after PR #21 while the
