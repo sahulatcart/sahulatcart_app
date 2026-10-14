@@ -14,6 +14,7 @@ import { orderRoutes } from './routes/orders';
 import { whatsappRoutes } from './routes/whatsapp';
 import { usageRoutes } from './routes/usage';
 import { platformRoutes } from './routes/platform';
+import { platformOpsRoutes } from './routes/platform-ops';
 import { webhookRoutes } from './whatsapp/webhook';
 import { customerRoutes } from './routes/customers';
 import { catalogRoutes } from './routes/catalog';
@@ -59,6 +60,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(whatsappRoutes); // M2/M3: /api/v1/admin/whatsapp/* (own auth hook)
   await app.register(usageRoutes); // M5: /api/v1/admin/usage
   await app.register(platformRoutes); // M6: /api/v1/platform/* (platform owner only)
+  await app.register(platformOpsRoutes); // F1/F2: audit, jobs, platform admins (own auth hook)
   await app.register(signupRoutes); // P1: self-service signup gate + bootstrap
   await app.register(onboardingRoutes); // P2: readiness + delivery zones (own auth hook)
   await app.register(notificationRoutes); // P3: push subscriptions, alert prefs, send-me-a-test (own auth hook)

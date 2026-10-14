@@ -50,7 +50,7 @@ describe('purgeLogs', () => {
     db.add('messages', { id: 'm-old', body: 'kitne ka hai', raw: { id: 'wamid.1' }, created_at: daysAgo(LOG_DAYS + 1) });
     db.add('messages', { id: 'm-new', body: 'theek hai', raw: { id: 'wamid.2' }, created_at: daysAgo(1) });
 
-    await purgeLogs(db.client);
+    expect(await purgeLogs(db.client)).toEqual({ webhook_events: 1, messages_raw: 1 });
     expect(db.rows('webhook_events').map((e) => e.event_id)).toEqual(['new']);
     expect(db.rows('messages').find((m) => m.id === 'm-old')).toMatchObject({ body: 'kitne ka hai', raw: null });
     expect(db.rows('messages').find((m) => m.id === 'm-new')!.raw).toEqual({ id: 'wamid.2' });

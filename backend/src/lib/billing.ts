@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { PLANS, type Plan, type SubscriptionStatus } from '@app/shared';
 import { loadConfig } from '../config';
 import { getServiceClient } from './supabase';
+import { runJob } from './job-runs';
 import { logger } from './logger';
 import { notify } from './notify';
 import { periodMonth } from './usage';
@@ -170,7 +171,14 @@ export async function markInvoicePaid(db: SupabaseClient, invoiceId: string, adm
 }
 
 export function startBillingJob(): void {
-  const run = () => { void runBillingJob(getServiceClient()).catch((e: unknown) => logger.error({ err: String(e) }, 'billing job failed')); };
+  // F1: each run writes a job_runs heartbeat for the platform console's Jobs tab.
+  const run = () => {
+    const db = getServiceClient();
+    void runJob(db, 'billing', 21600, async () => {
+      const r = await runBillingJob(db);
+      return { warned: r.warned.length, pastDue: r.pastDue.length, invoiced: r.invoiced.length };
+    });
+  };
   run();
   setInterval(run, 6 * 60 * 60_000).unref(); // four times a day is plenty for 7-day windows
 }

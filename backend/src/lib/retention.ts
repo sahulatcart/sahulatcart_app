@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { loadConfig } from '../config';
 import { logger } from './logger';
 import { getServiceClient } from './supabase';
+import { runJob } from './job-runs';
 
 const DAY_MS = 24 * 60 * 60_000;
 /** Payment screenshots: days after the claim was decided (verified or rejected). */
@@ -48,8 +49,8 @@ export async function purgeScreenshots(db: SupabaseClient): Promise<number> {
   return rows.length;
 }
 
-/** Drop webhook_events rows and clear messages.raw after LOG_DAYS. The message text itself stays. */
-export async function purgeLogs(db: SupabaseClient): Promise<void> {
+/** Drop webhook_events rows and clear messages.raw after LOG_DAYS. The message text itself stays. Returns the counts. */
+export async function purgeLogs(db: SupabaseClient): Promise<{ webhook_events: number; messages_raw: number }> {
   const cutoff = ago(LOG_DAYS);
   const [events, raw] = await Promise.all([
     db.from('webhook_events').delete({ count: 'exact' }).lt('received_at', cutoff),
@@ -59,13 +60,18 @@ export async function purgeLogs(db: SupabaseClient): Promise<void> {
   if (events.count || raw.count) {
     await audit(db, 'purge_logs', { webhook_events: events.count ?? 0, messages_raw: raw.count ?? 0, older_than_days: LOG_DAYS });
   }
+  return { webhook_events: events.count ?? 0, messages_raw: raw.count ?? 0 };
 }
 
 /** Run all purges now and every hour after. */
 export function startRetentionJob(): void {
+  // F1: each run writes a job_runs heartbeat for the platform console's Jobs tab.
   const run = () => {
     const db = getServiceClient();
-    void Promise.all([purgeScreenshots(db), purgeLogs(db)]).catch((e: unknown) => logger.error({ err: String(e) }, 'retention job failed'));
+    void runJob(db, 'retention', 3600, async () => {
+      const [screenshots, logs] = await Promise.all([purgeScreenshots(db), purgeLogs(db)]);
+      return { screenshots, ...logs };
+    });
   };
   run();
   setInterval(run, 60 * 60_000).unref();
