@@ -7,6 +7,15 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-14 — U0: the portal is "Merchant Dashboard"
+
+Branch `fix/merchant-dashboard-name` (PLATFORM-PANEL-UZAIR.md, U0). Three strings, nothing else:
+the page title (`${PRODUCT_NAME} — Merchant Dashboard`) and description in `admin/app/layout.tsx`,
+the wordmark tag in `admin/components/AppShell.tsx`, and the manifest description (it said
+"Merchant portal", not "Merchant admin"). `AuthLayout.tsx` and the login page carried no such
+string; a grep for "Merchant admin", "Merchant portal" and "— Admin" over `admin/app`,
+`admin/components` and `admin/public` is now empty. Admin typecheck, lint and `next build` clean.
+
 ## 2026-10-13 — Live: the pilot shop is kept free; finished branches deleted
 
 Owner decision after 0017: the pilot shop's subscription was set by hand from `trial` (ending
