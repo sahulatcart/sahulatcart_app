@@ -37,6 +37,22 @@ typechecks, `next lint` and `next build` clean. No migration.
   Worth remembering for any route that selects a subset of a sensitive table.
 
 **Open.** The "Audit trail for this shop" link points at `/platform/audit`, which arrives with F1.
+## 2026-10-14 — Live: F1 + F2 deployed (PR #38), migration 0020 applied, heartbeats confirmed
+
+The owner applied **0020** at about 14:30 PKT, *before* merging PR #38 (the plan said after; the
+order does not matter, the migration only adds things and the old code never touched them). PR #39
+(the two plan files) and PR #38 merged at 14:45; both deploys SUCCESS by 14:49, backend uptime reset.
+Verified on live right after: `job_runs` has all four rows with `ok true` (billing, retention and
+unpaid expiry from the boot run, the sweeper from its latest minute); `GET /platform/jobs`,
+`/platform/admins` (one active admin, bound) and `/platform/audit` answer 200 with the pilot token
+and 401 anonymously. The audit log already held two `plan_change_requested` rows from the pilot's
+billing page. Branches `feat/platform-panel-fazal` and `docs/platform-panel-plan` deleted.
+
+Uzair opened PR #40 (`feat/platform-shop-detail`, U1) within the hour; the P4/P5 follow-up
+branches from the part 2 review are still to come.
+
+---
+
 ## 2026-10-14 — Platform panel, Fazal's part (F1 + F2): job heartbeats, audit reader, invited admins
 
 Branch `feat/platform-panel-fazal`, from `main` at `95fabca` (after Uzair's rename, PR #37). Plan:
