@@ -7,6 +7,37 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-14 — U2: the founders' inbox
+
+Branch `feat/platform-inbox` (docs/launch/PLATFORM-PANEL-UZAIR.md, U2), from `main` at `d472dfc`
+(after F1+F2 #38 and U1 #40). 43 test files, 489 tests (10 new). Both typechecks, `next lint` and
+`next build` clean. No migration: `platform_notifications` came with 0020 (F1). **The live triggers
+need 0020 applied**; until then every `notifyPlatform()` logs one warning and the caller carries on.
+
+**What landed.**
+- `notifyPlatform()` in [lib/notify.ts](backend/src/lib/notify.ts): the founders' twin of
+  `notify()`. Prefixes the title with the shop name, inserts the `platform_notifications` row
+  (warn and continue on error), then emails every active `platform_admins.email` through the
+  existing `emailMembers()` under the digest key `'platform'`, so the five-in-five-minutes rule
+  and `flushPendingDigests()` on SIGTERM apply with no new code. Never push: those subscriptions
+  belong to merchant members. Joins `inflight`, so `flushNotifications()` awaits it in tests.
+- Four kinds, four trigger sites: `invoice_claimed` and `plan_requested` in `routes/billing.ts`;
+  `whatsapp_attention` from a dead token (`credentials.ts`), a policy or partner-removed event
+  (`account-events.ts`, once per shop on the WABA; the quality flag is left out on purpose, the
+  merchant fixes that one) and a rejected, paused or disabled template (`templates.ts`);
+  `job_failed` from `lib/job-runs.ts` (Fazal's file), reported at most once per job per hour so a
+  database outage does not write sixty rows an hour from the sweeper.
+- Routes in `routes/platform-ops.ts`: `GET /platform/inbox?count=1`, `GET /platform/inbox` (newest
+  100 with the shop name), `POST /platform/inbox/read` (all, or up to 100 ids).
+- Portal: `/platform/inbox` with a kind pill per row, unread rows in bold, "Mark all read", and a
+  link to the shop or the Jobs tab; the Inbox tab between Shops and Access; an unread count on the
+  Platform console nav link, polled every 30 s for platform admins only and refreshed by the
+  `platform-inbox` window event when the page marks rows read.
+
+**Hassles.** None. The notify test harness already mocked email and timers, and the three
+WhatsApp test files already seeded the exact rows the triggers read, so each trigger is one
+assertion added to an existing case.
+
 ## 2026-10-14 — U1: the founders' read-only look inside a shop
 
 Branch `feat/platform-shop-detail` (PLATFORM-PANEL-UZAIR.md, U1), from `main` at `95fabca`. Built

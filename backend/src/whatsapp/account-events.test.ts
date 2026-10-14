@@ -16,6 +16,12 @@ beforeEach(() => {
 });
 
 describe('phone_number_quality_update', () => {
+  it('a quality flag never reaches the founders (U2: the merchant fixes that one)', async () => {
+    await handleAccountEvent(db.client, ev('phone_number_quality_update', { display_phone_number: '923001111111', event: 'FLAGGED', current_limit: 'TIER_1K' }));
+    expect(row().flag_reason).toBe('quality');
+    expect(db.rows('platform_notifications')).toHaveLength(0);
+  });
+
   it('FLAGGED → red, needs_attention (quality), merchant told; UNFLAGGED restores', async () => {
     await handleAccountEvent(db.client, ev('phone_number_quality_update', { display_phone_number: '+92 300 1111111', event: 'FLAGGED', current_limit: 'TIER_250' }));
     expect(row()).toMatchObject({ quality_rating: 'red', status: 'needs_attention', flag_reason: 'quality', messaging_tier: 'unverified' });
@@ -62,12 +68,15 @@ describe('account_update', () => {
       expect(r.attention_message).toContain('DISABLE');
     }
     expect(notes()).toHaveLength(1); // one merchant, one notification
+    expect(db.rows('platform_notifications')).toHaveLength(1); // U2: and one row for the founders
+    expect(db.rows('platform_notifications')[0]).toMatchObject({ kind: 'whatsapp_attention', merchant_id: 'M1', data: { reason: 'policy', event: 'DISABLED_UPDATE' } });
   });
 
   it('PARTNER_REMOVED means reconnect', async () => {
     await handleAccountEvent(db.client, ev('account_update', { event: 'PARTNER_REMOVED' }));
     expect(row()).toMatchObject({ status: 'needs_attention', flag_reason: 'token' });
     expect(notes()[0]!.data.action).toBe('reconnect_whatsapp');
+    expect(db.rows('platform_notifications')[0]).toMatchObject({ kind: 'whatsapp_attention', data: { reason: 'token', event: 'PARTNER_REMOVED' } }); // U2
   });
 
   it('VERIFIED_ACCOUNT only informs', async () => {

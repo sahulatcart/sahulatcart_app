@@ -82,6 +82,9 @@ describe('markTokenInvalid', () => {
     expect(notes).toHaveLength(1);
     expect(notes[0]!.type).toBe('system');
     expect(notes[0]!.merchant_id).toBe('M1');
+    // U2: the founders hear about a dead token too.
+    expect(db.rows('platform_notifications')).toHaveLength(1);
+    expect(db.rows('platform_notifications')[0]).toMatchObject({ kind: 'whatsapp_attention', merchant_id: 'M1', data: { phoneNumberId: 'PN1', reason: 'token' } });
   });
 
   it('does nothing for an unknown number', async () => {

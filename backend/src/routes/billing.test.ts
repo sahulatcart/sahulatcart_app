@@ -56,6 +56,7 @@ describe('claim and plan request (manager only)', () => {
     const r = await app.inject({ method: 'POST', url: `/api/v1/admin/invoices/${invoiceId}/claim`, headers: owner, payload: { reference: ' TRX-778899 ' } });
     expect(r.statusCode).toBe(200);
     expect(fake.rows('invoices')[0]).toMatchObject({ status: 'due', reference: 'TRX-778899' });
+    expect(fake.rows('platform_notifications').at(-1)).toMatchObject({ kind: 'invoice_claimed', merchant_id: 'M', title: 'Ali Store: Invoice claimed', data: { invoiceId } }); // U2
     expect((await app.inject({ method: 'POST', url: '/api/v1/admin/invoices/nope/claim', headers: owner, payload: { reference: 'x' } })).statusCode).toBe(404);
   });
   it('a plan request is recorded for the console; pilot cannot be requested', async () => {
@@ -63,6 +64,7 @@ describe('claim and plan request (manager only)', () => {
     const r = await app.inject({ method: 'POST', url: '/api/v1/admin/subscription/request', headers: owner, payload: { plan: 'pro' } });
     expect(r.statusCode).toBe(200);
     expect(fake.rows('subscriptions')[0]!.requested_plan).toBe('pro');
+    expect(fake.rows('platform_notifications').at(-1)).toMatchObject({ kind: 'plan_requested', merchant_id: 'M', body: 'pilot → pro', data: { plan: 'pro' } }); // U2
   });
 });
 

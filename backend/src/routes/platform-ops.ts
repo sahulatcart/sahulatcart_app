@@ -48,6 +48,35 @@ export async function platformOpsRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ jobs: data ?? [] });
   });
 
+  // ── U2: the founders' inbox (platform_notifications, written by notifyPlatform) ──
+  app.get('/api/v1/platform/inbox', async (req, reply) => {
+    if ((req.query as { count?: string } | undefined)?.count === '1') {
+      const { count } = await db.from('platform_notifications').select('id', { count: 'exact', head: true }).is('read_at', null);
+      return reply.send({ unread: count ?? 0 });
+    }
+    const { data, error } = await db
+      .from('platform_notifications')
+      .select('id, kind, merchant_id, title, body, data, read_at, created_at, merchants(business_name)')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error) return reply.code(500).send({ error: { code: 'DB', message: 'could not read the inbox (is migration 0020 applied?)' } });
+    const notifications = (data ?? []).map((r) => {
+      const { merchants, ...rest } = r as typeof r & { merchants?: { business_name?: string } | null };
+      return { ...rest, businessName: merchants?.business_name ?? null };
+    });
+    return reply.send({ notifications });
+  });
+
+  app.post('/api/v1/platform/inbox/read', async (req, reply) => {
+    const ids = (req.body as { ids?: unknown } | undefined)?.ids;
+    if (ids !== undefined && (!Array.isArray(ids) || ids.length > MAX_PAGE || !ids.every((x) => typeof x === 'string'))) return reply.code(400).send(bad('ids must be up to 100 strings'));
+    let q = db.from('platform_notifications').update({ read_at: new Date().toISOString() }).is('read_at', null);
+    if (Array.isArray(ids)) q = q.in('id', ids as string[]);
+    const { error } = await q;
+    if (error) return reply.code(500).send({ error: { code: 'DB', message: 'could not mark the inbox read' } });
+    return reply.send({ ok: true });
+  });
+
   // ── F2: platform admins, invited by email and bound at their first confirmed login (lib/auth.ts) ──
   app.get('/api/v1/platform/admins', async (_req, reply) => {
     const { data } = await db.from('platform_admins').select('id, name, email, is_active, auth_user_id, created_at').order('created_at', { ascending: true });

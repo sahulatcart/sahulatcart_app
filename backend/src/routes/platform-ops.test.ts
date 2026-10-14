@@ -172,3 +172,37 @@ describe('platform admins (F2)', () => {
     expect(fake.db.rows('platform_admins').find((a) => a.id === 'PA1')!.is_active).toBe(true);
   });
 });
+
+describe("the founders' inbox (U2)", () => {
+  const seedInbox = () => {
+    fake.db.add('platform_notifications', { id: 'N1', kind: 'invoice_claimed', merchant_id: 'M1', title: 'Ali Store: Invoice claimed', body: 'Reference TRX1', data: { invoiceId: 'I1' }, read_at: null });
+    fake.db.add('platform_notifications', { id: 'N2', kind: 'job_failed', merchant_id: null, title: 'Job failed: billing', body: 'boom', data: { job: 'billing' }, read_at: null });
+    fake.db.add('platform_notifications', { id: 'N3', kind: 'plan_requested', merchant_id: 'M2', title: 'Bilal Mobiles: Plan change requested', body: 'pilot → pro', data: { plan: 'pro' }, read_at: '2026-10-14T05:00:00Z' });
+  };
+  it('counts the unread rows', async () => {
+    seedInbox();
+    const r = await app.inject({ method: 'GET', url: '/api/v1/platform/inbox?count=1', headers: fazal });
+    expect(r.json()).toEqual({ unread: 2 });
+  });
+  it('lists newest first with the shop name', async () => {
+    seedInbox();
+    const r = await app.inject({ method: 'GET', url: '/api/v1/platform/inbox', headers: fazal });
+    expect(r.statusCode).toBe(200);
+    const n = r.json().notifications;
+    expect(n.map((x: { id: string }) => x.id)).toEqual(['N3', 'N2', 'N1']);
+    expect(n[2]).toMatchObject({ businessName: 'Ali Store', kind: 'invoice_claimed', read_at: null });
+    expect(n[1].businessName).toBeNull();
+  });
+  it('marks some by id, then all; an owner may not', async () => {
+    seedInbox();
+    let r = await app.inject({ method: 'POST', url: '/api/v1/platform/inbox/read', headers: fazal, payload: { ids: ['N1'] } });
+    expect(r.statusCode).toBe(200);
+    expect(fake.db.rows('platform_notifications').find((x) => x.id === 'N1')!.read_at).toBeTruthy();
+    expect(fake.db.rows('platform_notifications').find((x) => x.id === 'N2')!.read_at).toBeNull();
+    r = await app.inject({ method: 'POST', url: '/api/v1/platform/inbox/read', headers: adminToken, payload: {} });
+    expect(r.statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/api/v1/platform/inbox?count=1', headers: fazal })).json()).toEqual({ unread: 0 });
+    expect((await app.inject({ method: 'POST', url: '/api/v1/platform/inbox/read', headers: fazal, payload: { ids: 'N1' } })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'GET', url: '/api/v1/platform/inbox', headers: jwt('jwt.owner.sig') })).statusCode).toBe(403);
+  });
+});

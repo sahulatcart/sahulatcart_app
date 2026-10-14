@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 /** The platform console's sections (docs/launch/PLATFORM-PANEL-FAZAL.md). Inbox lands between Shops and Access (U2). */
 const TABS: { href: string; label: string }[] = [
   { href: '/platform', label: 'Shops' },
+  { href: '/platform/inbox', label: 'Inbox' },
   { href: '/platform/access', label: 'Access' },
   { href: '/platform/audit', label: 'Audit' },
   { href: '/platform/jobs', label: 'Jobs' },
