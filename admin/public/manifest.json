@@ -1,7 +1,7 @@
 {
   "name": "Sahulatcart",
   "short_name": "Sahulatcart",
-  "description": "Merchant portal",
+  "description": "Merchant Dashboard",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

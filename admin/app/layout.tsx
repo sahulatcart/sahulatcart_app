@@ -30,8 +30,8 @@ const mono = JetBrains_Mono({
 const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Sahulatcart';
 
 export const metadata = {
-  title: `${PRODUCT_NAME} — Admin`,
-  description: 'Merchant admin portal',
+  title: `${PRODUCT_NAME} — Merchant Dashboard`,
+  description: 'Merchant Dashboard',
   icons: { icon: '/favicon.svg', apple: '/apple-touch-icon.png' },
 };
 

@@ -84,7 +84,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <img className="mark" src="/logo.svg" alt="" width={34} height={28} />
             <span>
               <span className="name"><Wordmark name={PRODUCT_NAME} /></span>
-              <span className="tag">Merchant admin</span>
+              <span className="tag">Merchant Dashboard</span>
             </span>
           </Link>
           {open && <button className="btn subtle icon-btn drawer-close" onClick={() => setOpen(false)} aria-label="Close menu"><X /></button>}
