@@ -7,6 +7,40 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-14 — Review follow-ups on U1 and U2: the shop view fails closed; repeat clicks alert nobody
+
+Branch `fix/panel-review-followups`. The lead's review of PRs #40 (U1) and #42 (U2), both merged
+before review, found no bugs and two should-fix items; both fixed here. 43 test files, 497 tests
+(8 new). No migration.
+
+- **The shop view fails closed** (`routes/platform-shops.ts`). The page promises "every look at this
+  page is recorded", but the `platform_view` audit insert was not checked: a failed write still
+  returned the shop and its chats, with nothing logged. Now a failed write is logged and the route
+  answers **503 `AUDIT_UNAVAILABLE`** with none of the data, for the shop detail and for a chat read.
+  The page shows the server's reason instead of a generic "Could not load".
+- **Repeat claims and plan requests alert nobody** (`routes/billing.ts`). A claim left the invoice
+  `due`, so every press of "I've paid" (a double click, a retry, a resubmit) wrote another founders'
+  inbox row and email; the same for "request plan". The two `plan_change_requested` audit rows on
+  live are probably this. Now each is up to two conditional UPDATEs: first `reference is null` (the
+  first claim), then `reference <> new` (a changed reference, titled "Invoice reference changed").
+  The same reference again answers 200 `{ unchanged: true }`, keeps the first `claimed_at`, and
+  alerts nobody. Plan requests do the same on `requested_plan` (null first, because `null <> 'pro'`
+  is not true in SQL); a repeat writes no audit row either.
+
+**Hassles.** `billing.test.ts` seeds once in `beforeAll` and its later console tests read that state,
+so the new tests first leaked a claimed reference and a cleared subscription into them. They now run
+in their own block that snapshots the four tables and restores them after each test; the audit log
+also had to be cleared at the start, or the earlier test's row was counted. The fail-closed tests patch
+`from('audit_log')` on the FakeDb instance, which works because route modules hold that instance as
+their client. All five behaviour tests were run against the old route code first and failed there.
+
+**Not fixed (nits, for Uzair):** expandable table rows use `<>` without a key (also in the M6 shops
+list); a tracked product with unknown stock shows ∞; a failed job's founders' alert is muted for an
+hour even when the DB outage stopped it being delivered; concurrent 190s duplicate the alert; a
+network error leaves "Mark all read" busy.
+
+---
+
 ## 2026-10-14 — U2: the founders' inbox
 
 Branch `feat/platform-inbox` (docs/launch/PLATFORM-PANEL-UZAIR.md, U2), from `main` at `d472dfc`

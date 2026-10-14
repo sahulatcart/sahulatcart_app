@@ -1,5 +1,5 @@
 // P7 routes through the real server: the merchant's billing page and the console's invoice actions.
-import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { FakeDb } from '../test-support/fake-db';
 
@@ -65,6 +65,78 @@ describe('claim and plan request (manager only)', () => {
     expect(r.statusCode).toBe(200);
     expect(fake.rows('subscriptions')[0]!.requested_plan).toBe('pro');
     expect(fake.rows('platform_notifications').at(-1)).toMatchObject({ kind: 'plan_requested', merchant_id: 'M', body: 'pilot → pro', data: { plan: 'pro' } }); // U2
+  });
+
+});
+
+// Review follow-up (2026-10-14): the founders are alerted once per claim and once per real change,
+// never per click. This file seeds once in beforeAll and later blocks read that state, so each test
+// here starts from a clean invoice and subscription and puts everything back afterwards.
+describe('repeat clicks alert nobody (review follow-up)', () => {
+  const TABLES = ['invoices', 'subscriptions', 'platform_notifications', 'audit_log'] as const;
+  let saved: Record<string, string>;
+  beforeEach(() => {
+    saved = Object.fromEntries(TABLES.map((t) => [t, JSON.stringify(fake.rows(t))]));
+    Object.assign(fake.rows('invoices')[0]!, { reference: null, claimed_at: null, status: 'due' });
+    Object.assign(fake.rows('subscriptions')[0]!, { requested_plan: null });
+    fake.rows('platform_notifications').splice(0);
+    fake.rows('audit_log').splice(0);
+  });
+  afterEach(() => {
+    for (const t of TABLES) fake.rows(t).splice(0, fake.rows(t).length, ...JSON.parse(saved[t]!));
+  });
+  const claim = (reference: string, id = invoiceId) => app.inject({ method: 'POST', url: `/api/v1/admin/invoices/${id}/claim`, headers: owner, payload: { reference } });
+  const inbox = (kind: string) => fake.rows('platform_notifications').filter((n) => n.kind === kind);
+
+  it('the same reference again is a quiet 200: one alert, the first claim time kept', async () => {
+    expect((await claim('TRX-1')).statusCode).toBe(200);
+    const firstAt = fake.rows('invoices')[0]!.claimed_at;
+    const again = await claim(' TRX-1 ');
+    expect(again.statusCode).toBe(200);
+    expect(again.json()).toMatchObject({ ok: true, unchanged: true });
+    await claim('TRX-1');
+    expect(inbox('invoice_claimed')).toHaveLength(1);
+    expect(fake.rows('invoices')[0]).toMatchObject({ reference: 'TRX-1', claimed_at: firstAt, status: 'due' });
+  });
+
+  it('a different reference is stored and alerts once more, titled as a change', async () => {
+    await claim('TRX-1');
+    const r = await claim('TRX-2');
+    expect(r.json()).toEqual({ ok: true });
+    expect(fake.rows('invoices')[0]!.reference).toBe('TRX-2');
+    const alerts = inbox('invoice_claimed');
+    expect(alerts).toHaveLength(2);
+    expect(alerts[1]).toMatchObject({ title: 'Ali Store: Invoice reference changed', body: 'Reference TRX-2' });
+  });
+
+  it('an unknown or paid invoice is 404 and alerts nobody', async () => {
+    expect((await claim('TRX-1', 'nope')).statusCode).toBe(404);
+    fake.rows('invoices')[0]!.status = 'paid';
+    expect((await claim('TRX-1')).statusCode).toBe(404);
+    expect(inbox('invoice_claimed')).toHaveLength(0);
+    expect(fake.rows('invoices')[0]!.reference ?? null).toBeNull();
+  });
+
+  it('asking again for the plan already requested writes no audit row and alerts nobody; a different plan does', async () => {
+    const ask = (plan: string) => app.inject({ method: 'POST', url: '/api/v1/admin/subscription/request', headers: owner, payload: { plan } });
+    const audits = () => fake.rows('audit_log').filter((a) => a.action === 'plan_change_requested');
+    expect((await ask('pro')).statusCode).toBe(200);
+    const again = await ask('pro');
+    expect(again.statusCode).toBe(200);
+    expect(again.json()).toMatchObject({ requestedPlan: 'pro', unchanged: true });
+    expect(audits()).toHaveLength(1);
+    expect(inbox('plan_requested')).toHaveLength(1);
+    expect((await ask('basic')).statusCode).toBe(200);
+    expect(fake.rows('subscriptions')[0]!.requested_plan).toBe('basic');
+    expect(audits()).toHaveLength(2);
+    expect(inbox('plan_requested')).toHaveLength(2);
+    expect(inbox('plan_requested')[1]!.body).toBe('pilot → basic');
+  });
+
+  it('a shop with no subscription is still 404 for a plan request', async () => {
+    fake.rows('subscriptions').splice(0);
+    expect((await app.inject({ method: 'POST', url: '/api/v1/admin/subscription/request', headers: owner, payload: { plan: 'pro' } })).statusCode).toBe(404);
+    expect(inbox('plan_requested')).toHaveLength(0);
   });
 });
 

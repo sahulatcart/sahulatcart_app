@@ -43,10 +43,21 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     const reference = String((req.body as { reference?: unknown } | undefined)?.reference ?? '').trim();
     if (!reference || reference.length > MAX_REFERENCE) return reply.code(400).send({ error: { code: 'BAD', message: `reference is required (max ${MAX_REFERENCE} characters)` } });
     const mid = req.merchantCtx!.merchantId;
-    const { data } = await db.from('invoices').update({ reference, claimed_at: new Date().toISOString() }).match({ id, merchant_id: mid, status: 'due' }).select('id').maybeSingle();
-    if (!data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'no due invoice with that id' } });
-    await notifyPlatform(db, { kind: 'invoice_claimed', merchantId: mid, title: 'Invoice claimed', body: `Reference ${reference}`, data: { invoiceId: id } }); // U2: the founders mark it paid
-    return reply.send({ ok: true });
+    // Review follow-up: the founders hear about a claim once, and again only when the reference
+    // changes. A repeat of the same reference (a double click, a retry, a resubmit) changes nothing
+    // and alerts nobody. Each step is one conditional UPDATE, so two identical clicks cannot both
+    // win the first step: Postgres re-checks `reference is null` after the first one commits.
+    const now = new Date().toISOString();
+    const due = { id, merchant_id: mid, status: 'due' };
+    const first = await db.from('invoices').update({ reference, claimed_at: now }).match(due).is('reference', null).select('id').maybeSingle();
+    const changed = first.data ? null : await db.from('invoices').update({ reference, claimed_at: now }).match(due).neq('reference', reference).select('id').maybeSingle();
+    if (first.data || changed?.data) {
+      await notifyPlatform(db, { kind: 'invoice_claimed', merchantId: mid, title: first.data ? 'Invoice claimed' : 'Invoice reference changed', body: `Reference ${reference}`, data: { invoiceId: id } }); // U2: the founders mark it paid
+      return reply.send({ ok: true });
+    }
+    const same = await db.from('invoices').select('id').match(due).maybeSingle();
+    if (!same.data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'no due invoice with that id' } });
+    return reply.send({ ok: true, unchanged: true });
   });
 
   /** No self-service upgrade yet: the request is recorded and the platform console applies it. */
@@ -55,8 +66,18 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     const plan = (req.body as { plan?: unknown } | undefined)?.plan;
     if (!isPlan(plan) || plan === 'pilot') return reply.code(400).send({ error: { code: 'BAD', message: 'plan must be basic or pro' } });
     const mid = req.merchantCtx!.merchantId;
-    const { data } = await db.from('subscriptions').update({ requested_plan: plan, updated_at: new Date().toISOString() }).eq('merchant_id', mid).select('id, plan').maybeSingle();
-    if (!data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'no subscription for this shop' } });
+    // Review follow-up: asking again for the plan already requested changes nothing, so it writes no
+    // audit row and alerts nobody. `requested_plan <> plan` is not true for null in SQL, hence the
+    // two conditional UPDATEs (null first, then a different plan).
+    const now = new Date().toISOString();
+    const first = await db.from('subscriptions').update({ requested_plan: plan, updated_at: now }).eq('merchant_id', mid).is('requested_plan', null).select('id, plan').maybeSingle();
+    const changed = first.data ? null : await db.from('subscriptions').update({ requested_plan: plan, updated_at: now }).eq('merchant_id', mid).neq('requested_plan', plan).select('id, plan').maybeSingle();
+    const data = first.data ?? changed?.data;
+    if (!data) {
+      const sub = await db.from('subscriptions').select('id').eq('merchant_id', mid).maybeSingle();
+      if (!sub.data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'no subscription for this shop' } });
+      return reply.send({ ok: true, requestedPlan: plan, unchanged: true });
+    }
     await db.from('audit_log').insert({ merchant_id: mid, actor: 'merchant', user_id: req.merchantCtx!.memberId ?? null, action: 'plan_change_requested', entity: 'subscription', entity_id: data.id, diff: { plan } });
     await notifyPlatform(db, { kind: 'plan_requested', merchantId: mid, title: 'Plan change requested', body: `${data.plan} → ${plan}`, data: { plan, subscriptionId: data.id } }); // U2
     return reply.send({ ok: true, requestedPlan: plan });

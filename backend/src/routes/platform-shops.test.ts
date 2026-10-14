@@ -137,3 +137,40 @@ describe('who may look', () => {
     expect(audits()).toHaveLength(0);
   });
 });
+
+describe('fail closed when the look cannot be recorded (review follow-up)', () => {
+  // The route holds the FakeDb instance itself as its client, so patching from() on it reaches the route.
+  function breakAuditLog(): () => void {
+    const db = fake.db as unknown as { from: (t: string) => unknown };
+    const orig = db.from.bind(fake.db);
+    db.from = (t: string) => (t === 'audit_log' ? { insert: async () => ({ data: null, error: { code: '57P01', message: 'terminating connection' } }) } : orig(t));
+    return () => { db.from = orig; };
+  }
+
+  it('the shop detail answers 503 and shows none of the shop', async () => {
+    const restore = breakAuditLog();
+    try {
+      const r = await app.inject({ method: 'GET', url: '/api/v1/platform/merchants/M1', headers: fazal });
+      expect(r.statusCode).toBe(503);
+      expect(r.json().error.code).toBe('AUDIT_UNAVAILABLE');
+      expect(r.body).not.toContain('Ali Store');
+      expect(r.body).not.toContain('Gulberg');
+    } finally { restore(); }
+  });
+
+  it('a chat read answers 503 and shows no message', async () => {
+    const restore = breakAuditLog();
+    try {
+      const r = await app.inject({ method: 'GET', url: `/api/v1/platform/merchants/M1/conversations/${convoM1}`, headers: fazal });
+      expect(r.statusCode).toBe(503);
+      expect(r.body).not.toContain('salam');
+      expect(convo(convoM1).unread_count).toBe(3);
+    } finally { restore(); }
+  });
+
+  it('once the audit log works again the same reads succeed and are recorded', async () => {
+    breakAuditLog()();
+    expect((await app.inject({ method: 'GET', url: '/api/v1/platform/merchants/M1', headers: fazal })).statusCode).toBe(200);
+    expect(audits()).toHaveLength(1);
+  });
+});
