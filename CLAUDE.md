@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **44 files, 504 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **45 files, 509 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -801,6 +801,13 @@ DNS TXT is the only verification method those support, so there is no backup met
   does not use this content to train" describes the intended state, not the current one.
 - **`GEMINI_MODEL` defaults to `gemini-2.5-flash` in [config.ts](backend/src/config.ts), which is
   retired for new Google accounts.** `.env` sets `gemini-3.5-flash`. Do not rely on the default.
+- **`META_GRAPH_API_VERSION` is required in production** (M7 step 4, since 2026-10-14): the backend
+  refuses to boot without it or with a value not shaped like `v25.0`, so a lost variable fails the
+  deploy (Railway keeps the old container) instead of silently calling an old version. Outside
+  production it falls back to `DEV_GRAPH_API_VERSION` in config.ts. Railway runs **v25.0, available
+  until 29 July 2028** (Meta's changelog, checked 2026-10-14; v26.0 came out 29 July 2026, v21.0 —
+  the old code default — ends 21 January 2027). Move to a newer version only after testing a real
+  connect and send against it, and update both the Railway value and `DEV_GRAPH_API_VERSION`.
 - **`/readyz?llm=1` makes a live Gemini call — never poll it.** Background monitors hitting it every
   15s once consumed an entire day's quota and sent hours into chasing a fault the monitoring caused.
   Use plain `/readyz` for liveness.

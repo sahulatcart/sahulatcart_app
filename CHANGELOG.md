@@ -7,6 +7,33 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-14 — M7 step 4: the Graph API version is required in production
+
+Branch `fix/graph-version-required`. `config.ts` defaulted `META_GRAPH_API_VERSION` to `v21.0`
+silently. Railway sets `v25.0`, so nothing was wrong on production, but a lost variable (we had just
+deleted two on purpose) would have sent every Meta call to an old version with no clear cause.
+
+- The variable is now **required when `NODE_ENV=production`** and must look like `vNN.N` anywhere
+  (refined in the schema next to `TOKEN_ENCRYPTION_KEY`). Outside production it falls back to the
+  exported `DEV_GRAPH_API_VERSION = 'v25.0'`, never `v21.0`. `parseEnv()` is exported so the rule is
+  tested without `loadConfig()` exiting the process. `vitest.config.ts` sets the dummy explicitly.
+- `backend/src/config.test.ts` (new, 5 tests): production without it fails naming the variable;
+  production with it uses that exact value; six malformed values are refused; the dev fallback;
+  the token-key rule still fires alongside it.
+- **Checked against the real Railway settings before pushing** (fetched as JSON, validated with
+  `parseEnv`, only the verdict printed, temp file deleted): production passes and resolves to
+  `v25.0`; the same settings without the variable would not boot.
+
+**Dates, from Meta's Graph API changelog (2026-10-14).** v25.0 is available until **29 July 2028**;
+v26.0 came out 29 July 2026; v21.0 ends **21 January 2027**. An earlier message in the session said
+v21.0 was "due to be retired around now"; that was wrong, it has three months left. Production stays
+on v25.0: moving to v26.0 changes every Meta call and needs a real connect-and-send test first.
+
+**Still the owner's, same step:** switch on "Require App Secret" in the Meta app's Advanced settings
+(every call already sends `appsecret_proof`).
+
+---
+
 ## 2026-10-14 — Live: sign-up moved into the panel; the two Railway variables deleted
 
 Uzair's U3 (PR #43) deployed at 15:10. The panel still read both values from Railway

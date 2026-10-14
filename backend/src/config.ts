@@ -1,6 +1,15 @@
 import { z } from 'zod';
 
 /**
+ * The Meta Graph API version used outside production (local runs, tests). Production must set
+ * META_GRAPH_API_VERSION explicitly (M7 step 4): Meta retires each version about two years after
+ * release, and a silent fallback to a stale default is how messages would start failing with no
+ * clear cause. v25.0 is the version set on Railway since 2026-10-13.
+ */
+export const DEV_GRAPH_API_VERSION = 'v25.0';
+const GRAPH_VERSION_RE = /^v\d+\.\d+$/;
+
+/**
  * Environment config with FAIL-FAST validation (docs/spec/09 §1.2).
  * Required-at-boot vars are validated here; the process exits if any are missing.
  * Phase-gated secrets (Meta, Anthropic) are optional until their phase lands, but
@@ -22,7 +31,8 @@ const schema = z.object({
   META_APP_SECRET: z.string().optional(),
   META_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
   META_SYSTEM_USER_TOKEN: z.string().optional(),
-  META_GRAPH_API_VERSION: z.string().default('v21.0'),
+  // Required in production and checked for shape (refined below); DEV_GRAPH_API_VERSION elsewhere.
+  META_GRAPH_API_VERSION: z.string().optional(),
   META_DEFAULT_PHONE_NUMBER_ID: z.string().optional(),
   META_EMBEDDED_SIGNUP_CONFIG_ID: z.string().optional(), // Facebook Login for Business → Configurations (M7 step 2)
   // Meta's per-message utility rate for Pakistan, in paisa, shown wherever a paid notice is offered
@@ -84,15 +94,26 @@ const schema = z.object({
     const key = /^[0-9a-f]{64}$/i.test(raw) ? Buffer.from(raw, 'hex') : Buffer.from(raw, 'base64');
     if (key.length !== 32) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['TOKEN_ENCRYPTION_KEY'], message: 'must be 32 bytes: 64 hex characters or base64' });
   }
-});
+  if (env.NODE_ENV === 'production' && !env.META_GRAPH_API_VERSION) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['META_GRAPH_API_VERSION'], message: `required in production (e.g. ${DEV_GRAPH_API_VERSION}; use the newest in the Meta dashboard)` });
+  }
+  if (env.META_GRAPH_API_VERSION !== undefined && !GRAPH_VERSION_RE.test(env.META_GRAPH_API_VERSION)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['META_GRAPH_API_VERSION'], message: 'must look like v25.0' });
+  }
+}).transform((env) => ({ ...env, META_GRAPH_API_VERSION: env.META_GRAPH_API_VERSION ?? DEV_GRAPH_API_VERSION }));
 
 export type Config = z.infer<typeof schema>;
 
 let cached: Config | undefined;
 
+/** Validate an environment without exiting (loadConfig exits on failure); tests use it directly. */
+export function parseEnv(env: Record<string, string | undefined>) {
+  return schema.safeParse(env);
+}
+
 export function loadConfig(): Config {
   if (cached) return cached;
-  const parsed = schema.safeParse(process.env);
+  const parsed = parseEnv(process.env);
   if (!parsed.success) {
     const issues = parsed.error.issues
       .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
