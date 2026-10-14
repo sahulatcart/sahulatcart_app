@@ -11,6 +11,7 @@ export default defineConfig({
       SUPABASE_ANON_KEY: 'test-anon-key',
       SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key',
       TOKEN_ENCRYPTION_KEY: 'dGVzdC1rZXktdGVzdC1rZXktdGVzdC1rZXktdGVzdC0=', // 32 dummy bytes; lib/crypto.ts needs a key to seal test tokens
+      META_GRAPH_API_VERSION: 'v25.0', // explicit, as production must be (config.ts); no test reaches graph.facebook.com
     },
   },
 });
