@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Ban, CheckCircle2, ChevronDown, ChevronUp, Receipt, Search, ShieldCheck, Store } from 'lucide-react';
 import AppShell, { EmptyState, PageHead, Pill } from '../../components/AppShell';
+import PlatformTabs from '../../components/PlatformTabs';
 import { api, apiError, apiJson, dt, rs } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 
@@ -71,6 +72,7 @@ export default function PlatformConsole() {
     <AppShell>
       <PageHead title="Platform" sub={`Every shop on Sahulatcart${month ? ` · ${month}` : ''}`}
         action={<form onSubmit={(e) => { e.preventDefault(); load(q); }} style={{ display: 'flex', gap: 6 }}><label htmlFor="q" className="sr-only">Search shops</label><input id="q" placeholder="Search name, email, phone" value={q} onChange={(e) => setQ(e.target.value)} /><button className="btn ghost icon-btn" aria-label="Search"><Search /></button></form>} />
+      <PlatformTabs />
       <div className="card">
         {rows && rows.length === 0 && <EmptyState icon={Store} title="No shops" hint="Shops appear here as merchants sign up." />}
         {rows && rows.length > 0 && (

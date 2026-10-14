@@ -109,10 +109,22 @@ export type Authn =
   | { kind: 'no_membership' }
   | { kind: 'anonymous' };
 
-/** Is this auth user an active platform admin? (`platform_admins`, 0001.) */
-export async function platformAdminFor(authUserId: string): Promise<{ email: string | null } | null> {
-  const { data } = await getServiceClient().from('platform_admins').select('email').eq('auth_user_id', authUserId).eq('is_active', true).maybeSingle();
-  return data ? { email: (data.email as string | null) ?? null } : null;
+/**
+ * Is this auth user an active platform admin? (`platform_admins`, 0001.) An admin invited by email
+ * (F2: a row with `auth_user_id` null) is bound to the auth user at their first login, and only
+ * when Supabase says the email is confirmed — an unconfirmed address proves nothing.
+ */
+export async function platformAdminFor(authUserId: string, email?: string | null, emailConfirmed = false): Promise<{ email: string | null } | null> {
+  const db = getServiceClient();
+  const { data } = await db.from('platform_admins').select('email').eq('auth_user_id', authUserId).eq('is_active', true).maybeSingle();
+  if (data) return { email: (data.email as string | null) ?? null };
+  const e = typeof email === 'string' ? email.trim().toLowerCase() : '';
+  if (!e || !emailConfirmed) return null;
+  const invited = await db.from('platform_admins').select('id, email').eq('email', e).is('auth_user_id', null).eq('is_active', true).maybeSingle();
+  if (!invited.data) return null;
+  // Conditional on auth_user_id still null, so two first logins cannot both bind the same row.
+  const bound = await db.from('platform_admins').update({ auth_user_id: authUserId, updated_at: new Date().toISOString() }).eq('id', invited.data.id).is('auth_user_id', null).select('id').maybeSingle();
+  return bound.data ? { email: (invited.data.email as string | null) ?? null } : null;
 }
 
 async function jwtAuthn(token: string): Promise<Authn> {
@@ -127,7 +139,7 @@ async function jwtAuthn(token: string): Promise<Authn> {
       .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle(),
-    platformAdminFor(data.user.id),
+    platformAdminFor(data.user.id, data.user.email ?? null, !!data.user.email_confirmed_at),
   ]);
   const platform: PlatformCtx | undefined = admin ? { authUserId: data.user.id, email: admin.email ?? data.user.email ?? null, via: 'jwt' } : undefined;
   // IC-7: a platform admin without a membership is never "no_membership" (that would bootstrap a shop for them).

@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getServiceClient } from './supabase';
 import { logger } from './logger';
 import { notify } from './notify';
+import { runJob } from './job-runs';
 import { notifyBuyer, setCheckoutState } from '../orchestrator/payment-service';
 
 export const DEFAULT_UNPAID_EXPIRY_HOURS = 24;
@@ -66,7 +67,11 @@ export async function expireUnpaidOrders(db: SupabaseClient, now: Date = new Dat
 }
 
 export function startUnpaidExpiryJob(): void {
-  const run = () => { void expireUnpaidOrders(getServiceClient()).catch((e: unknown) => logger.error({ err: String(e) }, 'unpaid expiry job failed')); };
+  // F1: each run writes a job_runs heartbeat for the platform console's Jobs tab.
+  const run = () => {
+    const db = getServiceClient();
+    void runJob(db, 'unpaid_expiry', 3600, async () => ({ cancelled: (await expireUnpaidOrders(db)).length }));
+  };
   run();
   setInterval(run, 60 * 60_000).unref();
 }

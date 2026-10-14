@@ -10,8 +10,11 @@ vi.hoisted(() => {
 });
 
 const fake = { db: new FakeDb() };
-const USERS: Record<string, { id: string; email: string; email_confirmed_at: string; user_metadata: Record<string, unknown> }> = {
+const USERS: Record<string, { id: string; email: string; email_confirmed_at: string | null; user_metadata: Record<string, unknown> }> = {
   'jwt.fazal.sig': { id: 'user-fazal', email: 'fazal@sahulatcart.com', email_confirmed_at: '2026-10-13T10:00:00Z', user_metadata: {} },
+  // F2: invited by email, no auth user bound yet
+  'jwt.invited.sig': { id: 'user-invited', email: 'Invited@Sahulatcart.com', email_confirmed_at: '2026-10-14T10:00:00Z', user_metadata: {} },
+  'jwt.unconfirmed.sig': { id: 'user-unconfirmed', email: 'pending@sahulatcart.com', email_confirmed_at: null, user_metadata: {} },
   'jwt.owner.sig': { id: 'user-owner', email: 'owner@shop.pk', email_confirmed_at: '2026-10-13T10:00:00Z', user_metadata: {} },
   'jwt.staff.sig': { id: 'user-staff', email: 'staff@shop.pk', email_confirmed_at: '2026-10-13T10:00:00Z', user_metadata: {} },
   'jwt.adminowner.sig': { id: 'user-adminowner', email: 'both@sahulatcart.com', email_confirmed_at: '2026-10-13T10:00:00Z', user_metadata: {} },
@@ -49,6 +52,8 @@ function seed() {
   db.add('merchant_users', { id: 'MU3', merchant_id: 'M2', auth_user_id: 'user-adminowner', email: 'both@sahulatcart.com', role: 'owner', is_active: true });
   db.add('platform_admins', { auth_user_id: 'user-fazal', email: 'fazal@sahulatcart.com', is_active: true });
   db.add('platform_admins', { auth_user_id: 'user-adminowner', email: 'both@sahulatcart.com', is_active: true });
+  db.add('platform_admins', { id: 'PA-invited', auth_user_id: null, email: 'invited@sahulatcart.com', is_active: true });
+  db.add('platform_admins', { id: 'PA-pending', auth_user_id: null, email: 'pending@sahulatcart.com', is_active: true });
   db.add('whatsapp_numbers', { merchant_id: 'M1', phone_number_id: 'PN1', phone_e164: '923001111111', status: 'connected', quality_rating: 'green', flag_reason: null });
   db.add('orders', { merchant_id: 'M1', order_number: 'SK-1001', status: 'confirmed', total: 1000, created_at: new Date().toISOString() }); // the fake clock starts in September
   return db;
@@ -136,5 +141,36 @@ describe('suspension', () => {
     expect(orders.json().error.code).toBe('merchant_suspended');
     expect((await app.inject({ method: 'GET', url: '/api/v1/admin/whatsapp', headers: jwt('jwt.owner.sig') })).statusCode).toBe(403);
     expect((await app.inject({ method: 'PATCH', url: '/api/v1/admin/settings', headers: jwt('jwt.owner.sig'), payload: { settings: { botEnabled: false } } })).statusCode).toBe(403);
+  });
+});
+
+describe('invited admins (F2): bound at the first confirmed login', () => {
+  it("a confirmed JWT whose email matches an unbound row reaches the console and binds the row", async () => {
+    const me = await app.inject({ method: 'GET', url: '/api/v1/platform/me', headers: jwt('jwt.invited.sig') });
+    expect(me.statusCode).toBe(200);
+    expect(me.json()).toMatchObject({ isPlatformAdmin: true, email: 'invited@sahulatcart.com', merchantId: null });
+    expect(fake.db.rows('platform_admins').find((a) => a.id === 'PA-invited')!.auth_user_id).toBe('user-invited');
+    // and the second call finds it by auth_user_id as usual
+    expect((await app.inject({ method: 'GET', url: '/api/v1/platform/merchants', headers: jwt('jwt.invited.sig') })).statusCode).toBe(200);
+  });
+
+  it('an unconfirmed email does not bind and is refused', async () => {
+    const me = await app.inject({ method: 'GET', url: '/api/v1/platform/me', headers: jwt('jwt.unconfirmed.sig') });
+    expect(me.statusCode).toBe(403);
+    expect(fake.db.rows('platform_admins').find((a) => a.id === 'PA-pending')!.auth_user_id).toBeNull();
+  });
+
+  it('an inactive invited row is never bound', async () => {
+    fake.db.rows('platform_admins').find((a) => a.id === 'PA-invited')!.is_active = false;
+    expect((await app.inject({ method: 'GET', url: '/api/v1/platform/me', headers: jwt('jwt.invited.sig') })).statusCode).toBe(403);
+    expect(fake.db.rows('platform_admins').find((a) => a.id === 'PA-invited')!.auth_user_id).toBeNull();
+  });
+
+  it('bootstrap for an invited admin answers 409 PLATFORM_ADMIN and creates no shop', async () => {
+    const r = await app.inject({ method: 'POST', url: '/api/v1/signup/bootstrap', headers: jwt('jwt.invited.sig'), payload: {} });
+    expect(r.statusCode).toBe(409);
+    expect(r.json().error.code).toBe('PLATFORM_ADMIN');
+    expect(fake.db.rows('merchants')).toHaveLength(2);
+    expect(fake.db.rows('platform_admins').find((a) => a.id === 'PA-invited')!.auth_user_id).toBe('user-invited');
   });
 });

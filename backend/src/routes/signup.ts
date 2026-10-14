@@ -23,7 +23,7 @@ export async function signupRoutes(app: FastifyInstance): Promise<void> {
     if (!user) return reply.code(401).send({ error: { code: 'UNAUTHORIZED', message: 'login required' } });
     if (!signupAllowed(user.email)) return reply.code(403).send(closed);
     // IC-7 (M6): the platform owner logs in to the console, not into a shop of their own.
-    if (await platformAdminFor(user.id)) return reply.code(409).send({ error: { code: 'PLATFORM_ADMIN', message: 'This login is a platform admin; open /platform instead' } });
+    if (await platformAdminFor(user.id, user.email, true)) return reply.code(409).send({ error: { code: 'PLATFORM_ADMIN', message: 'This login is a platform admin; open /platform instead' } });
     const profile = signupProfile({ ...user.metadata, ...((req.body as Record<string, unknown> | undefined) ?? {}) });
     if ('error' in profile) return reply.code(400).send({ error: { code: 'BAD', message: profile.error } });
     // Review P1-10: a returning owner goes to the dashboard, a new one to the wizard.

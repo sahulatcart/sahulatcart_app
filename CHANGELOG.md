@@ -7,6 +7,53 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-14 — Platform panel, Fazal's part (F1 + F2): job heartbeats, audit reader, invited admins
+
+Branch `feat/platform-panel-fazal`, from `main` at `95fabca` (after Uzair's rename, PR #37). Plan:
+[docs/launch/PLATFORM-PANEL-FAZAL.md](docs/launch/PLATFORM-PANEL-FAZAL.md). Both F1 and F2 in one
+PR by the owner's decision. Migration **0020** (Fazal applies after merge; dry-run against the live
+schema in a rolled-back transaction before the PR). 42 test files, 471 tests.
+
+**What landed.**
+- **Migration 0020**: `platform_notifications` (for Uzair's U2), `job_runs`, `platform_settings`
+  (for U3), `platform_admins.auth_user_id` nullable plus a unique index on `lower(email)`. RLS on,
+  `service_role` grants, no SQL function.
+- **Job heartbeats** ([lib/job-runs.ts](backend/src/lib/job-runs.ts)): `runJob(db, name, interval, fn)`
+  upserts one `job_runs` row per job at the start (`finished_at` null) and the end (`ok`, `error` or
+  `summary`). Never throws; a failed write is logged once per job per process and the job still
+  runs, because a deploy lands before its migration here. Wrapped: the replay sweeper (60 s),
+  retention (3600 s; `purgeLogs` now returns its two counts), unpaid expiry (3600 s), billing
+  (21600 s). The old per-job `.catch(... 'x job failed')` lines are gone; `runJob` logs the failure.
+- **[routes/platform-ops.ts](backend/src/routes/platform-ops.ts)** (own file, `requirePlatformAdmin`):
+  `GET /platform/audit` (filters `merchantId`, `action`; keyset `before`; `limit` 1–100, default
+  50; `{ rows, nextBefore }` with `businessName` flattened), `GET /platform/jobs`,
+  `GET/POST /platform/admins`, `DELETE /platform/admins/:id` (soft; 409 `self`, 409 `last_admin`;
+  audit rows with `merchant_id null`).
+- **Invite by email** ([lib/auth.ts](backend/src/lib/auth.ts) `platformAdminFor(authUserId, email?, emailConfirmed)`):
+  a row with `auth_user_id` null is bound to the auth user at the first login **only when Supabase
+  says the email is confirmed**; the bind is a conditional update (`auth_user_id` still null) so two
+  first logins cannot both take the row. `jwtAuthn()` passes the JWT's email and confirmation;
+  `signup/bootstrap` passes `true` (it already refused unconfirmed users), so an invited admin who
+  tries to create a shop still gets 409 `PLATFORM_ADMIN`.
+- **Portal**: `PlatformTabs` (Shops, Access, Audit, Jobs; Uzair inserts Inbox), `/platform/jobs`
+  (result pill: ok / failed / overdue when a run is older than twice its interval / running),
+  `/platform/audit` (shop and action filters, Load more, `?merchantId=` through `useSearchParams`
+  inside `Suspense`), `/platform/access` (admins table, add, remove behind `confirm()`, and the
+  marked slot where U3 mounts `SignupSettings`). The nav link says "Platform console".
+
+**Hassles.**
+- `limit=0` on the audit route is not "one row": `parseInt` gives 0, `|| 50` makes it the default.
+  The first test assumed otherwise; the route is right, the test was fixed to say so.
+- The heartbeat must be written through the plain `.upsert()` result, not awaited inside a throw
+  path: supabase-js answers a missing table with `{ error }`, not an exception, so both the
+  error-result and the thrown-exception cases are covered and tested with a stub client.
+
+**Open.** Fazal: apply 0020 after merge, then confirm four `job_runs` rows within the hour. Uzair:
+U1 (shop detail), U2 (inbox, which also adds the `job_failed` call in `job-runs.ts`), U3 (sign-up
+gate), per [PLATFORM-PANEL-UZAIR.md](docs/launch/PLATFORM-PANEL-UZAIR.md).
+
+---
+
 ## 2026-10-14 — U0: the portal is "Merchant Dashboard"
 
 Branch `fix/merchant-dashboard-name` (PLATFORM-PANEL-UZAIR.md, U0). Three strings, nothing else:

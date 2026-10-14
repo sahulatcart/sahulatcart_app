@@ -4,6 +4,7 @@ import { loadConfig } from '../config';
 import { logger } from '../lib/logger';
 import { getServiceClient } from '../lib/supabase';
 import { notify } from '../lib/notify';
+import { runJob } from '../lib/job-runs';
 import { verifySignature } from './signature';
 import crypto from 'node:crypto';
 import { parseAccountEvents, parseWebhook } from './parse';
@@ -352,7 +353,8 @@ let sweeper: NodeJS.Timeout | undefined;
 
 /** Check for stuck messages at boot and every minute. Production only — see CLAUDE.md. */
 export function startReplaySweeper(): void {
-  const run = () => void replayStuckMessages().catch((e: unknown) => logger.error({ err: String(e) }, 'replay sweep failed'));
+  // F1: each run writes a job_runs heartbeat for the platform console's Jobs tab.
+  const run = () => void runJob(getServiceClient(), 'replay_sweeper', 60, () => replayStuckMessages());
   run();
   sweeper = setInterval(run, 60_000);
   sweeper.unref();

@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **40 files, 448 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **42 files, 471 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -172,6 +172,11 @@ Nothing Meta was told we received may be lost:
   a local backend shares the live DB and WhatsApp token via `.env` and must never answer real customers.
   A replay can repeat a reply that was already sent — a duplicate beats silence.
 - **Shutdown** stops taking webhooks, then waits up to 25 s for queued messages (`drainWebhooks`).
+- **Job heartbeats** (F1, since 2026-10-14): the four background jobs (replay sweeper, retention,
+  unpaid expiry, billing) run through `runJob()` in [lib/job-runs.ts](backend/src/lib/job-runs.ts),
+  which upserts one `job_runs` row per job at the start and end of every run (migration 0020). The
+  console's Jobs tab reads it. The write may fail (the table lags the deploy by a few minutes); it
+  is logged once and the job still runs. Uzair's U2 adds the founders' inbox call on failure there.
 - **Retention** ([lib/retention.ts](backend/src/lib/retention.ts), spec 09 §8.2): a message's stored copy
   is dropped once it's processed. Hourly, in production only, `webhook_events` rows and `messages.raw`
   are purged after **30 days**, and payment screenshots **90 days after the claim is decided**. A claim
@@ -308,9 +313,14 @@ send in `client.ts`, every inbound in `webhook.ts`, and every AI call through `c
   (set by the console with a reason in `settings.suspension`, plus an `audit_log` row) makes the
   orchestrator store-only and every merchant route 403 `merchant_suspended` except the few in
   `SUSPENDED_OK` (`/me`, `GET /settings`, notifications) that the portal needs to show the banner.
-  Adding a platform admin is a one-off SQL on `platform_admins` (`auth_user_id` from
-  `auth.users`), recorded in the CHANGELOG, never a migration. The fake DB has `reset()` for route
-  tests, because route modules capture the client once at registration.
+  **Platform admins are invited by email** from `/platform/access` (F2, since 2026-10-14):
+  the row starts with `auth_user_id` null and `platformAdminFor()` binds it to the auth user at
+  their first login, only when the JWT's email is confirmed. Removing is soft; the last active
+  admin and yourself cannot be removed. The console also has an **Audit** tab (a reader for
+  `audit_log`, keyset-paged) and a **Jobs** tab, both served by
+  [routes/platform-ops.ts](backend/src/routes/platform-ops.ts), where Uzair's inbox and sign-up
+  settings routes also go. The fake DB has `reset()` for route tests, because route modules
+  capture the client once at registration.
 - **A page file may export only the page.** `next build` refuses a named export from
   `app/**/page.tsx` ("does not match the required types of a Next.js Page"), while `tsc` is happy.
   Shared pieces go in `admin/components/`. This took the admin deploy down after PR #21 while the
