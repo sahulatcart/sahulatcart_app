@@ -206,3 +206,26 @@ describe("the founders' inbox (U2)", () => {
     expect((await app.inject({ method: 'GET', url: '/api/v1/platform/inbox', headers: jwt('jwt.owner.sig') })).statusCode).toBe(403);
   });
 });
+
+describe('sign-up settings (U3)', () => {
+  it('GET reports env until a PUT stores values, then the panel is the source', async () => {
+    let r = await app.inject({ method: 'GET', url: '/api/v1/platform/signup', headers: fazal });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toMatchObject({ open: false, allowlist: [], source: { open: 'env', allowlist: 'env' } });
+    r = await app.inject({ method: 'PUT', url: '/api/v1/platform/signup', headers: fazal, payload: { open: true, allowlist: [' Ali@Shop.pk ', 'ali@shop.pk', 'bilal@shop.pk'] } });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toEqual({ ok: true, open: true, count: 2 });
+    r = await app.inject({ method: 'GET', url: '/api/v1/platform/signup', headers: fazal });
+    expect(r.json()).toEqual({ open: true, allowlist: ['ali@shop.pk', 'bilal@shop.pk'], source: { open: 'db', allowlist: 'db' } });
+    const audit = fake.db.rows('audit_log').find((a) => a.action === 'signup_settings_changed')!;
+    expect(audit).toMatchObject({ actor: 'platform', user_id: 'user-fazal', entity: 'platform_settings', diff: { open: true, count: 2 } });
+    expect(JSON.stringify(audit.diff)).not.toContain('shop.pk');
+  });
+  it('validates: a non-boolean, a bad email, 501 emails; an owner may not', async () => {
+    expect((await app.inject({ method: 'PUT', url: '/api/v1/platform/signup', headers: fazal, payload: { open: 'yes', allowlist: [] } })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'PUT', url: '/api/v1/platform/signup', headers: fazal, payload: { open: false, allowlist: ['not-an-email'] } })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'PUT', url: '/api/v1/platform/signup', headers: fazal, payload: { open: false, allowlist: Array.from({ length: 501 }, (_, i) => `u${i}@x.pk`) } })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'PUT', url: '/api/v1/platform/signup', headers: jwt('jwt.owner.sig'), payload: { open: true, allowlist: [] } })).statusCode).toBe(403);
+    expect(fake.db.rows('platform_settings')).toHaveLength(0);
+  });
+});

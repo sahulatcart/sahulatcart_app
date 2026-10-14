@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { FakeDb } from '../test-support/fake-db';
-import { signupAllowed, signupProfile } from './signup';
+import { _resetSignupGateCache, signupAllowed, signupProfile } from './signup';
 
 // Before any import of config: the allow-list that the "closed" and "open" cases test against.
 vi.hoisted(() => {
@@ -83,6 +83,20 @@ describe('POST /api/v1/signup/check', () => {
     const no = await app.inject({ method: 'POST', url: '/api/v1/signup/check', payload: { email: 'stranger@example.com' } });
     expect(yes.json()).toEqual({ allowed: true });
     expect(no.json()).toEqual({ allowed: false });
+  });
+});
+
+describe('the gate follows platform_settings (U3)', () => {
+  it('a stored signup_open row opens /signup/check and /api/v1/config; removing it (and the cache) closes them again', async () => {
+    _resetSignupGateCache();
+    const ip = { 'x-forwarded-for': '203.0.113.77' }; // its own signup rate-limit bucket: this file already makes most of one IP's ten a minute
+    const row = fake.add('platform_settings', { key: 'signup_open', value: true });
+    expect((await app.inject({ method: 'POST', url: '/api/v1/signup/check', headers: ip, payload: { email: 'stranger@example.com' } })).json()).toEqual({ allowed: true });
+    expect((await app.inject({ method: 'GET', url: '/api/v1/config' })).json().signupOpen).toBe(true);
+    fake.rows('platform_settings').splice(fake.rows('platform_settings').indexOf(row), 1);
+    _resetSignupGateCache();
+    expect((await app.inject({ method: 'POST', url: '/api/v1/signup/check', headers: ip, payload: { email: 'stranger@example.com' } })).json()).toEqual({ allowed: false });
+    expect((await app.inject({ method: 'GET', url: '/api/v1/config' })).json().signupOpen).toBe(false);
   });
 });
 

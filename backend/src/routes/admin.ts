@@ -4,7 +4,7 @@ import { loadConfig } from '../config';
 import { tokenForNumber } from '../whatsapp/credentials';
 import { getServiceClient } from '../lib/supabase';
 import { forbid, isAdminToken, isManager, requireMerchant } from '../lib/auth';
-import { NEW_MERCHANT_SETTINGS } from '../lib/signup';
+import { NEW_MERCHANT_SETTINGS, signupGate } from '../lib/signup';
 import { computeReadiness } from '../lib/readiness';
 import { startOfTodayKarachi } from '../lib/hours';
 import { cancelOrder, markCodCollected, rejectPayment, verifyPayment, type ActionResult, type Actor } from '../orchestrator/payment-service';
@@ -42,8 +42,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({
       supabaseUrl: cfg.SUPABASE_URL,
       supabaseAnonKey: cfg.SUPABASE_ANON_KEY,
-      // Self-service signup (P1): whether anyone may join, never the allow-list itself.
-      signupOpen: cfg.SIGNUP_OPEN,
+      // Self-service signup (P1): whether anyone may join, never the allow-list itself. From the panel since U3.
+      signupOpen: (await signupGate(db)).SIGNUP_OPEN,
       // Web Push (P3): the public VAPID key is public by design; null means push is not set up.
       vapidPublicKey: cfg.VAPID_PUBLIC_KEY ?? null,
       // Embedded Signup (M2): the app id and configuration id are public by design; the secret never is.

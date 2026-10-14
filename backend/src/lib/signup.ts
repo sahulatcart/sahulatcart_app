@@ -24,6 +24,44 @@ export function signupAllowed(email: string | null | undefined, cfg: Pick<Config
   return cfg.SIGNUP_ALLOWLIST.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean).includes(e);
 }
 
+// ── U3: the gate lives in platform_settings (edited from /platform/access); the env vars are the
+// fallback per key until a value is saved. Active platform admins are always allowed, so an invited
+// admin can create their auth user and land on the 409 → /platform path. /api/v1/config is public,
+// so the answer is cached for a minute; the PUT route clears it.
+export interface SignupGate extends Pick<Config, 'SIGNUP_OPEN' | 'SIGNUP_ALLOWLIST'> {
+  /** The stored (or env) list alone, for the panel; SIGNUP_ALLOWLIST adds the admins. */
+  allowlist: string[];
+  source: { open: 'db' | 'env'; allowlist: 'db' | 'env' };
+}
+const GATE_TTL_MS = 60_000;
+let gateCache: { at: number; gate: SignupGate } | null = null;
+/** Tests, and the PUT route. */
+export const _resetSignupGateCache = (): void => { gateCache = null; };
+const EMAIL_RE = /^\S+@\S+\.\S+$/;
+const cleanList = (v: unknown): string[] | null => (Array.isArray(v) && v.every((x) => typeof x === 'string') ? [...new Set(v.map((s) => s.trim().toLowerCase()).filter((s) => s && EMAIL_RE.test(s)))] : null);
+
+export async function signupGate(db: SupabaseClient, env: Pick<Config, 'SIGNUP_OPEN' | 'SIGNUP_ALLOWLIST'> = loadConfig()): Promise<SignupGate> {
+  if (gateCache && Date.now() - gateCache.at < GATE_TTL_MS) return gateCache.gate;
+  const [{ data: rows }, { data: admins }] = await Promise.all([
+    db.from('platform_settings').select('key, value').in('key', ['signup_open', 'signup_allowlist']),
+    db.from('platform_admins').select('email').eq('is_active', true).not('email', 'is', null),
+  ]);
+  const byKey = new Map(((rows ?? []) as { key: string; value: unknown }[]).map((r) => [r.key, r.value]));
+  const openRow = byKey.get('signup_open');
+  const listRow = cleanList(byKey.get('signup_allowlist'));
+  const envList = env.SIGNUP_ALLOWLIST.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const allowlist = listRow ?? envList;
+  const adminEmails = ((admins ?? []) as { email: string | null }[]).map((a) => (a.email ?? '').trim().toLowerCase()).filter(Boolean);
+  const gate: SignupGate = {
+    SIGNUP_OPEN: typeof openRow === 'boolean' ? openRow : env.SIGNUP_OPEN,
+    SIGNUP_ALLOWLIST: [...allowlist, ...adminEmails].join(','),
+    allowlist,
+    source: { open: typeof openRow === 'boolean' ? 'db' : 'env', allowlist: listRow ? 'db' : 'env' },
+  };
+  gateCache = { at: Date.now(), gate };
+  return gate;
+}
+
 /** A shop or owner name: 2–80 characters, no control characters. */
 export function validName(v: unknown): v is string {
   if (typeof v !== 'string') return false;
