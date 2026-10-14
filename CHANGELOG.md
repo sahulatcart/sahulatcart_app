@@ -7,6 +7,20 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-14 — Review follow-up on PR #46: the console redirects only on a real "not allowed"
+
+Branch `fix/console-redirect-only-on-403`. The lead's review of #46 (the console's own shell, merged
+before review) found no bugs and one small fix. `AppShell variant="platform"` sent the user to `/`
+on **any** failure of `GET /api/v1/platform/me`: a network blip, a 429 or a 5xx bounced a founder to
+the merchant side (and a founder with no shop then bounced back through `NO_SHOP`). Now only a
+**403** (`PLATFORM_ONLY`) redirects; a non-OK answer of any other kind, or a network error, leaves the
+page as it is. A 401 still goes to `/login` inside `api()`. The server guards every console route
+regardless, so the redirect was only ever cosmetic. Admin only; no test suite there, so the proof is
+`tsc`, `next lint`, `next build`, and the live status codes the check relies on (no login 401,
+founder 200; a non-founder's 403 is covered by `platform.test.ts`).
+
+---
+
 ## 2026-10-14 — M7 step 4: the Graph API version is required in production
 
 Branch `fix/graph-version-required`. `config.ts` defaulted `META_GRAPH_API_VERSION` to `v21.0`
