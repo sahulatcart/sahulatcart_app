@@ -3,7 +3,7 @@
 import type { FastifyInstance } from 'fastify';
 import { getServiceClient } from '../lib/supabase';
 import { platformAdminFor, resolveAuthUser } from '../lib/auth';
-import { bootstrapMerchant, signupAllowed, signupProfile } from '../lib/signup';
+import { bootstrapMerchant, signupAllowed, signupGate, signupProfile } from '../lib/signup';
 
 const closed = { error: { code: 'signup_closed', message: 'Sahulatcart is in private pilot; email us to join' } };
 
@@ -13,7 +13,7 @@ export async function signupRoutes(app: FastifyInstance): Promise<void> {
   // The page asks before calling signUp, so a refused email never gets a stray auth user.
   app.post('/api/v1/signup/check', async (req, reply) => {
     const email = (req.body as { email?: string } | undefined)?.email;
-    return reply.send({ allowed: signupAllowed(email) });
+    return reply.send({ allowed: signupAllowed(email, await signupGate(db)) });
   });
 
   // JWT required, no membership required. The profile comes from the auth user's metadata
@@ -21,7 +21,7 @@ export async function signupRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/v1/signup/bootstrap', async (req, reply) => {
     const user = await resolveAuthUser(req);
     if (!user) return reply.code(401).send({ error: { code: 'UNAUTHORIZED', message: 'login required' } });
-    if (!signupAllowed(user.email)) return reply.code(403).send(closed);
+    if (!signupAllowed(user.email, await signupGate(db))) return reply.code(403).send(closed);
     // IC-7 (M6): the platform owner logs in to the console, not into a shop of their own.
     if (await platformAdminFor(user.id, user.email, true)) return reply.code(409).send({ error: { code: 'PLATFORM_ADMIN', message: 'This login is a platform admin; open /platform instead' } });
     const profile = signupProfile({ ...user.metadata, ...((req.body as Record<string, unknown> | undefined) ?? {}) });

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ShieldCheck, UserMinus, UserPlus } from 'lucide-react';
 import AppShell, { EmptyState, PageHead, Pill } from '../../../components/AppShell';
 import PlatformTabs from '../../../components/PlatformTabs';
+import SignupSettings from '../../../components/SignupSettings';
 import { api, apiError, apiJson, dt } from '../../../lib/api';
 import { useToast } from '../../../components/Toast';
 
@@ -86,7 +87,7 @@ export default function PlatformAccess() {
           <div className="help" style={{ marginTop: 8 }}>They sign in at the usual login with this email; the console appears once the email is confirmed.</div>
         </form>
       </div>
-      {/* U3 mounts <SignupSettings /> here */}
+      <SignupSettings />
     </AppShell>
   );
 }
