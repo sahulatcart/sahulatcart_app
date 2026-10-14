@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **43 files, 479 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **43 files, 489 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -557,6 +557,12 @@ discriminated union of ~20 reply kinds) and only phrases it.
   `/settings/notifications`, managers only, with a 30 s cooldown on the test. Push endpoints are
   allow-listed to the four real push services (`validPushEndpoint()`); the payload carries the row
   id so each alert gets its own lock-screen entry. Tests await the fan-out with `flushNotifications()`.
+- **Founders are told only through `notifyPlatform()`** (U2, since 2026-10-14, same file): four
+  kinds (`invoice_claimed`, `plan_requested`, `whatsapp_attention`, `job_failed`), a row in
+  `platform_notifications` plus an email to every active platform admin under the digest key
+  `'platform'`; never push, never a merchant's inbox. A missing table (0020 not applied) is a
+  warning, never a failure for the caller. `job_failed` is suppressed to once per job per hour.
+  The inbox is `/platform/inbox` with its count on the console nav link.
 - **WhatsApp's 24-hour window.** Free-form messages to a buyer who last wrote over 24h ago are refused
   unless they use an approved template, and none exist yet. `notifyBuyer()` doesn't attempt them; it
   notifies the merchant to reach the buyer another way. The inbox disables replies and says why.

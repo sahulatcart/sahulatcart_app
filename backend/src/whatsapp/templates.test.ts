@@ -86,6 +86,11 @@ describe('status updates', () => {
     expect(n).toHaveLength(1);
     expect(n[0]!.type).toBe('template_status');
     expect(n[0]!.body).toContain('INVALID_FORMAT');
+    // U2: a rejection reaches the founders; the approval above did not.
+    const pn = fake.db.rows('platform_notifications');
+    expect(pn).toHaveLength(1);
+    expect(pn[0]).toMatchObject({ kind: 'whatsapp_attention', merchant_id: 'M1', data: { reason: 'template', template: 'order_sent', status: 'rejected' } });
+    expect(pn[0]!.body).toContain('INVALID_FORMAT');
   });
 
   it('an unknown template name changes nothing', async () => {

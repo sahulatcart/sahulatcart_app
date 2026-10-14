@@ -61,6 +61,37 @@ export async function notify(db: SupabaseClient, merchantId: string, input: Noti
   return id;
 }
 
+// ── The founders' inbox (U2, docs/launch/PLATFORM-PANEL-UZAIR.md). The four things only founders act
+// on. The row goes to platform_notifications; every active platform admin with an email gets the
+// alert, under the digest key 'platform' so the five-in-five-minutes rule applies as for a merchant.
+// Never push: push subscriptions belong to merchant members. The table arrives with migration 0020
+// and the code deploys first, so a failed insert is a warning, never an error for the caller.
+export type PlatformKind = 'invoice_claimed' | 'plan_requested' | 'whatsapp_attention' | 'job_failed';
+export interface PlatformNotifyInput { kind: PlatformKind; merchantId?: string | null; title: string; body: string; data?: Record<string, unknown> }
+
+export async function notifyPlatform(db: SupabaseClient, input: PlatformNotifyInput): Promise<string | null> {
+  let title = input.title;
+  if (input.merchantId) {
+    const m = await db.from('merchants').select('business_name').eq('id', input.merchantId).maybeSingle();
+    if (m.data?.business_name) title = `${m.data.business_name}: ${title}`;
+  }
+  const { data, error } = await db
+    .from('platform_notifications')
+    .insert({ kind: input.kind, merchant_id: input.merchantId ?? null, title, body: input.body, data: input.data ?? {} })
+    .select('id')
+    .single();
+  if (error) logger.warn({ err: error.message, kind: input.kind }, 'platform notification row failed (is migration 0020 applied?)');
+  const id = (data?.id as string | undefined) ?? null;
+  const p = (async () => {
+    const admins = await db.from('platform_admins').select('email').eq('is_active', true).not('email', 'is', null);
+    const to = ((admins.data ?? []) as { email: string | null }[]).map((a) => a.email).filter((e): e is string => typeof e === 'string' && e.length > 0);
+    if (to.length) await emailMembers('platform', to, title, input.body, '/platform/inbox');
+  })().catch((e: unknown) => logger.warn({ err: (e as Error).message, kind: input.kind }, 'platform notification email failed'));
+  inflight.add(p);
+  void p.finally(() => inflight.delete(p));
+  return id;
+}
+
 /** Wait for every background delivery started so far (tests, and shutdown). */
 export async function flushNotifications(): Promise<void> {
   await Promise.all([...inflight]);

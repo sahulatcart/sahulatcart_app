@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../lib/logger';
-import { notify } from '../lib/notify';
+import { notify, notifyPlatform } from '../lib/notify';
 import { digitsOnly } from '../lib/phone';
 import { forgetNumber } from './credentials';
 import { applyTemplateStatus } from './templates';
@@ -22,6 +22,13 @@ const TIER: Record<string, Tier> = { TIER_250: 'unverified', TIER_1K: 'tier_1', 
 async function notifyMerchants(db: SupabaseClient, merchantIds: string[], type: 'system' | 'template_status', title: string, body: string, data: Record<string, unknown>): Promise<void> {
   for (const merchant_id of new Set(merchantIds)) {
     await notify(db, merchant_id, { type, title, body, data });
+  }
+}
+
+/** U2: the founders' inbox gets the same message once per shop, for the flags only Nubrix can help with. */
+async function tellFounders(db: SupabaseClient, merchantIds: string[], reason: 'policy' | 'token', body: string, event: string | undefined): Promise<void> {
+  for (const merchantId of new Set(merchantIds)) {
+    await notifyPlatform(db, { kind: 'whatsapp_attention', merchantId, title: 'WhatsApp needs attention', body, data: { reason, event: event ?? null } });
   }
 }
 
@@ -99,12 +106,14 @@ async function onAccountUpdate(db: SupabaseClient, ev: AccountEvent): Promise<vo
       const message = `Meta has restricted this WhatsApp Business account (${reason}). Open Meta Business Manager → WhatsApp accounts to see the reason and appeal; the bot cannot send until Meta lifts it.`;
       await patchNumbers(db, rows, { status: 'needs_attention', flag_reason: 'policy', attention_message: message });
       await notifyMerchants(db, merchants, 'system', 'WhatsApp account restricted by Meta', message, { action: 'whatsapp_account', event: v.event, reason });
+      await tellFounders(db, merchants, 'policy', message, v.event);
       break;
     }
     case 'PARTNER_REMOVED': {
       const message = 'Sahulatcart was removed from this WhatsApp Business account in Meta Business Manager. Reconnect from Settings → WhatsApp to continue.';
       await patchNumbers(db, rows, { status: 'needs_attention', flag_reason: 'token', attention_message: message });
       await notifyMerchants(db, merchants, 'system', 'WhatsApp disconnected', message, { action: 'reconnect_whatsapp', event: v.event });
+      await tellFounders(db, merchants, 'token', message, v.event);
       break;
     }
     case 'VERIFIED_ACCOUNT':

@@ -38,6 +38,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [platformAdmin, setPlatformAdmin] = useState(false);
+  const [platformUnread, setPlatformUnread] = useState(0);
   const [suspension, setSuspension] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,6 +61,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
     window.addEventListener('notifications', load);
     return () => { clearInterval(t); window.removeEventListener('notifications', load); };
   }, [ready]);
+  // U2: the founders' inbox count on the console link, refreshed when the inbox page marks rows read.
+  useEffect(() => {
+    if (!ready || !platformAdmin) return;
+    const load = () => apiJson<{ unread: number }>('/api/v1/platform/inbox?count=1').then((r) => setPlatformUnread(r.unread)).catch(() => {});
+    load();
+    const t = setInterval(load, 30_000);
+    window.addEventListener('platform-inbox', load);
+    return () => { clearInterval(t); window.removeEventListener('platform-inbox', load); };
+  }, [ready, platformAdmin]);
   // M6: the console link shows only to platform admins; a suspended shop sees why it is read-only.
   useEffect(() => {
     if (!ready) return;
@@ -94,7 +104,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <div>
               <div className="nav-section">Platform</div>
               <div className="nav-group">
-                <Link href="/platform" className={`nav-link ${pathname.startsWith('/platform') ? 'active' : ''}`} aria-current={pathname.startsWith('/platform') ? 'page' : undefined}><ShieldCheck aria-hidden /> Platform console</Link>
+                <Link href="/platform" className={`nav-link ${pathname.startsWith('/platform') ? 'active' : ''}`} aria-current={pathname.startsWith('/platform') ? 'page' : undefined}><ShieldCheck aria-hidden /> Platform console
+                  {platformUnread > 0 && <span className="count" aria-label={`${platformUnread} unread in the founders' inbox`}>{platformUnread > 99 ? '99+' : platformUnread}</span>}
+                </Link>
               </div>
             </div>
           )}

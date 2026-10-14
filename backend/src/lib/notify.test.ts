@@ -23,7 +23,7 @@ vi.mock('./email', async (importOriginal) => {
   };
 });
 
-import { _resetNotifyState, flushNotifications, flushPendingDigests, notificationUrl, notify, prefsOf } from './notify';
+import { _resetNotifyState, flushNotifications, flushPendingDigests, notificationUrl, notify, notifyPlatform, prefsOf } from './notify';
 
 const M = 'merchant-1';
 let db: FakeDb;
@@ -140,5 +140,54 @@ describe('review fixes (P3-6, P3-7)', () => {
     for (let i = 1; i <= 6; i++) { await send(`Order ${i}`); await flushNotifications(); }
     await flushPendingDigests();
     expect(mail.sent.at(-1)!.subject).toBe('1 new notification — Sahulatcart');
+  });
+});
+
+describe("notifyPlatform — the founders' inbox (U2)", () => {
+  beforeEach(() => {
+    db.add('merchants', { id: M, business_name: 'Ali Store', settings: {} });
+    db.add('platform_admins', { email: 'fazal@sahulatcart.com', is_active: true, auth_user_id: 'u1' });
+    db.add('platform_admins', { email: 'uzair@sahulatcart.com', is_active: true, auth_user_id: null });
+    db.add('platform_admins', { email: 'old@sahulatcart.com', is_active: false, auth_user_id: 'u3' });
+  });
+  const claim = (title = 'Invoice claimed') => notifyPlatform(db.client, { kind: 'invoice_claimed', merchantId: M, title, body: 'Reference TRX1', data: { invoiceId: 'i1' } });
+
+  it('writes the row with the shop name in the title and emails every active admin once', async () => {
+    const id = await claim();
+    await flushNotifications();
+    expect(id).toBeTruthy();
+    const rows = db.rows('platform_notifications');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: 'invoice_claimed', merchant_id: M, title: 'Ali Store: Invoice claimed', body: 'Reference TRX1', data: { invoiceId: 'i1' } });
+    expect(rows[0]!.read_at).toBeUndefined();
+    expect(mail.sent).toHaveLength(1);
+    expect(mail.sent[0]!.to.sort()).toEqual(['fazal@sahulatcart.com', 'uzair@sahulatcart.com']);
+    expect(push.sent).toHaveLength(0); // never push
+    expect(db.rows('notifications')).toHaveLength(0); // never the merchant's inbox
+  });
+
+  it('a row without a shop keeps its plain title; no active admin email means no email', async () => {
+    for (const a of db.rows('platform_admins')) a.is_active = false;
+    await notifyPlatform(db.client, { kind: 'job_failed', title: 'Job failed: billing', body: 'boom', data: { job: 'billing' } });
+    await flushNotifications();
+    expect(db.rows('platform_notifications')[0]).toMatchObject({ kind: 'job_failed', merchant_id: null, title: 'Job failed: billing' });
+    expect(mail.sent).toHaveLength(0);
+  });
+
+  it('six in a row: five emails, then one digest when the window closes', async () => {
+    vi.useFakeTimers();
+    for (let i = 1; i <= 6; i++) { await claim(`Claim ${i}`); await flushNotifications(); }
+    expect(mail.sent).toHaveLength(5);
+    await vi.advanceTimersByTimeAsync(5 * 60_000 + 1);
+    expect(mail.sent).toHaveLength(6);
+    expect(mail.sent[5]!.subject).toContain('1 new notification');
+  });
+
+  it('a failed insert (the table is not there yet) still resolves, with null', async () => {
+    const broken = { from: (t: string) => (t === 'platform_notifications'
+      ? { insert: () => ({ select: () => ({ single: async () => ({ data: null, error: { message: 'relation does not exist' } }) }) }) }
+      : db.client.from(t)) } as unknown as import('@supabase/supabase-js').SupabaseClient;
+    await expect(notifyPlatform(broken, { kind: 'plan_requested', merchantId: M, title: 'Plan change requested', body: 'pilot → pro' })).resolves.toBeNull();
+    await flushNotifications();
   });
 });

@@ -6,6 +6,7 @@ import { getServiceClient } from '../lib/supabase';
 import { forbid, isManager, requireMerchant } from '../lib/auth';
 import { botMode, conversationsThisMonth, getSubscription, isPlan, planPricePaisa } from '../lib/billing';
 import { getUsage } from '../lib/usage';
+import { notifyPlatform } from '../lib/notify';
 
 const MAX_REFERENCE = 80;
 
@@ -41,8 +42,10 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     const { id } = req.params as { id: string };
     const reference = String((req.body as { reference?: unknown } | undefined)?.reference ?? '').trim();
     if (!reference || reference.length > MAX_REFERENCE) return reply.code(400).send({ error: { code: 'BAD', message: `reference is required (max ${MAX_REFERENCE} characters)` } });
-    const { data } = await db.from('invoices').update({ reference, claimed_at: new Date().toISOString() }).match({ id, merchant_id: req.merchantCtx!.merchantId, status: 'due' }).select('id').maybeSingle();
+    const mid = req.merchantCtx!.merchantId;
+    const { data } = await db.from('invoices').update({ reference, claimed_at: new Date().toISOString() }).match({ id, merchant_id: mid, status: 'due' }).select('id').maybeSingle();
     if (!data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'no due invoice with that id' } });
+    await notifyPlatform(db, { kind: 'invoice_claimed', merchantId: mid, title: 'Invoice claimed', body: `Reference ${reference}`, data: { invoiceId: id } }); // U2: the founders mark it paid
     return reply.send({ ok: true });
   });
 
@@ -52,9 +55,10 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     const plan = (req.body as { plan?: unknown } | undefined)?.plan;
     if (!isPlan(plan) || plan === 'pilot') return reply.code(400).send({ error: { code: 'BAD', message: 'plan must be basic or pro' } });
     const mid = req.merchantCtx!.merchantId;
-    const { data } = await db.from('subscriptions').update({ requested_plan: plan, updated_at: new Date().toISOString() }).eq('merchant_id', mid).select('id').maybeSingle();
+    const { data } = await db.from('subscriptions').update({ requested_plan: plan, updated_at: new Date().toISOString() }).eq('merchant_id', mid).select('id, plan').maybeSingle();
     if (!data) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'no subscription for this shop' } });
     await db.from('audit_log').insert({ merchant_id: mid, actor: 'merchant', user_id: req.merchantCtx!.memberId ?? null, action: 'plan_change_requested', entity: 'subscription', entity_id: data.id, diff: { plan } });
+    await notifyPlatform(db, { kind: 'plan_requested', merchantId: mid, title: 'Plan change requested', body: `${data.plan} → ${plan}`, data: { plan, subscriptionId: data.id } }); // U2
     return reply.send({ ok: true, requestedPlan: plan });
   });
 }

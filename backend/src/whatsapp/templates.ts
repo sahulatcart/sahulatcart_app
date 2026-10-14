@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../lib/logger';
-import { notify } from '../lib/notify';
+import { notify, notifyPlatform } from '../lib/notify';
 import { tokenForNumber } from './credentials';
 import { GraphError, createTemplate, type TemplateComponent } from './meta-graph';
 import type { AccountEvent } from './types';
@@ -158,5 +158,6 @@ export async function applyTemplateStatus(db: SupabaseClient, ev: AccountEvent):
       body: v.reason ? `Meta's reason: ${v.reason}. Resubmit it from Settings → WhatsApp.` : 'Resubmit it from Settings → WhatsApp.',
       data: { action: 'template_status', template: r.name, status, reason: v.reason ?? null },
     });
+    await notifyPlatform(db, { kind: 'whatsapp_attention', merchantId: r.merchant_id, title: 'WhatsApp needs attention', body: `Template ${r.name} ${status}${v.reason ? `: ${v.reason}` : ''}`, data: { reason: 'template', template: r.name, status } }); // U2
   }
 }

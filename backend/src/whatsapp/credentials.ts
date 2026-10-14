@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { loadConfig } from '../config';
 import { logger } from '../lib/logger';
-import { notify } from '../lib/notify';
+import { notify, notifyPlatform } from '../lib/notify';
 import { decrypt, encrypt, fromBytea, toBytea } from '../lib/crypto';
 
 /**
@@ -126,4 +126,5 @@ export async function markTokenInvalid(db: SupabaseClient, phoneNumberId: string
     .maybeSingle();
   if (!num) return;
   await notify(db, num.merchant_id, { type: 'system', title: 'WhatsApp disconnected', body: message, data: { phoneNumberId, action: 'reconnect_whatsapp' } });
+  await notifyPlatform(db, { kind: 'whatsapp_attention', merchantId: num.merchant_id, title: 'WhatsApp needs attention', body: message, data: { phoneNumberId, reason: 'token' } }); // U2
 }

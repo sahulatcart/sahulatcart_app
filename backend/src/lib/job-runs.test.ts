@@ -58,3 +58,20 @@ describe('runJob', () => {
     expect(ran).toBe(true);
   });
 });
+
+describe("job_failed in the founders' inbox (U2)", () => {
+  it('a failure adds one row; the same job within the hour adds none; another job does', async () => {
+    const boom = async () => { throw new Error('storage down'); };
+    await runJob(db.client, 'retention', 3600, boom);
+    await runJob(db.client, 'retention', 3600, boom);
+    await runJob(db.client, 'billing', 21600, boom);
+    const rows = db.rows('platform_notifications');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ kind: 'job_failed', merchant_id: null, title: 'Job failed: retention', body: 'storage down', data: { job: 'retention' } });
+    expect(rows[1]).toMatchObject({ kind: 'job_failed', title: 'Job failed: billing' });
+  });
+  it('a success adds nothing', async () => {
+    await runJob(db.client, 'billing', 21600, async () => ({ warned: 0 }));
+    expect(db.rows('platform_notifications')).toHaveLength(0);
+  });
+});
