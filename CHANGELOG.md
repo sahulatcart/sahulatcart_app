@@ -7,6 +7,37 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-14 — U1: the founders' read-only look inside a shop
+
+Branch `feat/platform-shop-detail` (PLATFORM-PANEL-UZAIR.md, U1), from `main` at `95fabca`. Built
+ahead of F1 on purpose: U1 needs nothing from F1 (the tabs component is not touched here, and the
+audit table already exists), so it is not blocked on it. 41 test files, 458 tests (8 new). Both
+typechecks, `next lint` and `next build` clean. No migration.
+
+**What landed.**
+- [routes/platform-shops.ts](backend/src/routes/platform-shops.ts), own `requirePlatformAdmin` hook,
+  five GETs under `/api/v1/platform/merchants/:id`: the shop (merchant row, members, bank accounts
+  without numbers, zones, subscription, last 12 invoices, usage, conversations this month against
+  the plan limit, `botMode`, readiness, connection), `/orders` (placed only, with the status and
+  payment filters), `/conversations`, `/conversations/:cid` (newest 200 messages oldest-first,
+  **no** `unread_count` write) and `/products` (with `cost` and a thumbnail). The shop id comes
+  from the URL only; an unknown id is 404 everywhere and another shop's chat under this id is 404.
+- Every detail read and every chat read inserts one `audit_log` row: actor `platform`, action
+  `platform_view`, entity `merchant` or `conversation`, `user_id` the admin's auth user (null for
+  the pilot token). That is the record of who looked at buyer data.
+- `admin/app/platform/shops/[id]/page.tsx`: Overview, WhatsApp (with readiness pills), Billing
+  (with usage and invoices) and Settings cards from the one payload; Orders, Chats and Catalog as
+  collapsed sections fetched on first open; a chat row expands to its messages read-only. The shop
+  name on the platform list links here. A link to the audit trail (F1's page) at the bottom.
+
+**Hassles.**
+- The first test run leaked the bank account number: `FakeDb` ignores the column list in
+  `select()` and returns whole rows. Postgres would have filtered it, but the route now picks the
+  named columns itself (`pick()`), so the test proves the omission instead of trusting the driver.
+  Worth remembering for any route that selects a subset of a sensitive table.
+
+**Open.** The "Audit trail for this shop" link points at `/platform/audit`, which arrives with F1.
+
 ## 2026-10-14 — U0: the portal is "Merchant Dashboard"
 
 Branch `fix/merchant-dashboard-name` (PLATFORM-PANEL-UZAIR.md, U0). Three strings, nothing else:

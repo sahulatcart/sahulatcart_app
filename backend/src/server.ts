@@ -18,6 +18,7 @@ import { webhookRoutes } from './whatsapp/webhook';
 import { customerRoutes } from './routes/customers';
 import { catalogRoutes } from './routes/catalog';
 import { billingRoutes } from './routes/billing';
+import { platformShopRoutes } from './routes/platform-shops';
 
 /**
  * Builds the Fastify app. Route groups are registered here as phases land:
@@ -65,6 +66,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(customerRoutes); // P5: block / unblock (own auth hook)
   await app.register(catalogRoutes); // P5: soft-delete a product (own auth hook)
   await app.register(billingRoutes); // P7: plan, usage, invoices, plan-change requests (own auth hook)
+  await app.register(platformShopRoutes); // U1: the founders' read-only look inside a shop (own platform-admin hook)
 
   return app;
 }
