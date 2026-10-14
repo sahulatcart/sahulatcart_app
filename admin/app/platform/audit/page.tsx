@@ -3,7 +3,6 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ChevronDown, ScrollText, Search } from 'lucide-react';
 import AppShell, { EmptyState, PageHead, humanize } from '../../../components/AppShell';
-import PlatformTabs from '../../../components/PlatformTabs';
 import { apiJson, dt } from '../../../lib/api';
 import { useToast } from '../../../components/Toast';
 
@@ -57,9 +56,8 @@ function AuditInner() {
   }
 
   return (
-    <AppShell>
+    <AppShell variant="platform">
       <PageHead title="Audit" sub="Every recorded action across the platform, newest first" />
-      <PlatformTabs />
       <div className="card">
         <form className="card-head" onSubmit={submit} style={{ alignItems: 'flex-end' }}>
           <div className="form-row" style={{ flex: 1 }}>
@@ -110,7 +108,7 @@ function AuditInner() {
 
 export default function PlatformAudit() {
   return (
-    <Suspense fallback={<AppShell><PageHead title="Audit" /><PlatformTabs /><div className="card"><div className="skeleton" style={{ height: 120, margin: 16 }} /></div></AppShell>}>
+    <Suspense fallback={<AppShell variant="platform"><PageHead title="Audit" /><div className="card"><div className="skeleton" style={{ height: 120, margin: 16 }} /></div></AppShell>}>
       <AuditInner />
     </Suspense>
   );

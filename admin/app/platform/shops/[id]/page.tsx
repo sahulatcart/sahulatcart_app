@@ -54,14 +54,14 @@ export default function PlatformShop() {
     if (!msgs[cid]) apiJson<{ messages: Msg[] }>(`${base}/conversations/${cid}`).then((r) => setMsgs((m) => ({ ...m, [cid]: r.messages }))).catch(fail('the chat'));
   };
 
-  if (!d) return <AppShell><BackLink href="/platform" label="Platform" /><div className="skeleton" style={{ height: 40, width: 260, marginBottom: 20 }} /><div className="skeleton" style={{ height: 240 }} /></AppShell>;
+  if (!d) return <AppShell variant="platform"><BackLink href="/platform" label="Platform" /><div className="skeleton" style={{ height: 40, width: 260, marginBottom: 20 }} /><div className="skeleton" style={{ height: 240 }} /></AppShell>;
   const m = d.merchant;
   const s = (m.settings ?? {}) as { botEnabled?: boolean; codEnabled?: boolean; defaultDeliveryCharge?: number; freeDeliveryThreshold?: number; afterFreeQuota?: string; unpaidExpiryHours?: number; suspension?: { reason?: string } };
   const nd = (m.negotiation_defaults ?? {}) as { maxDiscountPct?: number; roundsMax?: number; stalemateAction?: string; openingStance?: string };
   const hours = Object.entries(m.business_hours ?? {});
 
   return (
-    <AppShell>
+    <AppShell variant="platform">
       <BackLink href="/platform" label="Platform" />
       <PageHead title={m.business_name} sub={`${m.owner_name ?? '—'} · ${m.email ?? '—'} · joined ${dt(m.created_at, true)}`}
         action={<><Pill kind={m.status === 'suspended' ? 'danger' : 'success'}>{m.status}</Pill><Pill kind="brand">{m.plan}</Pill><Pill kind={connTone(d.connection.status)}>WhatsApp {humanize(d.connection.status)}</Pill></>} />

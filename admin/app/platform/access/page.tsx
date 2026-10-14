@@ -2,7 +2,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ShieldCheck, UserMinus, UserPlus } from 'lucide-react';
 import AppShell, { EmptyState, PageHead, Pill } from '../../../components/AppShell';
-import PlatformTabs from '../../../components/PlatformTabs';
 import SignupSettings from '../../../components/SignupSettings';
 import { api, apiError, apiJson, dt } from '../../../lib/api';
 import { useToast } from '../../../components/Toast';
@@ -51,9 +50,8 @@ export default function PlatformAccess() {
   }
 
   return (
-    <AppShell>
+    <AppShell variant="platform">
       <PageHead title="Access" sub="Who can open this console" />
-      <PlatformTabs />
       <div className="card">
         <div className="card-head"><div><h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ShieldCheck aria-hidden /> Platform admins</h2><div className="desc">An invited admin is bound to their login the first time they sign in with a confirmed email.</div></div></div>
         {admins && admins.length === 0 && <EmptyState icon={ShieldCheck} title="No platform admins" hint="Invite one by email below." />}

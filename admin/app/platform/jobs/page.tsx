@@ -2,7 +2,6 @@
 import { useEffect, useState } from 'react';
 import { Timer } from 'lucide-react';
 import AppShell, { EmptyState, PageHead, Pill } from '../../../components/AppShell';
-import PlatformTabs from '../../../components/PlatformTabs';
 import { apiJson, dt } from '../../../lib/api';
 import { useToast } from '../../../components/Toast';
 
@@ -35,9 +34,8 @@ export default function PlatformJobs() {
   }, [toast]);
 
   return (
-    <AppShell>
+    <AppShell variant="platform">
       <PageHead title="Jobs" sub="The background jobs: replay sweeper, retention, unpaid-order expiry and billing" />
-      <PlatformTabs />
       <div className="card">
         {jobs && jobs.length === 0 && <EmptyState icon={Timer} title="No job has run yet" hint="Jobs run only in production." />}
         {jobs && jobs.length > 0 && (

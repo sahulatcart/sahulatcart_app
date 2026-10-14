@@ -3,7 +3,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AlertCircle, ArrowRight, Eye, EyeOff, Loader2 } from 'lucide-react';
-import { signIn } from '../../lib/api';
+import { apiJson, signIn } from '../../lib/api';
 import AuthLayout from '../../components/AuthLayout';
 
 export default function LoginPage() {
@@ -19,8 +19,10 @@ export default function LoginPage() {
     setBusy(true); setErr('');
     const ok = await signIn(email.trim(), pw).catch(() => 'Could not sign in. Please try again.');
     setBusy(false);
-    if (ok === true) router.replace('/');
-    else setErr(ok);
+    if (ok !== true) return setErr(ok);
+    // A platform admin with no shop of their own lands on the console; everyone else on their shop.
+    const me = await apiJson<{ isPlatformAdmin: boolean; merchantId: string | null }>('/api/v1/platform/me').catch(() => null);
+    router.replace(me?.isPlatformAdmin && !me.merchantId ? '/platform' : '/');
   }
 
   return (
