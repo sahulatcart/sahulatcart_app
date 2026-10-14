@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { getServiceClient } from '../lib/supabase';
 import { requirePlatformAdmin } from '../lib/auth';
+import { _resetSignupGateCache, signupGate } from '../lib/signup';
 
 /**
  * /api/v1/platform/* — the founders' panel beyond the shop list (docs/launch/PLATFORM-PANEL-FAZAL.md).
@@ -118,5 +119,31 @@ export async function platformOpsRoutes(app: FastifyInstance): Promise<void> {
     await db.from('platform_admins').update({ is_active: false, updated_at: new Date().toISOString() }).eq('id', id);
     await db.from('audit_log').insert({ merchant_id: null, actor: 'platform', user_id: me, action: 'platform_admin_removed', entity: 'platform_admin', entity_id: id, diff: { email: row.email } });
     return reply.send({ ok: true });
+  });
+
+  // ── U3: who may open a shop. platform_settings keys signup_open / signup_allowlist; env is the fallback. ──
+  app.get('/api/v1/platform/signup', async (_req, reply) => {
+    _resetSignupGateCache(); // the panel always shows what is stored now, not the minute-old cache
+    const g = await signupGate(db);
+    return reply.send({ open: g.SIGNUP_OPEN, allowlist: g.allowlist, source: g.source });
+  });
+
+  app.put('/api/v1/platform/signup', async (req, reply) => {
+    const body = (req.body ?? {}) as { open?: unknown; allowlist?: unknown };
+    if (typeof body.open !== 'boolean') return reply.code(400).send(bad('open must be true or false'));
+    if (!Array.isArray(body.allowlist) || body.allowlist.length > 500 || !body.allowlist.every((x) => typeof x === 'string')) return reply.code(400).send(bad('allowlist must be up to 500 emails'));
+    const allowlist = [...new Set((body.allowlist as string[]).map((s) => s.trim().toLowerCase()).filter(Boolean))];
+    const badEmail = allowlist.find((e) => e.length > MAX_EMAIL || !EMAIL_RE.test(e));
+    if (badEmail) return reply.code(400).send(bad(`not an email: ${badEmail}`));
+    const by = req.platformCtx!.authUserId;
+    const updated_at = new Date().toISOString();
+    for (const row of [{ key: 'signup_open', value: body.open }, { key: 'signup_allowlist', value: allowlist }]) {
+      const { error } = await db.from('platform_settings').upsert({ ...row, updated_at, updated_by: by }, { onConflict: 'key' });
+      if (error) return reply.code(500).send({ error: { code: 'DB', message: 'could not save the sign-up settings (is migration 0020 applied?)' } });
+    }
+    _resetSignupGateCache();
+    // The count, never the list: the same rule as /api/v1/config.
+    await db.from('audit_log').insert({ merchant_id: null, actor: 'platform', user_id: by, action: 'signup_settings_changed', entity: 'platform_settings', entity_id: null, diff: { open: body.open, count: allowlist.length } });
+    return reply.send({ ok: true, open: body.open, count: allowlist.length });
   });
 }

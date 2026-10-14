@@ -11,7 +11,7 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 Branch `fix/panel-review-followups`. The lead's review of PRs #40 (U1) and #42 (U2), both merged
 before review, found no bugs and two should-fix items; both fixed here. 43 test files, 497 tests
-(8 new). No migration.
+(8 new); 44 files, 504 tests after merging U3. No migration.
 
 - **The shop view fails closed** (`routes/platform-shops.ts`). The page promises "every look at this
   page is recorded", but the `platform_view` audit insert was not checked: a failed write still
@@ -40,6 +40,39 @@ hour even when the DB outage stopped it being delivered; concurrent 190s duplica
 network error leaves "Mark all read" busy.
 
 ---
+## 2026-10-14 — U3: the sign-up gate from the panel
+
+Branch `feat/signup-gate-db` (docs/launch/PLATFORM-PANEL-UZAIR.md, U3), from `main` at `79ff749`
+(after U2 #42). 44 test files, 496 tests (7 new). Both typechecks, `next lint` and `next build`
+clean. No migration: `platform_settings` came with 0020, which is applied.
+
+**What landed.**
+- `signupGate(db)` in [lib/signup.ts](backend/src/lib/signup.ts): reads `platform_settings`
+  (`signup_open` a boolean, `signup_allowlist` a list of emails); per key the stored value if it
+  is well-formed, else the env var; every active platform admin's email is always allowed on top,
+  so an invited admin can create their auth user and land on the existing 409 → `/platform` path.
+  Cached for a minute in process (`/api/v1/config` is public); the PUT and GET routes clear it.
+  `signupAllowed()` is unchanged and still synchronous.
+- The three call sites take the gate: `/signup/check`, `/signup/bootstrap`, and `signupOpen` on
+  `/api/v1/config`, which the sign-up page reads for its "private pilot" notice.
+- `GET` and `PUT /api/v1/platform/signup` at the end of `routes/platform-ops.ts`. The PUT
+  validates (a boolean, up to 500 valid emails, lowercased, deduped), upserts the two keys, clears
+  the cache and writes an audit row with the **count**, never the list, the same rule as
+  `/api/v1/config`.
+- `admin/components/SignupSettings.tsx`, mounted in the slot Fazal left on the Access page: the
+  "anyone may sign up" box, the allow-list one per line, and under each a line saying whether the
+  value comes from the panel or still from Railway.
+
+**Hassles.**
+- The new gate test in `auth.test.ts` answered 429: that file already makes most of one IP's ten
+  sign-up calls a minute, and two more tipped it. The new calls carry their own
+  `x-forwarded-for`. Any further test in that file that hits a sign-up route needs the same.
+- `FakeDb`'s `upsert()` takes one row, not an array: the two-row upsert stored nothing usable and
+  the GET after the PUT still said "env". Two single-row upserts instead. Worth remembering for any
+  route that upserts a batch.
+
+**Open (Fazal's ops item).** Once the live values are saved from the panel, remove `SIGNUP_OPEN`
+and `SIGNUP_ALLOWLIST` from Railway so the panel is the only source.
 
 ## 2026-10-14 — U2: the founders' inbox
 
