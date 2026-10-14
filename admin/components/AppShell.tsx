@@ -189,6 +189,7 @@ export default function AppShell({ children, variant = 'merchant' }: { children:
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.svg" alt="" width={26} height={22} />
           <span style={{ fontSize: 16 }}><Wordmark name={PRODUCT_NAME} /></span>
+          {platform && <span className="console-chip">Console</span>}
           <ThemeToggle className="push-right" />
           {!platform && unread > 0 && (
             <Link href="/notifications" className="btn subtle icon-btn" style={{ position: 'relative' }} aria-label={`Notifications, ${unread} unread`}>

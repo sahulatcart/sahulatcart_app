@@ -192,6 +192,10 @@ describe("the founders' inbox (U2)", () => {
     expect(n.map((x: { id: string }) => x.id)).toEqual(['N3', 'N2', 'N1']);
     expect(n[2]).toMatchObject({ businessName: 'Ali Store', kind: 'invoice_claimed', read_at: null });
     expect(n[1].businessName).toBeNull();
+    expect(n[1].ownerPhone).toBeNull();
+    fake.db.rows('merchants').find((m) => m.id === 'M1')!.phone = '923001111111';
+    const again = await app.inject({ method: 'GET', url: '/api/v1/platform/inbox', headers: fazal });
+    expect(again.json().notifications[2].ownerPhone).toBe('923001111111'); // the founders can message the owner from the alert
   });
   it('marks some by id, then all; an owner may not', async () => {
     seedInbox();

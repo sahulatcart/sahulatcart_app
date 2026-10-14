@@ -10,7 +10,10 @@ import { loadConfig } from '../config';
 import { getServiceClient } from '../lib/supabase';
 import { logger } from '../lib/logger';
 import { requirePlatformAdmin } from '../lib/auth';
-import { botMode, conversationsThisMonth, getSubscription } from '../lib/billing';
+import { botMode, conversationsThisMonth, getSubscription, planPricePaisa } from '../lib/billing';
+import { sellingStatus } from '../lib/selling';
+import { computeFloor } from '../negotiation';
+import { coerceDefaults } from '../orchestrator/orchestrator';
 import { getUsage } from '../lib/usage';
 import { computeReadiness } from '../lib/readiness';
 import { productImageUrl } from '../lib/images';
@@ -39,7 +42,8 @@ export async function platformShopRoutes(app: FastifyInstance): Promise<void> {
     const { id } = req.params as { id: string };
     const m = await shop(id);
     if (!m) return notFound(reply, 'merchant');
-    const [members, banks, zones, sub, convs, usage, readiness, connection, invoices] = await Promise.all([
+    const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
+    const [members, banks, zones, sub, convs, usage, readiness, connection, invoices, liveChats, midCheckout, ordersCount, chatsCount, productsCount] = await Promise.all([
       db.from('merchant_users').select('id, email, name, role, is_active').eq('merchant_id', id),
       db.from('bank_accounts').select('id, bank_name, account_title, is_default, is_active').eq('merchant_id', id), // never account_number, iban or branch
       db.from('delivery_zones').select('id, area_name, city, charge, is_serviceable, eta_text').eq('merchant_id', id),
@@ -49,6 +53,14 @@ export async function platformShopRoutes(app: FastifyInstance): Promise<void> {
       computeReadiness(db, id),
       getConnectionStatus(db, id),
       db.from('invoices').select('id, plan, period_start, period_end, amount_paisa, status, reference, claimed_at, paid_at, created_at').eq('merchant_id', id).order('period_start', { ascending: false }).limit(12),
+      // What a suspension would interrupt (shown in the Suspend dialog): chats active in the last day,
+      // and buyers in the middle of checkout right now.
+      db.from('conversations').select('id', { count: 'exact', head: true }).eq('merchant_id', id).neq('status', 'closed').gte('last_message_at', dayAgo),
+      db.from('conversations').select('id', { count: 'exact', head: true }).eq('merchant_id', id).neq('status', 'closed').in('current_state', ['collecting_delivery', 'selecting_payment', 'awaiting_payment_proof']),
+      // Counts on the collapsed sections, so a founder knows whether opening one is worth it.
+      db.from('orders').select('id', { count: 'exact', head: true }).eq('merchant_id', id).not('order_number', 'is', null),
+      db.from('conversations').select('id', { count: 'exact', head: true }).eq('merchant_id', id).neq('status', 'closed'),
+      db.from('products').select('id', { count: 'exact', head: true }).eq('merchant_id', id).is('deleted_at', null),
     ]);
     const plan = (sub?.plan ?? (m.plan as Plan | undefined) ?? 'pilot') as Plan;
     if (!(await viewed(id, 'merchant', id, req.platformCtx!.authUserId))) return unrecorded(reply);
@@ -63,6 +75,10 @@ export async function platformShopRoutes(app: FastifyInstance): Promise<void> {
       conversationsThisMonth: convs,
       limits: { conversations: PLANS[plan].conversations },
       botMode: botMode(m as { status?: string | null; settings?: { botEnabled?: boolean } | null }, sub, convs),
+      selling: sellingStatus({ merchant: m as { status?: string | null; settings?: { botEnabled?: boolean } | null }, subscription: sub, conversationsThisMonth: convs, connection: { status: connection.status, flagReason: connection.flagReason ?? null } }),
+      impact: { liveChats: liveChats.count ?? 0, midCheckout: midCheckout.count ?? 0 },
+      counts: { orders: ordersCount.count ?? 0, chats: chatsCount.count ?? 0, products: productsCount.count ?? 0 },
+      plans: (['pilot', 'basic', 'pro'] as const).map((p) => ({ id: p, label: PLANS[p].label, conversations: PLANS[p].conversations, pricePaisa: planPricePaisa(p) })),
       readiness,
       connection,
     });
@@ -91,17 +107,32 @@ export async function platformShopRoutes(app: FastifyInstance): Promise<void> {
     if (!(await shop(id))) return notFound(reply, 'merchant');
     const convo = await db.from('conversations').select('id, status, current_state, window_expires_at, unread_count, customers(name, wa_id, wa_opt_in_status, is_blocked)').match({ id: cid, merchant_id: id }).maybeSingle();
     if (!convo.data) return notFound(reply, 'conversation');
-    const messages = await db.from('messages').select('direction, sender, type, body, status, created_at').eq('conversation_id', cid).order('created_at', { ascending: false }).limit(200);
+    const [messages, negs] = await Promise.all([
+      db.from('messages').select('direction, sender, type, body, status, created_at').eq('conversation_id', cid).order('created_at', { ascending: false }).limit(200),
+      // The proof the bot kept to the floor: the engine's own audit columns (floor_price is never sent to the buyer).
+      db.from('negotiations').select('id, product_id, quantity, list_price, floor_price, rounds, last_bot_offer, last_customer_offer, agreed_price, status, created_at, products(name)').eq('conversation_id', cid).eq('merchant_id', id).order('created_at', { ascending: false }).limit(10),
+    ]);
     if (!(await viewed(id, 'conversation', cid, req.platformCtx!.authUserId))) return unrecorded(reply);
-    return reply.send({ conversation: convo.data, messages: (messages.data ?? []).reverse() });
+    const negotiations = (negs.data ?? []).map((n) => {
+      const { products, ...rest } = n as typeof n & { products?: { name?: string } | null };
+      return { ...rest, productName: products?.name ?? null };
+    });
+    return reply.send({ conversation: convo.data, messages: (messages.data ?? []).reverse(), negotiations });
   });
 
   app.get('/api/v1/platform/merchants/:id/products', async (req, reply) => {
     const { id } = req.params as { id: string };
-    if (!(await shop(id))) return notFound(reply, 'merchant');
+    const m = await shop(id);
+    if (!m) return notFound(reply, 'merchant');
+    const defaults = coerceDefaults(m.negotiation_defaults);
     const { data } = await db.from('products').select('id, sku, name, description, price, cost, stock, track_stock, is_active, negotiable, max_discount_pct, min_price, images').eq('merchant_id', id).is('deleted_at', null).order('created_at', { ascending: true });
     const cfg = loadConfig();
-    const products = (data ?? []).map((p: Record<string, unknown>) => ({ ...p, thumbnailUrl: productImageUrl(cfg.SUPABASE_URL, (p.images as string[] | null)?.[0]) }));
+    const products = (data ?? []).map((p: Record<string, unknown>) => ({
+      ...p,
+      thumbnailUrl: productImageUrl(cfg.SUPABASE_URL, (p.images as string[] | null)?.[0]),
+      // The lowest price the bot may agree to for one unit (bulk tiers can go lower for larger orders).
+      floor: computeFloor({ id: p.id as string, price: p.price as number, cost: (p.cost as number | null) ?? null, currency: 'PKR', negotiable: p.negotiable !== false, maxDiscountPct: (p.max_discount_pct as number | null) ?? null, minPrice: (p.min_price as number | null) ?? null }, defaults, 1),
+    }));
     return reply.send({ products });
   });
 }

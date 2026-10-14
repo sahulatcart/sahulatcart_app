@@ -57,13 +57,13 @@ export async function platformOpsRoutes(app: FastifyInstance): Promise<void> {
     }
     const { data, error } = await db
       .from('platform_notifications')
-      .select('id, kind, merchant_id, title, body, data, read_at, created_at, merchants(business_name)')
+      .select('id, kind, merchant_id, title, body, data, read_at, created_at, merchants(business_name, phone)')
       .order('created_at', { ascending: false })
       .limit(100);
     if (error) return reply.code(500).send({ error: { code: 'DB', message: 'could not read the inbox (is migration 0020 applied?)' } });
     const notifications = (data ?? []).map((r) => {
-      const { merchants, ...rest } = r as typeof r & { merchants?: { business_name?: string } | null };
-      return { ...rest, businessName: merchants?.business_name ?? null };
+      const { merchants, ...rest } = r as typeof r & { merchants?: { business_name?: string; phone?: string | null } | null };
+      return { ...rest, businessName: merchants?.business_name ?? null, ownerPhone: merchants?.phone ?? null };
     });
     return reply.send({ notifications });
   });

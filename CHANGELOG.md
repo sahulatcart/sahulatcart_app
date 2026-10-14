@@ -7,6 +7,70 @@ Entries for 2026-07 and earlier were reconstructed from git history and commit m
 
 ---
 
+## 2026-10-14 — The founders' console after its design critique: triage, guardrails, act-in-place, identity, AA contrast
+
+Branch `feat/console-critique-fixes`. All five commands from the `/impeccable critique admin/app/platform`
+run (20/40, three P1s) in one PR, by the owner's choice of "everything found". 46 test files, 521
+tests (17 new). No migration.
+
+**Triage (layout).** Shops opens with an attention strip (Not selling · Invoices due, with how many
+are claimed · Plan requests · failing jobs), each a filter; problem shops sort first. Every row answers
+**"selling, or not selling and why"** from the new [lib/selling.ts](backend/src/lib/selling.ts)
+`sellingStatus()`: `botMode()` (billing only, as the orchestrator needs) combined with the WhatsApp
+connection, worst first. Before this, a shop whose token Meta revoked showed "Bot mode: sell" in green.
+The row also carries the shop's due invoice (amount, claimed reference, how long ago) and plan request,
+and only the money action (Mark paid / Apply plan); live search with a "/" shortcut. The separate
+Invoices card is gone: one shop's state lives in one row. The list endpoint gained `selling`,
+`subscription`, `dueInvoice` and `plans`.
+
+**Guardrails (harden).** A native `<dialog>` ([components/Dialog.tsx](admin/components/Dialog.tsx):
+top layer, Esc, focus held and returned) replaces every `window.prompt`/`confirm` in the console.
+Mark paid states the reference and warns when there is none; changing a plan shows the price and limit
+before it sends; suspending lives only on the shop page and shows the chats active today, the buyers
+mid-checkout (`impact` on the detail endpoint) and a live preview of the banner the owner will see;
+opening sign-up is a switch with its state in words and a confirm; your own admin row is tagged "(you)"
+and cannot be removed. Reversible writes offer **Undo** in the toast (Toast gained an optional action).
+
+**Act in place (shape).** The inbox is a feed where each alert carries its action: Mark Rs N paid,
+Apply Pro, Message owner (a `wa.me` link with the owner's phone, now on inbox rows as `ownerPhone`),
+Open jobs; acting marks the row read, and each row has its own mark-read. Founder alerts for WhatsApp
+are rewritten to say who must act ("WhatsApp token revoked, bot stopped … Only the owner can fix it"),
+not to repeat the merchant's instruction. `/platform/invoices` now returns `plans`.
+
+**Identity and product truth (bolder).** The console's sidebar and top bar are forest in both themes,
+with a Console chip on phones and its own browser-tab titles (a `layout.tsx` per route). The shop page
+leads with the selling status, shows chats as bubbles, and for each chat the **negotiation evidence**
+from the engine's own audit columns (list, floor, both offers, agreed, "Kept to floor"). The catalog
+shows each product's **floor**, computed by the engine's `computeFloor()` fed by the orchestrator's
+`coerceDefaults()`, now exported so the console can never disagree with the bot.
+
+**Polish.** Signal Green deepened to `#1F7A33` (`--primary`, `--success-ink`) wherever it carries text:
+white on `#268D3C` was 4.2:1 and the success pill 3.9:1, now 5.4:1 and 4.9:1; the brand token itself
+is unchanged. Nav section labels moved off `--faint` (whose own comment says "never body text").
+`.pad` and `.help` were used outside `.card`/`.field` and styled nowhere; now defined. Readiness shows
+icon + words, collapsible sections show counts, a chevron and remember their state, meters for
+conversations, messages and AI calls, plain-word audit details and jobs with relative times that
+refresh themselves, React keys on expandable rows, responsive `.rtable` tables that become labelled
+blocks under 760px.
+
+**Hassles.**
+- Port 3000 was taken by an unrelated project of the owner's (`Desktop/ERP`), so the visual check
+  ran the admin on 3001 through a temporary launch entry; nothing of theirs was touched.
+- At a 1024px window the redesigned shops table was 20px wider than its container and scrolled
+  sideways. Folding the activity column into the shop cell and giving the bot status a minimum
+  width made it fit exactly (measured, `scrollWidth == clientWidth`).
+- A screenshot showed an empty reason field in the Suspend dialog after typing; reading the DOM
+  showed the text was there and the screenshot was simply taken too early. Not a bug.
+- The inbox prefixes titles with the shop name, so the first draft of the new titles read
+  "Ali Store: Bot can't send: …"; reworded so no title has a colon of its own.
+- An inline `justify-content` beat the phone-width CSS for inbox actions; fixed with a class, not
+  `!important`.
+- Checked the whole console against a throwaway mock backend (fixture data, CLAUDE.md "Checking the
+  portal visually"), desktop, 375px and dark; the detector found nothing and the computed colours
+  were re-measured in the page. The critique snapshot closed itself once the files changed.
+
+---
+
 ## 2026-10-14 — Review follow-up on PR #46: the console redirects only on a real "not allowed"
 
 Branch `fix/console-redirect-only-on-403`. The lead's review of #46 (the console's own shell, merged

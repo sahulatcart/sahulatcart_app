@@ -3,7 +3,8 @@ import { getServiceClient } from '../lib/supabase';
 import { requirePlatformAdmin } from '../lib/auth';
 import { periodMonth } from '../lib/usage';
 import { notify } from '../lib/notify';
-import { isPlan, markInvoicePaid } from '../lib/billing';
+import { conversationsThisMonth, getSubscription, isPlan, markInvoicePaid, planPricePaisa } from '../lib/billing';
+import { sellingStatus } from '../lib/selling';
 import { PLANS } from '@app/shared';
 
 /**
@@ -37,13 +38,18 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
     const rows = (merchants ?? []).filter((m) => !q || `${m.business_name ?? ''} ${m.email ?? ''} ${m.phone ?? ''}`.toLowerCase().includes(q));
     // A few small queries per shop; the console lists at most 100 shops and is opened by one person.
     const out = await Promise.all(rows.map(async (m) => {
-      const [num, owner, conv, orders, usage] = await Promise.all([
+      const [num, owner, conv, orders, usage, sub, convs, due] = await Promise.all([
         db.from('whatsapp_numbers').select('status, phone_e164, quality_rating, flag_reason').eq('merchant_id', m.id).neq('status', 'disconnected').order('created_at', { ascending: false }).limit(1).maybeSingle(),
         db.from('merchant_users').select('email').eq('merchant_id', m.id).eq('role', 'owner').limit(1).maybeSingle(),
         db.from('conversations').select('last_message_at').eq('merchant_id', m.id).order('last_message_at', { ascending: false, nullsFirst: false }).limit(1).maybeSingle(),
         db.from('orders').select('id', { count: 'exact', head: true }).eq('merchant_id', m.id).not('order_number', 'is', null).gte('created_at', monthStart),
         db.from('message_usage').select('outbound_count').eq('merchant_id', m.id).eq('period_month', month),
+        // Console triage (2026-10-14): one shop's whole state in its own row.
+        getSubscription(db, m.id),
+        conversationsThisMonth(db, m.id),
+        db.from('invoices').select('id, plan, period_start, period_end, amount_paisa, reference, claimed_at').eq('merchant_id', m.id).eq('status', 'due').order('created_at', { ascending: true }).limit(1).maybeSingle(),
       ]);
+      const connection = num.data ? { status: num.data.status as string, phone: num.data.phone_e164, quality: num.data.quality_rating, flagReason: num.data.flag_reason } : { status: 'none' };
       const suspension = (m.settings as { suspension?: { reason?: string; at?: string } } | null)?.suspension ?? null;
       return {
         id: m.id,
@@ -53,14 +59,17 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
         status: m.status,
         plan: m.plan,
         createdAt: m.created_at,
-        connection: num.data ? { status: num.data.status, phone: num.data.phone_e164, quality: num.data.quality_rating, flagReason: num.data.flag_reason } : { status: 'none' },
+        connection,
+        selling: sellingStatus({ merchant: m, subscription: sub, conversationsThisMonth: convs, connection }),
+        subscription: sub ? { status: sub.status, plan: sub.plan, requestedPlan: sub.requested_plan, trialEndsAt: sub.trial_ends_at, currentPeriodEnd: sub.current_period_end } : null,
+        dueInvoice: due.data ? { id: due.data.id, plan: due.data.plan, periodStart: due.data.period_start, periodEnd: due.data.period_end, amountPaisa: due.data.amount_paisa, reference: due.data.reference, claimedAt: due.data.claimed_at } : null,
         lastInboundAt: conv.data?.last_message_at ?? null,
         ordersThisMonth: orders.count ?? 0,
         outboundThisMonth: (usage.data ?? []).reduce((s, u) => s + (u.outbound_count ?? 0), 0),
         suspension,
       };
     }));
-    return reply.send({ month, merchants: out });
+    return reply.send({ month, merchants: out, plans: (['pilot', 'basic', 'pro'] as const).map((p) => ({ id: p, label: PLANS[p].label, conversations: PLANS[p].conversations, pricePaisa: planPricePaisa(p) })) });
   });
 
   app.get('/api/v1/platform/merchants/:id/attempts', async (req, reply) => {
@@ -100,6 +109,8 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({
       invoices: (invoices.data ?? []).map((i) => ({ ...i, merchants: undefined, businessName: name(i as { merchants?: { business_name?: string } | null }) })),
       requests: (requests.data ?? []).map((s) => ({ ...s, merchants: undefined, businessName: name(s as { merchants?: { business_name?: string } | null }) })),
+      // The inbox applies plan requests in place, so it needs the prices the dialog shows.
+      plans: (['pilot', 'basic', 'pro'] as const).map((p) => ({ id: p, label: PLANS[p].label, conversations: PLANS[p].conversations, pricePaisa: planPricePaisa(p) })),
     });
   });
 
