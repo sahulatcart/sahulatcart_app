@@ -10,7 +10,8 @@ import { PLANS } from '@app/shared';
  * /api/v1/platform/* — the platform owner's console (SRS-Fazal M6). Every shop, its connection,
  * and a suspend switch. Guarded by requirePlatformAdmin(): a JWT in `platform_admins` (with or
  * without a shop of their own) or the pilot ADMIN_API_TOKEN. No impersonation: the console reads
- * summaries, it never acts inside a shop.
+ * summaries (and, since U1, everything inside a shop through routes/platform-shops.ts), it never
+ * acts inside a shop.
  */
 
 const MAX_REASON = 300;

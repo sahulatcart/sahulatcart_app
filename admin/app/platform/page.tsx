@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Ban, CheckCircle2, ChevronDown, ChevronUp, Receipt, Search, ShieldCheck, Store } from 'lucide-react';
 import AppShell, { EmptyState, PageHead, Pill } from '../../components/AppShell';
 import PlatformTabs from '../../components/PlatformTabs';
@@ -83,7 +84,7 @@ export default function PlatformConsole() {
                 {rows.map((m) => (
                   <>
                     <tr key={m.id}>
-                      <td><div className="strong">{m.businessName}</div><div className="hint">{m.ownerEmail ?? '—'} · <label htmlFor={`plan-${m.id}`} className="sr-only">Plan for {m.businessName}</label><select id={`plan-${m.id}`} value={m.plan} onChange={(e) => setPlan(m.id, e.target.value)} disabled={!!busy} style={{ width: 'auto', padding: '0 4px', fontSize: 12, display: 'inline-block' }}><option value="pilot">pilot</option><option value="basic">basic</option><option value="pro">pro</option></select></div></td>
+                      <td><Link href={`/platform/shops/${m.id}`} className="strong link">{m.businessName}</Link><div className="hint">{m.ownerEmail ?? '—'} · <label htmlFor={`plan-${m.id}`} className="sr-only">Plan for {m.businessName}</label><select id={`plan-${m.id}`} value={m.plan} onChange={(e) => setPlan(m.id, e.target.value)} disabled={!!busy} style={{ width: 'auto', padding: '0 4px', fontSize: 12, display: 'inline-block' }}><option value="pilot">pilot</option><option value="basic">basic</option><option value="pro">pro</option></select></div></td>
                       <td><Pill kind={tone(m.connection.status)}>{m.connection.status.replace('_', ' ')}</Pill>{m.connection.phone && <div className="mono hint">+{m.connection.phone}</div>}{m.connection.flagReason && <div className="hint">{m.connection.flagReason}</div>}</td>
                       <td className="hide-sm">{dt(m.lastInboundAt)}</td>
                       <td className="num">{m.ordersThisMonth}</td>

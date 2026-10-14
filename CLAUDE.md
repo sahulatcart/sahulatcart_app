@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **42 files, 471 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **43 files, 479 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -321,6 +321,10 @@ send in `client.ts`, every inbound in `webhook.ts`, and every AI call through `c
   [routes/platform-ops.ts](backend/src/routes/platform-ops.ts), where Uzair's inbox and sign-up
   settings routes also go. The fake DB has `reset()` for route tests, because route modules
   capture the client once at registration.
+  **Looking inside a shop** (U1, since 2026-10-14): [routes/platform-shops.ts](backend/src/routes/platform-shops.ts)
+  is read-only (the shop id from the URL only, 404 never 403, no `unread_count` write, never an
+  account number) and every detail or chat read writes a `platform_view` audit row. `FakeDb`
+  returns whole rows whatever the select names, so a route that must hide columns picks them in code.
 - **A page file may export only the page.** `next build` refuses a named export from
   `app/**/page.tsx` ("does not match the required types of a Next.js Page"), while `tsc` is happy.
   Shared pieces go in `admin/components/`. This took the admin deploy down after PR #21 while the
