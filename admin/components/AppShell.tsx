@@ -94,7 +94,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <div>
               <div className="nav-section">Platform</div>
               <div className="nav-group">
-                <Link href="/platform" className={`nav-link ${pathname.startsWith('/platform') ? 'active' : ''}`} aria-current={pathname.startsWith('/platform') ? 'page' : undefined}><ShieldCheck aria-hidden /> All shops</Link>
+                <Link href="/platform" className={`nav-link ${pathname.startsWith('/platform') ? 'active' : ''}`} aria-current={pathname.startsWith('/platform') ? 'page' : undefined}><ShieldCheck aria-hidden /> Platform console</Link>
               </div>
             </div>
           )}
