@@ -70,6 +70,8 @@ describe('account_update', () => {
     expect(notes()).toHaveLength(1); // one merchant, one notification
     expect(db.rows('platform_notifications')).toHaveLength(1); // U2: and one row for the founders
     expect(db.rows('platform_notifications')[0]).toMatchObject({ kind: 'whatsapp_attention', merchant_id: 'M1', data: { reason: 'policy', event: 'DISABLED_UPDATE' } });
+    expect(db.rows('platform_notifications')[0]!.title).toContain('Meta restricted WhatsApp, bot stopped');
+    expect(db.rows('platform_notifications')[0]!.body).toMatch(/Only the owner can see Meta's reason and appeal/);
   });
 
   it('PARTNER_REMOVED means reconnect', async () => {

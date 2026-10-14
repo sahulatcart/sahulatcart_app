@@ -126,5 +126,6 @@ export async function markTokenInvalid(db: SupabaseClient, phoneNumberId: string
     .maybeSingle();
   if (!num) return;
   await notify(db, num.merchant_id, { type: 'system', title: 'WhatsApp disconnected', body: message, data: { phoneNumberId, action: 'reconnect_whatsapp' } });
-  await notifyPlatform(db, { kind: 'whatsapp_attention', merchantId: num.merchant_id, title: 'WhatsApp needs attention', body: message, data: { phoneNumberId, reason: 'token' } }); // U2
+  // Founders' copy says who must act and what to do about it; the merchant's says how to fix it (console review).
+  await notifyPlatform(db, { kind: 'whatsapp_attention', merchantId: num.merchant_id, title: 'WhatsApp token revoked, bot stopped', body: 'Meta stopped accepting this shop’s access token, so the bot cannot reply to buyers. Only the owner can fix it by reconnecting in Settings → WhatsApp; message them if it is not fixed today.', data: { phoneNumberId, reason: 'token' } }); // U2
 }

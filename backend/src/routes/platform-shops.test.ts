@@ -27,7 +27,7 @@ afterAll(() => app.close());
 const jwt = (t: string) => ({ authorization: `Bearer ${t}` });
 const fazal = jwt('jwt.fazal.sig');
 const adminToken = { 'x-admin-token': 'pilot-admin-token-for-tests' };
-let convoM1: string; let convoM2: string;
+let convoM1: string; let convoM2: string; let kurta: string;
 
 function seed() {
   const db = fake.db;
@@ -53,7 +53,7 @@ function seed() {
   db.add('orders', { merchant_id: 'M1', customer_id: c1.id, order_number: 'SK-1001', status: 'confirmed', payment_method: 'cod', payment_status: 'cod_pending', total: 85000, delivery_name: 'Ahmed', created_at: new Date().toISOString() });
   db.add('orders', { merchant_id: 'M1', customer_id: c1.id, order_number: null, status: 'draft', payment_method: 'unset', payment_status: 'unpaid', total: 0 });
   db.add('orders', { merchant_id: 'M2', customer_id: c2.id, order_number: 'SK-2001', status: 'confirmed', payment_method: 'cod', payment_status: 'cod_pending', total: 5000, created_at: new Date().toISOString() });
-  db.add('products', { merchant_id: 'M1', name: 'Kurta', price: 150000, cost: 90000, is_active: true, deleted_at: null, images: ['M1/kurta/a.png'] });
+  kurta = db.add('products', { merchant_id: 'M1', name: 'Kurta', price: 150000, cost: 90000, is_active: true, negotiable: true, max_discount_pct: null, min_price: null, deleted_at: null, images: ['M1/kurta/a.png'] }).id;
   db.add('products', { merchant_id: 'M1', name: 'Gone', price: 100, cost: 50, is_active: false, deleted_at: '2026-10-10T00:00:00Z', images: [] });
   db.add('products', { merchant_id: 'M2', name: 'Charger', price: 50000, cost: null, is_active: true, deleted_at: null, images: [] });
 }
@@ -172,5 +172,44 @@ describe('fail closed when the look cannot be recorded (review follow-up)', () =
     breakAuditLog()();
     expect((await app.inject({ method: 'GET', url: '/api/v1/platform/merchants/M1', headers: fazal })).statusCode).toBe(200);
     expect(audits()).toHaveLength(1);
+  });
+});
+
+describe('console critique follow-ups (2026-10-14)', () => {
+  it('the detail says whether the bot sells, what a suspension would interrupt, the section counts and the plan prices', async () => {
+    const r = await app.inject({ method: 'GET', url: '/api/v1/platform/merchants/M1', headers: fazal });
+    const b = r.json();
+    expect(b.selling).toEqual({ selling: true, code: 'selling', reason: null });
+    expect(b.impact).toEqual({ liveChats: 1, midCheckout: 0 });
+    expect(b.counts).toEqual({ orders: 1, chats: 1, products: 1 }); // the draft order and the deleted product do not count
+    expect(b.plans.map((p: { id: string }) => p.id)).toEqual(['pilot', 'basic', 'pro']);
+    convo(convoM1).current_state = 'awaiting_payment_proof';
+    const r2 = await app.inject({ method: 'GET', url: '/api/v1/platform/merchants/M1', headers: fazal });
+    expect(r2.json().impact).toEqual({ liveChats: 1, midCheckout: 1 });
+    fake.db.rows('whatsapp_numbers')[0]!.status = 'needs_attention';
+    fake.db.rows('whatsapp_numbers')[0]!.flag_reason = 'policy';
+    const r3 = await app.inject({ method: 'GET', url: '/api/v1/platform/merchants/M1', headers: fazal });
+    expect(r3.json().selling).toMatchObject({ selling: false, code: 'policy' });
+  });
+
+  it("a chat read carries that chat's negotiations: list, floor and both offers, with the product name", async () => {
+    fake.db.add('negotiations', { conversation_id: convoM1, merchant_id: 'M1', product_id: kurta, quantity: 1, list_price: 150000, floor_price: 135000, rounds: 2, last_bot_offer: 140000, last_customer_offer: 120000, agreed_price: null, status: 'ongoing' });
+    fake.db.add('negotiations', { conversation_id: convoM2, merchant_id: 'M2', product_id: null, quantity: 1, list_price: 5000, floor_price: 4500, rounds: 1, status: 'ongoing' });
+    const r = await app.inject({ method: 'GET', url: `/api/v1/platform/merchants/M1/conversations/${convoM1}`, headers: fazal });
+    const n = r.json().negotiations;
+    expect(n).toHaveLength(1);
+    expect(n[0]).toMatchObject({ productName: 'Kurta', list_price: 150000, floor_price: 135000, last_bot_offer: 140000, last_customer_offer: 120000, status: 'ongoing' });
+    expect(n[0]).not.toHaveProperty('products');
+  });
+
+  it("the catalog shows each product's floor exactly as the engine computes it for one unit", async () => {
+    fake.db.rows('merchants').find((m) => m.id === 'M1')!.negotiation_defaults = { maxDiscountPct: 10 };
+    fake.db.add('products', { merchant_id: 'M1', name: 'Shawl', price: 200000, cost: null, is_active: true, negotiable: true, max_discount_pct: null, min_price: 150000, deleted_at: null, images: [] });
+    fake.db.add('products', { merchant_id: 'M1', name: 'Fixed Cap', price: 50000, cost: null, is_active: true, negotiable: false, max_discount_pct: null, min_price: null, deleted_at: null, images: [] });
+    const r = await app.inject({ method: 'GET', url: '/api/v1/platform/merchants/M1/products', headers: fazal });
+    const floor = (name: string) => (r.json().products as { name: string; floor: number }[]).find((p) => p.name === name)!.floor;
+    expect(floor('Kurta')).toBe(135000); // list less the shop's 10%
+    expect(floor('Shawl')).toBe(150000); // an absolute min_price wins over the percentage
+    expect(floor('Fixed Cap')).toBe(50000); // not negotiable: the list price
   });
 });

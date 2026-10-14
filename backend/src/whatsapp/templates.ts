@@ -158,6 +158,6 @@ export async function applyTemplateStatus(db: SupabaseClient, ev: AccountEvent):
       body: v.reason ? `Meta's reason: ${v.reason}. Resubmit it from Settings → WhatsApp.` : 'Resubmit it from Settings → WhatsApp.',
       data: { action: 'template_status', template: r.name, status, reason: v.reason ?? null },
     });
-    await notifyPlatform(db, { kind: 'whatsapp_attention', merchantId: r.merchant_id, title: 'WhatsApp needs attention', body: `Template ${r.name} ${status}${v.reason ? `: ${v.reason}` : ''}`, data: { reason: 'template', template: r.name, status } }); // U2
+    await notifyPlatform(db, { kind: 'whatsapp_attention', merchantId: r.merchant_id, title: `${r.name} template ${status}`, body: `Meta ${status} the ${r.name} template${v.reason ? ` (${v.reason})` : ''}. Paid notices for this shop wait until it is approved; the owner can resubmit it in Settings → WhatsApp.`, data: { reason: 'template', template: r.name, status } }); // U2
   }
 }

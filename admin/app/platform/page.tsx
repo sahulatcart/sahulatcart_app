@@ -1,158 +1,174 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Ban, CheckCircle2, ChevronDown, ChevronUp, Receipt, Search, ShieldCheck, Store } from 'lucide-react';
-import AppShell, { EmptyState, PageHead, Pill } from '../../components/AppShell';
-import { api, apiError, apiJson, dt, rs } from '../../lib/api';
+import { ArrowUpCircle, Receipt, Store, Timer } from 'lucide-react';
+import AppShell, { EmptyState, PageHead } from '../../components/AppShell';
+import { apiJson, rs } from '../../lib/api';
 import { useToast } from '../../components/Toast';
+import { ago, changePlan, ChangePlanDialog, day, MarkPaidDialog, phone, SellingBadge, sellingRank, type DueInvoice, type PlanOption, type Selling } from '../../components/ConsoleParts';
 
-/** The platform owner's console (SRS-Fazal M6): every shop, its connection, a suspend switch. */
+/**
+ * The founders' console, Shops (2026-10-14 critique): answers "who is broken, who owes us" first.
+ * Every shop's whole state sits in its own row; the row carries only the money action. Suspending
+ * and changing a plan live on the shop page, behind a dialog, never one click from a list.
+ */
 
 interface Merchant {
   id: string; businessName: string; ownerEmail: string | null; phone: string | null; status: string; plan: string; createdAt: string;
   connection: { status: string; phone?: string | null; quality?: string | null; flagReason?: string | null };
   lastInboundAt: string | null; ordersThisMonth: number; outboundThisMonth: number;
   suspension: { reason?: string; at?: string; by?: string } | null;
+  selling: Selling;
+  subscription: { status: string; plan: string; requestedPlan: string | null; trialEndsAt: string | null; currentPeriodEnd: string | null } | null;
+  dueInvoice: DueInvoice | null;
 }
-interface Invoice { id: string; merchant_id: string; businessName: string | null; plan: string; period_start: string; period_end: string; amount_paisa: number; reference: string | null; claimed_at: string | null; created_at: string }
-interface PlanRequest { id: string; merchant_id: string; businessName: string | null; plan: string; status: string; requested_plan: string }
-interface Attempt { id: string; status: string; phone_number_id: string | null; error_code: string | null; error_message: string | null; created_at: string }
+interface Job { job: string; interval_seconds: number; started_at: string; finished_at: string | null; ok: boolean | null }
+type Filter = 'all' | 'not_selling' | 'money' | 'requests';
 
-const tone = (s: string) => (s === 'connected' ? 'success' : s === 'needs_attention' || s === 'connecting' ? 'warning' : s === 'disconnected' ? 'danger' : 'neutral');
+const planLabel = (plans: PlanOption[], id: string) => plans.find((p) => p.id === id)?.label ?? id;
+/** Problems first: broken bots, then money waiting on us (claimed before unclaimed), then plan requests, then the rest by last message. */
+function rank(m: Merchant): number {
+  if (!m.selling.selling && sellingRank(m.selling) === 0) return 0;
+  if (m.dueInvoice?.reference) return 1;
+  if (m.dueInvoice) return 2;
+  if (m.subscription?.requestedPlan) return 3;
+  return 4 + sellingRank(m.selling);
+}
+const jobFailing = (j: Job, now: number) => j.ok === false || (j.finished_at == null && now - new Date(j.started_at).getTime() > 2 * j.interval_seconds * 1000);
 
-export default function PlatformConsole() {
+export default function PlatformShops() {
   const toast = useToast();
   const [rows, setRows] = useState<Merchant[] | null>(null);
+  const [plans, setPlans] = useState<PlanOption[]>([]);
   const [month, setMonth] = useState('');
+  const [jobs, setJobs] = useState<Job[]>([]);
   const [q, setQ] = useState('');
-  const [busy, setBusy] = useState<string | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
-  const [attempts, setAttempts] = useState<Record<string, Attempt[]>>({});
-  // P7 (FR-P7.5): due invoices with the merchant's claimed reference, and plan-change requests.
-  const [bill, setBill] = useState<{ invoices: Invoice[]; requests: PlanRequest[] } | null>(null);
-  const loadBill = useCallback(() => apiJson<{ invoices: Invoice[]; requests: PlanRequest[] }>('/api/v1/platform/invoices').then(setBill).catch(() => setBill({ invoices: [], requests: [] })), []);
-  useEffect(() => { loadBill(); }, [loadBill]);
-  async function post(url: string, body?: object, ok = 'Done') {
-    setBusy(url);
-    const r = await api(url, { method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}) });
-    setBusy(null);
-    if (!r.ok) toast(await apiError(r), 'error'); else { toast(ok, 'success'); loadBill(); load(q); }
-  }
-  const markPaid = (i: Invoice) => confirm(`Mark ${rs(i.amount_paisa)} from ${i.businessName ?? i.merchant_id} as received? Their plan runs to ${dt(i.period_end)} and the bot sells again.`) && post(`/api/v1/platform/invoices/${i.id}/paid`, undefined, 'Marked paid');
-  const setPlan = (merchantId: string, plan: string) => post(`/api/v1/platform/merchants/${merchantId}/plan`, { plan }, `Plan: ${plan}`);
+  const [filter, setFilter] = useState<Filter>('all');
+  const [flash, setFlash] = useState<string | null>(null);
+  const [paying, setPaying] = useState<Merchant | null>(null);
+  const [planFor, setPlanFor] = useState<Merchant | null>(null);
+  const search = useRef<HTMLInputElement>(null);
 
-  const load = useCallback((query = '') => apiJson<{ month: string; merchants: Merchant[] }>(`/api/v1/platform/merchants${query ? `?q=${encodeURIComponent(query)}` : ''}`)
-    .then((r) => { setRows(r.merchants); setMonth(r.month); })
-    .catch((e) => { setRows([]); toast((e as Error).message, 'error'); }), [toast]);
+  const load = useCallback(() => apiJson<{ month: string; merchants: Merchant[]; plans: PlanOption[] }>('/api/v1/platform/merchants')
+    .then((r) => { setRows(r.merchants); setMonth(r.month); setPlans(r.plans ?? []); })
+    .catch((e) => { setRows((cur) => cur ?? []); toast((e as Error).message, 'error'); }), [toast]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { apiJson<{ jobs: Job[] }>('/api/v1/platform/jobs').then((r) => setJobs(r.jobs)).catch(() => setJobs([])); }, []);
+  // "/" jumps to search from anywhere on the page; Esc clears it.
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.key === '/' && !(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT'))) { e.preventDefault(); search.current?.focus(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
-  async function act(m: Merchant, action: 'suspend' | 'unsuspend') {
-    let body: object | undefined;
-    if (action === 'suspend') {
-      const reason = window.prompt(`Suspend ${m.businessName}? The bot stops replying and the portal becomes read-only.\n\nReason (shown to the merchant):`);
-      if (!reason?.trim()) return;
-      body = { reason: reason.trim() };
-    }
-    setBusy(m.id);
-    const r = await api(`/api/v1/platform/merchants/${m.id}/${action}`, { method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}) });
-    if (!r.ok) toast(await apiError(r), 'error'); else { toast(action === 'suspend' ? 'Suspended' : 'Active again', 'success'); load(q); }
-    setBusy(null);
-  }
+  const all = useMemo(() => rows ?? [], [rows]);
+  const counts = useMemo(() => ({
+    notSelling: all.filter((m) => !m.selling.selling).length,
+    due: all.filter((m) => m.dueInvoice).length,
+    claimed: all.filter((m) => m.dueInvoice?.reference).length,
+    requests: all.filter((m) => m.subscription?.requestedPlan).length,
+  }), [all]);
+  const failingJobs = jobs.filter((j) => jobFailing(j, Date.now())).length;
 
-  async function toggleAttempts(id: string) {
-    if (open === id) { setOpen(null); return; }
-    setOpen(id);
-    if (!attempts[id]) {
-      const r = await apiJson<{ attempts: Attempt[] }>(`/api/v1/platform/merchants/${id}/attempts`).catch(() => ({ attempts: [] }));
-      setAttempts((a) => ({ ...a, [id]: r.attempts }));
-    }
-  }
+  const shown = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return all
+      .filter((m) => filter === 'all' || (filter === 'not_selling' && !m.selling.selling) || (filter === 'money' && m.dueInvoice) || (filter === 'requests' && m.subscription?.requestedPlan))
+      .filter((m) => !needle || `${m.businessName} ${m.ownerEmail ?? ''} ${m.phone ?? ''}`.toLowerCase().includes(needle))
+      .sort((a, b) => rank(a) - rank(b) || (b.lastInboundAt ?? '').localeCompare(a.lastInboundAt ?? ''));
+  }, [all, q, filter]);
+
+  const changed = (id: string) => { setFlash(id); setTimeout(() => setFlash((f) => (f === id ? null : f)), 1700); };
+  const chip = (id: Filter, label: string, n: number, tone = '') => (
+    <button type="button" className={`chip ${tone}`} aria-pressed={filter === id} onClick={() => setFilter(filter === id ? 'all' : id)}>
+      {label} <span className="n">{n}</span>
+    </button>
+  );
 
   return (
     <AppShell variant="platform">
-      <PageHead title="Platform" sub={`Every shop on Sahulatcart${month ? ` · ${month}` : ''}`}
-        action={<form onSubmit={(e) => { e.preventDefault(); load(q); }} style={{ display: 'flex', gap: 6 }}><label htmlFor="q" className="sr-only">Search shops</label><input id="q" placeholder="Search name, email, phone" value={q} onChange={(e) => setQ(e.target.value)} /><button className="btn ghost icon-btn" aria-label="Search"><Search /></button></form>} />
+      <PageHead title="Shops" sub={`Every shop on Sahulatcart${month ? ` · ${month}` : ''}`}
+        action={(
+          <div className="search">
+            <label htmlFor="q" className="sr-only">Search shops by name, email or phone</label>
+            <input id="q" ref={search} type="search" placeholder="Search shops" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setQ(''); }} style={{ width: 240 }} />
+            {!q && <span className="kbd" aria-hidden>/</span>}
+          </div>
+        )} />
+
+      {rows && rows.length > 0 && (
+        <div className="attention" role="group" aria-label="Show only">
+          {chip('all', 'All shops', all.length)}
+          {chip('not_selling', 'Not selling', counts.notSelling, counts.notSelling ? 'danger' : '')}
+          {chip('money', counts.claimed ? `Invoices due (${counts.claimed} claimed)` : 'Invoices due', counts.due, counts.due ? 'warning' : '')}
+          {chip('requests', 'Plan requests', counts.requests)}
+          {failingJobs > 0 && <Link href="/platform/jobs" className="chip danger"><Timer aria-hidden /> {failingJobs} job{failingJobs === 1 ? '' : 's'} failing</Link>}
+        </div>
+      )}
+
       <div className="card">
-        {rows && rows.length === 0 && <EmptyState icon={Store} title="No shops" hint="Shops appear here as merchants sign up." />}
-        {rows && rows.length > 0 && (
+        {rows && rows.length === 0 && <EmptyState icon={Store} title="No shops yet" hint="Shops appear here as merchants sign up. Open sign-up, or add emails to the allow-list, under Access." action={<Link href="/platform/access" className="btn ghost sm">Open Access</Link>} />}
+        {rows && rows.length > 0 && shown.length === 0 && (
+          <div className="empty"><div className="display">No shop matches</div><div className="hint">{q ? `Nothing for “${q}”.` : 'Nothing under this filter right now.'}</div><div className="action"><button type="button" className="btn ghost sm" onClick={() => { setQ(''); setFilter('all'); }}>Show all shops</button></div></div>
+        )}
+        {shown.length > 0 && (
           <div className="table-wrap">
-            <table>
-              <thead><tr><th>Shop</th><th>WhatsApp</th><th className="hide-sm">Last message</th><th className="num">Orders</th><th className="num hide-sm">Messages</th><th>Status</th><th></th></tr></thead>
+            <table className="rtable">
+              <thead><tr><th>Shop</th><th>Bot</th><th>Billing</th><th><span className="sr-only">Action</span></th></tr></thead>
               <tbody>
-                {rows.map((m) => (
-                  <>
-                    <tr key={m.id}>
-                      <td><Link href={`/platform/shops/${m.id}`} className="strong link">{m.businessName}</Link><div className="hint">{m.ownerEmail ?? '—'} · <label htmlFor={`plan-${m.id}`} className="sr-only">Plan for {m.businessName}</label><select id={`plan-${m.id}`} value={m.plan} onChange={(e) => setPlan(m.id, e.target.value)} disabled={!!busy} style={{ width: 'auto', padding: '0 4px', fontSize: 12, display: 'inline-block' }}><option value="pilot">pilot</option><option value="basic">basic</option><option value="pro">pro</option></select></div></td>
-                      <td><Pill kind={tone(m.connection.status)}>{m.connection.status.replace('_', ' ')}</Pill>{m.connection.phone && <div className="mono hint">+{m.connection.phone}</div>}{m.connection.flagReason && <div className="hint">{m.connection.flagReason}</div>}</td>
-                      <td className="hide-sm">{dt(m.lastInboundAt)}</td>
-                      <td className="num">{m.ordersThisMonth}</td>
-                      <td className="num hide-sm">{m.outboundThisMonth.toLocaleString('en-PK')}</td>
-                      <td>{m.status === 'suspended' ? <Pill kind="danger">suspended</Pill> : <Pill kind="success">{m.status}</Pill>}{m.suspension?.reason && <div className="hint">{m.suspension.reason}</div>}</td>
-                      <td style={{ whiteSpace: 'nowrap' }}>
-                        {m.status === 'suspended'
-                          ? <button className="btn sm ghost" disabled={busy === m.id} onClick={() => act(m, 'unsuspend')}><CheckCircle2 aria-hidden /> Unsuspend</button>
-                          : <button className="btn sm danger-ghost" disabled={busy === m.id} onClick={() => act(m, 'suspend')}><Ban aria-hidden /> Suspend</button>}
-                        {' '}
-                        <button className="btn sm ghost icon-btn" onClick={() => toggleAttempts(m.id)} aria-label={open === m.id ? 'Hide connect attempts' : 'Show connect attempts'} aria-expanded={open === m.id}>{open === m.id ? <ChevronUp /> : <ChevronDown />}</button>
+                {shown.map((m) => {
+                  const inv = m.dueInvoice;
+                  const req = m.subscription?.requestedPlan;
+                  return (
+                    <tr key={m.id} className={flash === m.id ? 'flash' : undefined}>
+                      <td data-label="Shop">
+                        <Link href={`/platform/shops/${m.id}`} className="strong link">{m.businessName}</Link>
+                        <div className="hint">{m.ownerEmail ?? '—'}</div>
+                        <div className="hint"><span className="mono">{phone(m.phone)}</span></div>
+                        <div className="hint">{m.lastInboundAt ? `Last message ${ago(m.lastInboundAt)}` : 'No messages yet'} · {m.ordersThisMonth} order{m.ordersThisMonth === 1 ? '' : 's'} this month</div>
+                      </td>
+                      <td data-label="Bot" style={{ minWidth: 190 }}><SellingBadge s={m.selling} /></td>
+                      <td data-label="Billing">
+                        <div><span className="strong">{planLabel(plans, m.plan)}</span>{m.subscription?.status === 'trial' && m.subscription.trialEndsAt ? <span className="hint"> · trial to {day(m.subscription.trialEndsAt)}</span> : m.subscription?.currentPeriodEnd && !inv ? <span className="hint"> · paid to {day(m.subscription.currentPeriodEnd)}</span> : null}</div>
+                        {inv && (
+                          <div className="hint" style={{ color: inv.reference ? 'var(--ink-2)' : 'var(--warning)' }}>
+                            <span style={{ whiteSpace: 'nowrap' }}><Receipt size={13} aria-hidden style={{ verticalAlign: -2 }} /> Owes {rs(inv.amountPaisa)}</span>
+                            <span style={{ display: 'block' }}>{inv.reference ? <>Claimed <span className="mono">{inv.reference}</span> · {ago(inv.claimedAt)}</> : 'Not claimed yet'}</span>
+                          </div>
+                        )}
+                        {req && <div className="hint"><ArrowUpCircle size={13} aria-hidden style={{ verticalAlign: -2 }} /> Asked for {planLabel(plans, req)}</div>}
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                        {inv
+                          ? <button type="button" className={inv.reference ? 'btn sm' : 'btn ghost sm'} onClick={() => setPaying(m)} aria-label={`Mark ${rs(inv.amountPaisa)} from ${m.businessName} paid`}>{inv.reference ? 'Mark paid' : 'Mark paid…'}</button>
+                          : req
+                            ? <button type="button" className="btn ghost sm" onClick={() => setPlanFor(m)} aria-label={`Review ${m.businessName}'s request for ${planLabel(plans, req)}`}>Apply {planLabel(plans, req)}…</button>
+                            : !m.selling.selling && m.selling.code !== 'bot_off' && m.selling.code !== 'suspended'
+                              ? <Link href={`/platform/shops/${m.id}`} className="btn ghost sm" aria-label={`Open ${m.businessName} to see what is wrong`}>Open shop</Link>
+                              : null}
                       </td>
                     </tr>
-                    {open === m.id && (
-                      <tr key={`${m.id}-attempts`}>
-                        <td colSpan={7} style={{ background: 'var(--surface)' }}>
-                          <div className="hint" style={{ marginBottom: 6 }}><ShieldCheck size={14} aria-hidden /> Last connect attempts</div>
-                          {(attempts[m.id] ?? []).length === 0 && <div className="hint">None.</div>}
-                          {(attempts[m.id] ?? []).map((a) => (
-                            <div key={a.id} className="hint" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                              <span>{dt(a.created_at)}</span><span className="mono">{a.status}</span>{a.phone_number_id && <span className="mono">{a.phone_number_id}</span>}{a.error_code && <span>{a.error_code}: {a.error_message}</span>}
-                            </div>
-                          ))}
-                        </td>
-                      </tr>
-                    )}
-                  </>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
-        {!rows && <div className="skeleton" style={{ height: 120, margin: 16 }} />}
+        {!rows && <div className="skeleton" style={{ height: 160, margin: 16 }} />}
       </div>
 
-      <div className="card" style={{ marginTop: 24 }}>
-        <div className="card-head"><div><h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Receipt aria-hidden /> Invoices</h2><div className="desc">Due invoices and plan requests. Mark paid once the transfer shows in the Nubrix account.</div></div></div>
-        {bill && bill.invoices.length === 0 && bill.requests.length === 0 && <div className="pad hint">Nothing due and no requests.</div>}
-        {bill && bill.invoices.length > 0 && (
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Shop</th><th>Period</th><th>Plan</th><th className="num">Amount</th><th>Reference</th><th></th></tr></thead>
-              <tbody>
-                {bill.invoices.map((i) => (
-                  <tr key={i.id}>
-                    <td className="strong">{i.businessName ?? i.merchant_id}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{dt(i.period_start)} to {dt(i.period_end)}</td>
-                    <td>{i.plan}</td>
-                    <td className="num">{rs(i.amount_paisa)}</td>
-                    <td>{i.reference ? <><span className="mono">{i.reference}</span><div className="hint">claimed {dt(i.claimed_at)}</div></> : <span className="hint">not claimed yet</span>}</td>
-                    <td><button className="btn sm" disabled={!!busy} onClick={() => markPaid(i)}><CheckCircle2 aria-hidden /> Mark paid</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {bill && bill.requests.length > 0 && (
-          <div className="pad">
-            <div className="hint" style={{ marginBottom: 6 }}>Plan requests</div>
-            {bill.requests.map((r) => (
-              <div key={r.id} className="row between" style={{ padding: '6px 0' }}>
-                <span><span className="strong">{r.businessName ?? r.merchant_id}</span> <span className="hint">{r.plan} → {r.requested_plan}</span></span>
-                <button className="btn sm ghost" disabled={!!busy} onClick={() => setPlan(r.merchant_id, r.requested_plan)}>Apply {r.requested_plan}</button>
-              </div>
-            ))}
-          </div>
-        )}
-        {!bill && <div className="skeleton" style={{ height: 60, margin: 16 }} />}
-      </div>
+      <MarkPaidDialog open={!!paying} shop={paying?.businessName ?? ''} invoice={paying?.dueInvoice ?? null} onClose={() => setPaying(null)}
+        onDone={() => { const m = paying!; setPaying(null); toast(`${rs(m.dueInvoice!.amountPaisa)} from ${m.businessName} marked paid`, 'success'); changed(m.id); load(); }} />
+      {planFor && (
+        <ChangePlanDialog open={!!planFor} shop={planFor.businessName} merchantId={planFor.id} current={planFor.plan} requested={planFor.subscription?.requestedPlan} plans={plans} onClose={() => setPlanFor(null)}
+          onDone={(prev, next) => {
+            const m = planFor; setPlanFor(null); changed(m.id); load();
+            toast(`${m.businessName} is now on ${planLabel(plans, next)}`, 'success', { label: 'Undo', onClick: async () => { const e = await changePlan(m.id, prev); if (e) toast(e, 'error'); else { toast(`${m.businessName} is back on ${planLabel(plans, prev)}`, 'info'); changed(m.id); load(); } } });
+          }} />
+      )}
     </AppShell>
   );
 }

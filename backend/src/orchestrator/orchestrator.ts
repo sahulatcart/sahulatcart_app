@@ -46,7 +46,8 @@ const DEFAULT_NEGOTIATION: NegotiationDefaults = {
   autoAcceptAtFloor: true,
 };
 
-function coerceDefaults(raw: unknown): NegotiationDefaults {
+/** Exported for the platform console's catalog floor (routes/platform-shops.ts): one source of truth. */
+export function coerceDefaults(raw: unknown): NegotiationDefaults {
   const d = (raw ?? {}) as Partial<NegotiationDefaults>;
   return {
     maxDiscountPct: typeof d.maxDiscountPct === 'number' ? d.maxDiscountPct : 0,

@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **45 files, 509 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **46 files, 521 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -329,6 +329,20 @@ send in `client.ts`, every inbound in `webhook.ts`, and every AI call through `c
   accent via `.shell[data-area="platform"]`, no merchant calls, non-admins sent home. A page under
   `admin/app/platform/` must use that variant; the merchant shell shows no console item, and the
   only crossing is the "Switch to…" link in the sidebar foot for people who have both.
+- **The console's truth and guardrails** (since 2026-10-14, after its design critique):
+  - **Selling status** comes from `sellingStatus()` in [lib/selling.ts](backend/src/lib/selling.ts):
+    `botMode()` (billing only, which the orchestrator needs) plus the WhatsApp connection, worst
+    first. Show that, never `botMode` alone: a revoked token used to read as "sell".
+  - **Floors shown in the console** come from the engine's `computeFloor()` with the orchestrator's
+    exported `coerceDefaults()`. Never recompute a floor in UI code; the console must not disagree
+    with the bot.
+  - **Consequential writes** (mark paid, change plan, suspend, remove an admin, open sign-up) go
+    through `components/Dialog.tsx` (native `<dialog>`) and say what they change; never
+    `window.prompt`/`confirm`. Reversible ones offer Undo via the toast's optional action.
+  - Suspend and plan changes live on the shop page, not in the shop list.
+- **Green behind or as text is `--primary` / `--success-ink` (`#1F7A33`)**, not `--color-green`:
+  Signal Green itself is 4.2:1 with white text and 3.9:1 on its tint, under AA. The brand token
+  stays verbatim for fills that carry no text.
 - **A page file may export only the page.** `next build` refuses a named export from
   `app/**/page.tsx` ("does not match the required types of a Next.js Page"), while `tsc` is happy.
   Shared pieces go in `admin/components/`. This took the admin deploy down after PR #21 while the

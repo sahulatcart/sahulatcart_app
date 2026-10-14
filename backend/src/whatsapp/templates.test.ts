@@ -91,6 +91,7 @@ describe('status updates', () => {
     expect(pn).toHaveLength(1);
     expect(pn[0]).toMatchObject({ kind: 'whatsapp_attention', merchant_id: 'M1', data: { reason: 'template', template: 'order_sent', status: 'rejected' } });
     expect(pn[0]!.body).toContain('INVALID_FORMAT');
+    expect(pn[0]!.title).toContain('order_sent template rejected');
   });
 
   it('an unknown template name changes nothing', async () => {

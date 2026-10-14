@@ -110,6 +110,32 @@ describe('the merchant list', () => {
     const s = await app.inject({ method: 'GET', url: '/api/v1/platform/merchants?q=bilal', headers: jwt('jwt.fazal.sig') });
     expect((s.json().merchants as { id: string }[]).map((m) => m.id)).toEqual(['M2']);
   });
+
+  it("each row says whether the bot sells and why, and carries the shop's invoice and plan request (console triage)", async () => {
+    fake.db.add('subscriptions', { merchant_id: 'M1', plan: 'basic', status: 'active', current_period_end: '2026-11-01T00:00:00Z', requested_plan: 'pro' });
+    fake.db.add('invoices', { id: 'INV2', merchant_id: 'M2', plan: 'basic', period_start: '2026-10-01T00:00:00Z', period_end: '2026-11-01T00:00:00Z', amount_paisa: 299900, status: 'due', reference: 'IBFT 77', claimed_at: '2026-10-14T05:00:00Z' });
+    fake.db.add('invoices', { id: 'INV-OLD', merchant_id: 'M2', plan: 'basic', period_start: '2026-09-01T00:00:00Z', period_end: '2026-10-01T00:00:00Z', amount_paisa: 299900, status: 'paid' });
+    const r = await app.inject({ method: 'GET', url: '/api/v1/platform/merchants', headers: jwt('jwt.fazal.sig') });
+    const list = r.json().merchants as { id: string; selling: { selling: boolean; code: string; reason: string | null }; subscription: unknown; dueInvoice: unknown }[];
+    const m1 = list.find((m) => m.id === 'M1')!;
+    const m2 = list.find((m) => m.id === 'M2')!;
+    expect(m1.selling).toEqual({ selling: true, code: 'selling', reason: null });
+    expect(m1.subscription).toMatchObject({ status: 'active', plan: 'basic', requestedPlan: 'pro' });
+    expect(m1.dueInvoice).toBeNull();
+    expect(m2.selling).toMatchObject({ selling: false, code: 'no_whatsapp' });
+    expect(m2.dueInvoice).toEqual({ id: 'INV2', plan: 'basic', periodStart: '2026-10-01T00:00:00Z', periodEnd: '2026-11-01T00:00:00Z', amountPaisa: 299900, reference: 'IBFT 77', claimedAt: '2026-10-14T05:00:00Z' });
+    expect((r.json().plans as { id: string; pricePaisa: number }[]).map((p) => p.id)).toEqual(['pilot', 'basic', 'pro']);
+    // A revoked token is "not selling", even though billing alone would say sell.
+    fake.db.rows('whatsapp_numbers').find((n) => n.merchant_id === 'M1')!.status = 'needs_attention';
+    fake.db.rows('whatsapp_numbers').find((n) => n.merchant_id === 'M1')!.flag_reason = 'token';
+    const r2 = await app.inject({ method: 'GET', url: '/api/v1/platform/merchants', headers: jwt('jwt.fazal.sig') });
+    expect((r2.json().merchants as { id: string; selling: { code: string } }[]).find((m) => m.id === 'M1')!.selling.code).toBe('token');
+  });
+
+  it('the invoices route carries the plan prices the inbox needs to apply a request in place', async () => {
+    const r = await app.inject({ method: 'GET', url: '/api/v1/platform/invoices', headers: jwt('jwt.fazal.sig') });
+    expect((r.json().plans as { id: string }[]).map((p) => p.id)).toEqual(['pilot', 'basic', 'pro']);
+  });
 });
 
 describe('suspension', () => {

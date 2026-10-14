@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { loadConfig } from '../config';
 import { logger } from '../lib/logger';
 import { notify, notifyPlatform } from '../lib/notify';
 import { digitsOnly } from '../lib/phone';
@@ -26,9 +27,9 @@ async function notifyMerchants(db: SupabaseClient, merchantIds: string[], type: 
 }
 
 /** U2: the founders' inbox gets the same message once per shop, for the flags only Nubrix can help with. */
-async function tellFounders(db: SupabaseClient, merchantIds: string[], reason: 'policy' | 'token', body: string, event: string | undefined): Promise<void> {
+async function tellFounders(db: SupabaseClient, merchantIds: string[], reason: 'policy' | 'token', title: string, body: string, event: string | undefined): Promise<void> {
   for (const merchantId of new Set(merchantIds)) {
-    await notifyPlatform(db, { kind: 'whatsapp_attention', merchantId, title: 'WhatsApp needs attention', body, data: { reason, event: event ?? null } });
+    await notifyPlatform(db, { kind: 'whatsapp_attention', merchantId, title, body, data: { reason, event: event ?? null } });
   }
 }
 
@@ -106,14 +107,15 @@ async function onAccountUpdate(db: SupabaseClient, ev: AccountEvent): Promise<vo
       const message = `Meta has restricted this WhatsApp Business account (${reason}). Open Meta Business Manager → WhatsApp accounts to see the reason and appeal; the bot cannot send until Meta lifts it.`;
       await patchNumbers(db, rows, { status: 'needs_attention', flag_reason: 'policy', attention_message: message });
       await notifyMerchants(db, merchants, 'system', 'WhatsApp account restricted by Meta', message, { action: 'whatsapp_account', event: v.event, reason });
-      await tellFounders(db, merchants, 'policy', message, v.event);
+      await tellFounders(db, merchants, 'policy', 'Meta restricted WhatsApp, bot stopped', `Meta restricted this shop's WhatsApp Business account (${reason}). Only the owner can see Meta's reason and appeal, in Meta Business Manager; ask them to start the appeal.`, v.event);
       break;
     }
     case 'PARTNER_REMOVED': {
       const message = 'Sahulatcart was removed from this WhatsApp Business account in Meta Business Manager. Reconnect from Settings → WhatsApp to continue.';
       await patchNumbers(db, rows, { status: 'needs_attention', flag_reason: 'token', attention_message: message });
       await notifyMerchants(db, merchants, 'system', 'WhatsApp disconnected', message, { action: 'reconnect_whatsapp', event: v.event });
-      await tellFounders(db, merchants, 'token', message, v.event);
+      const product = loadConfig().PRODUCT_NAME;
+      await tellFounders(db, merchants, 'token', `Removed from WhatsApp, bot stopped`, `The owner removed ${product} from their WhatsApp Business account in Meta Business Manager. Ask whether that was deliberate; reconnecting in Settings → WhatsApp restores the bot.`, v.event);
       break;
     }
     case 'VERIFIED_ACCOUNT':

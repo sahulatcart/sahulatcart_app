@@ -85,6 +85,9 @@ describe('markTokenInvalid', () => {
     // U2: the founders hear about a dead token too.
     expect(db.rows('platform_notifications')).toHaveLength(1);
     expect(db.rows('platform_notifications')[0]).toMatchObject({ kind: 'whatsapp_attention', merchant_id: 'M1', data: { phoneNumberId: 'PN1', reason: 'token' } });
+    // Founder copy names who must act; it does not repeat the merchant's instruction verbatim.
+    expect(db.rows('platform_notifications')[0]!.title).toContain('WhatsApp token revoked, bot stopped');
+    expect(db.rows('platform_notifications')[0]!.body).toMatch(/Only the owner can fix it/);
   });
 
   it('does nothing for an unknown number', async () => {
