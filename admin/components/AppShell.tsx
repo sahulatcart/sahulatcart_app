@@ -3,7 +3,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Activity, ArrowLeft, ArrowLeftRight, BarChart3, Bell, CreditCard, Inbox, LayoutDashboard, LogOut, Menu, MessagesSquare, Package, ScrollText, Settings, ShieldCheck, ShoppingBag, Store, X, type LucideIcon } from 'lucide-react';
-import { apiJson, hasSession, signOut } from '../lib/api';
+import { api, apiJson, hasSession, signOut } from '../lib/api';
 import { disablePush } from '../lib/push';
 import Wordmark from '../components/Wordmark';
 import ThemeToggle from './ThemeToggle';
@@ -93,9 +93,21 @@ export default function AppShell({ children, variant = 'merchant' }: { children:
   // On the merchant side a suspended shop sees why it is read-only.
   useEffect(() => {
     if (!ready) return;
-    apiJson<{ isPlatformAdmin: boolean; merchantId: string | null }>('/api/v1/platform/me')
-      .then((r) => { setPlatformAdmin(!!r.isPlatformAdmin); setHasShop(!!r.merchantId); })
-      .catch(() => { setPlatformAdmin(false); if (platform) router.replace('/'); });
+    // Only a 403 means "not a platform admin". A network blip, a 429 or a 5xx says nothing about who
+    // this is, so the console keeps its page instead of bouncing a founder to the merchant side (the
+    // backend guards every console route anyway). A 401 is handled inside api(): back to /login.
+    api('/api/v1/platform/me')
+      .then(async (r) => {
+        if (r.ok) {
+          const me = (await r.json()) as { isPlatformAdmin?: boolean; merchantId?: string | null };
+          setPlatformAdmin(!!me.isPlatformAdmin);
+          setHasShop(!!me.merchantId);
+        } else if (r.status === 403) {
+          setPlatformAdmin(false);
+          if (platform) router.replace('/');
+        }
+      })
+      .catch(() => { /* network error: not an answer about who this is; leave things as they are */ });
     if (!platform) {
       apiJson<{ merchant?: { status?: string; settings?: { suspension?: { reason?: string } } } }>('/api/v1/admin/me')
         .then((r) => setSuspension(r.merchant?.status === 'suspended' ? (r.merchant.settings?.suspension?.reason ?? 'no reason given') : null))
