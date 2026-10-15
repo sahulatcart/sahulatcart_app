@@ -47,7 +47,7 @@ export default function Notifications() {
               <div className="fill">
                 <div className="t">{n.title}{!n.read_at && <span className="sr-only"> (unread)</span>}</div>
                 {n.body && <div className="b">{n.body}</div>}
-                {href && <Link href={href} className="link" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 8, fontSize: 13 }}>Open <ArrowRight size={14} aria-hidden /></Link>}
+                {href && <Link href={href} className="link link-ico mt-1 small">Open <ArrowRight size={14} aria-hidden /></Link>}
               </div>
               <div className="when">{ago(n.created_at)}</div>
             </div>

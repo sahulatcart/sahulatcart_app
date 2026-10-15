@@ -72,7 +72,7 @@ export default function Catalog() {
       <form className="card pad mb-2" onSubmit={add} >
         <h2 className="mb-2">Add a product</h2>
         <div className="form-row">
-          <div className="field" style={{ flex: '1 1 220px' }}><label htmlFor="new-name">Name</label><input id="new-name" placeholder="e.g. Lawn suit" value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} /></div>
+          <div className="field grow"><label htmlFor="new-name">Name</label><input id="new-name" placeholder="e.g. Lawn suit" value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} /></div>
           <div className="field"><label htmlFor="new-price">Price (Rs)</label><input id="new-price" type="number" min="0" step="any" value={adding.price} onChange={(e) => setAdding({ ...adding, price: e.target.value })} className="mini" /></div>
           <div className="field"><label htmlFor="new-stock">Stock</label><input id="new-stock" type="number" min="0" placeholder="∞" value={adding.stock} onChange={(e) => setAdding({ ...adding, stock: e.target.value })} className="mini" /></div>
           <button className="btn" disabled={!adding.name || !adding.price}><Plus aria-hidden /> Add product</button>
@@ -90,7 +90,7 @@ export default function Catalog() {
                 {(products ?? []).map((p) => (
                   <tr key={p.id}>
                     <td style={{ minWidth: 200 }}>
-                      <Link href={`/catalog/${p.id}`} className="link" style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+                      <Link href={`/catalog/${p.id}`} className="link row-top">
                         {p.thumbnailUrl
                           // eslint-disable-next-line @next/next/no-img-element
                           ? <img src={p.thumbnailUrl} alt="" className="thumb" loading="lazy" />
@@ -113,7 +113,7 @@ export default function Catalog() {
           </div>
         )}
         <div className="card-foot hint block">
-          <strong style={{ color: 'var(--ink-2)' }}>Max % off</strong> is the deepest discount the bot may give; <strong style={{ color: 'var(--ink-2)' }}>Min price</strong> is an absolute floor and wins over %. Open a product to add photos, description and attributes. CSV import also understands Shopify product exports.
+          <strong className="ink-2">Max % off</strong> is the deepest discount the bot may give; <strong className="ink-2">Min price</strong> is an absolute floor and wins over %. Open a product to add photos, description and attributes. CSV import also understands Shopify product exports.
         </div>
       </div>
       <ConfirmDialog open={!!del} onClose={() => setDel(null)} onConfirm={() => del && remove(del)} title={`Delete "${del?.name}"?`} confirmLabel="Delete product" danger>

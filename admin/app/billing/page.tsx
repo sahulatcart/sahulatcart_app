@@ -79,7 +79,7 @@ export default function BillingPage() {
       <div className="split">
         <div className="card pad">
           <div className="row between mb-1">
-            <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><CreditCard aria-hidden /> {plan.label} plan</h2>
+            <h2 className="m0 row gap-1"><CreditCard aria-hidden /> {plan.label} plan</h2>
             {s && <Pill kind={tone(s.status)}>{humanize(s.status)}</Pill>}
           </div>
           <div className="hint">
@@ -102,13 +102,13 @@ export default function BillingPage() {
         </div>
 
         <div className="card pad">
-          <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><Landmark aria-hidden /> How to pay</h2>
+          <h2 className="m0 row gap-1"><Landmark aria-hidden /> How to pay</h2>
           <p className="hint mt-1">Transfer the invoice amount to the account below, then enter the transfer reference next to the invoice. We mark it paid by hand, usually within one working day.</p>
           <pre className="mono" style={{ whiteSpace: 'pre-wrap', background: 'var(--surface)', padding: 12, borderRadius: 8, fontSize: 13 }}>{b.bankDetails || 'Bank details will appear here once set. Contact support.'}</pre>
         </div>
       </div>
 
-      <div className="card" style={{ marginTop: 24 }}>
+      <div className="card mt-3">
         <div className="card-head"><div><h2>Invoices</h2><div className="desc">{due.length ? `${due.length} due` : 'Nothing due'}</div></div></div>
         {b.invoices.length === 0 ? <div className="pad hint">No invoices yet. Your first one arrives seven days before the free pilot ends.</div> : (
           <div className="table-wrap">

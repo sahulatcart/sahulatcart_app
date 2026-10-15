@@ -530,7 +530,10 @@ discriminated union of ~20 reply kinds) and only phrases it.
 - **Consequential writes ask through `ConfirmDialog`** (`components/Dialog.tsx`, since 2026-10-15), never
   `window.confirm`; a reversible one (block/unblock) gets an Undo toast. Each merchant section has a
   `layout.tsx` that names the browser tab. Display helpers (`phone`, `ago`, `day`) live in
-  `admin/lib/format.ts`; spacing utilities (`.m0 .mb-1 .mt-2 …`) in globals.css replace inline margins.
+  `admin/lib/format.ts`; spacing and layout utilities (`.m0 .mb-1 .mt-2 .grow .row-top …`) in
+  globals.css replace inline styles: reach for one before writing `style={{}}`, which is for values
+  computed at runtime (a bar's width, a skeleton's size). **One green button per screen**: the
+  page's primary action; adds, filters and links are `ghost` or `subtle`.
 - **Portal UI** is plain CSS in [admin/app/globals.css](admin/app/globals.css): semantic tokens
   (`--ink`, `--muted`, `--brand`, `--success`…) mapped onto the brand tokens, so components never use
   raw hex. Shared pieces live in [components/AppShell.tsx](admin/components/AppShell.tsx): `PageHead`,

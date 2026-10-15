@@ -138,7 +138,7 @@ export default function ProductDetail() {
           <div className="card pad">
             <h2>Attributes</h2>
             <p className="hint mb-2">Answers questions like &ldquo;size kya hai?&rdquo;. Separate several values with commas.</p>
-            <div style={{ display: 'grid', gap: 8 }}>
+            <div className="grid-1">
               {attrs.map((row, i) => (
                 <div className="row no-wrap-row" key={i} >
                   <input aria-label={`Attribute ${i + 1} name`} placeholder="Size / Color / Material" value={row.k} onChange={(e) => setAttr(i, { k: e.target.value })} style={{ maxWidth: 180 }} />
@@ -146,7 +146,7 @@ export default function ProductDetail() {
                   <button className="btn subtle icon-btn" onClick={() => setAttrs(attrs.filter((_, j) => j !== i))} aria-label={`Remove attribute ${row.k || i + 1}`}><Trash2 /></button>
                 </div>
               ))}
-              <button className="btn ghost sm" style={{ justifySelf: 'start' }} onClick={() => setAttrs([...attrs, { k: '', v: '' }])}><Plus aria-hidden /> Add attribute</button>
+              <button className="btn ghost sm js-start" onClick={() => setAttrs([...attrs, { k: '', v: '' }])}><Plus aria-hidden /> Add attribute</button>
             </div>
           </div>
         </div>

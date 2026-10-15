@@ -86,7 +86,7 @@ export default function NotificationSettings() {
         {device === 'denied' && <p className="hint mb-2">Notifications are blocked for this site in the browser. Allow them in the site settings, then try again.</p>}
         {device === 'subscribed' && <p className="hint mb-2"><Pill kind="success">On</Pill> This device gets alerts. {p.pushSubscriptions > 1 ? `${p.pushSubscriptions} devices in total.` : ''}</p>}
         {device === 'available' && <p className="hint mb-2">Turn on alerts for this device; the browser will ask for permission once.</p>}
-        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <div className="row gap-1">
           {(device === 'available' || device === 'subscribed') && (
             <button className={device === 'subscribed' ? 'btn ghost' : 'btn'} onClick={togglePush} disabled={busy === 'push' || !p.channels.push}>
               {busy === 'push' ? <Loader2 className="spin" aria-hidden /> : device === 'subscribed' ? <BellOff aria-hidden /> : <Bell aria-hidden />}

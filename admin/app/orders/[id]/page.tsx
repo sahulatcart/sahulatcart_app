@@ -97,7 +97,7 @@ export default function OrderDetail() {
           {(o.courier || o.tracking_ref || o.eta_text) && <div className="hint mt-1">{[o.courier, o.tracking_ref, o.eta_text].filter(Boolean).join(' · ')}</div>}
           {d.history.length > 0 && (
             <details className="mt-2">
-              <summary className="hint" style={{ cursor: 'pointer' }}>History</summary>
+              <summary className="hint pointer">History</summary>
               <ul className="hint" style={{ margin: '8px 0 0', paddingLeft: 18 }}>
                 {d.history.map((h, i) => <li key={i}>{dt(h.created_at, true)}: {humanize(h.to_status)} ({h.changed_by}){h.note ? ` — ${h.note}` : ''}</li>)}
               </ul>
@@ -151,7 +151,7 @@ export default function OrderDetail() {
             {o.payment_method === 'bank_transfer' && (
               <div style={{ display: 'grid', gap: 10 }}>
                 <button className="btn ghost block" onClick={viewShot}><ImageIcon aria-hidden /> View screenshot</button>
-                <div className="grid-2" style={{ gap: 8 }}>
+                <div className="grid-2 gap-1">
                   <button className="btn" disabled={!claimed || busy} onClick={() => act('payment/verify', undefined, 'Payment verified')}><Check aria-hidden /> Verify</button>
                   <button className="btn danger-ghost" disabled={!claimed || busy} onClick={() => { setReason(''); setAsk('reject'); }}><X aria-hidden /> Reject</button>
                 </div>

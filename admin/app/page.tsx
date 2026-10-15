@@ -107,7 +107,7 @@ export default function Dashboard() {
                   <div className="t"><span className="mono">{o.order_number}</span> · {rs(o.total)}</div>
                   <div className="b">{o.delivery_name || 'No name'} · screenshot sent, placed {ago(o.created_at)}</div>
                 </div>
-                <div className="feed-actions"><Link href={`/orders/${o.id}`} className="btn sm">Review payment</Link></div>
+                <div className="feed-actions"><Link href={`/orders/${o.id}`} className="btn ghost sm">Review payment</Link></div>
               </li>
             ))}
           </QueueGroup>
@@ -159,7 +159,7 @@ export default function Dashboard() {
           <div className="card pad mt-2">
             <div className="row between">
               <h2 className="m0 row"><Gauge aria-hidden /> Messages this month</h2>
-              <Link href="/settings#messages" className="link" style={{ fontSize: 13 }}>What happens after 1,000 <ArrowRight size={14} aria-hidden /></Link>
+              <Link href="/settings#messages" className="link small">What happens after 1,000 <ArrowRight size={14} aria-hidden /></Link>
             </div>
             <div style={{ fontSize: 22, fontWeight: 600, marginTop: 10 }}>{usage.outbound.toLocaleString('en-PK')} <span className="muted" style={{ fontSize: 14, fontWeight: 400 }}>of {usage.freeQuota.toLocaleString('en-PK')} free</span></div>
             <div role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Free messages used" style={{ height: 8, borderRadius: 4, background: 'var(--surface)', marginTop: 8, overflow: 'hidden' }}>
@@ -259,7 +259,7 @@ function PushNudge() {
         <div className="ico"><Bell aria-hidden /></div>
         <div><div className="strong">Get a notification for every new order</div><div className="hint">On this device, even when the portal is closed. Change it any time in Settings → Notifications.</div></div>
       </div>
-      <div className="row" style={{ gap: 8 }}>
+      <div className="row gap-1">
         <button className="btn ghost" onClick={later} disabled={busy}>Not now</button>
         <button className="btn" onClick={enable} disabled={busy}><Bell aria-hidden /> Turn on</button>
       </div>

@@ -178,12 +178,12 @@ function ProfilePanel({ s, onChange }: { s: Settings; onChange: () => Promise<vo
   return (
     <form onSubmit={save}>
       <div className="form-row">
-        <div className="field" style={{ flex: '1 1 220px' }}><label htmlFor="p-name">Shop name</label><input id="p-name" value={f.businessName} onChange={(e) => set('businessName', e.target.value)} required maxLength={80} /></div>
-        <div className="field" style={{ flex: '1 1 220px' }}><label htmlFor="p-owner">Your name</label><input id="p-owner" value={f.ownerName} onChange={(e) => set('ownerName', e.target.value)} required maxLength={80} /></div>
+        <div className="field grow"><label htmlFor="p-name">Shop name</label><input id="p-name" value={f.businessName} onChange={(e) => set('businessName', e.target.value)} required maxLength={80} /></div>
+        <div className="field grow"><label htmlFor="p-owner">Your name</label><input id="p-owner" value={f.ownerName} onChange={(e) => set('ownerName', e.target.value)} required maxLength={80} /></div>
       </div>
       <div className="form-row">
-        <div className="field" style={{ flex: '1 1 220px' }}><label htmlFor="p-phone">Your WhatsApp number</label><input id="p-phone" type="tel" inputMode="tel" value={f.phone} onChange={(e) => set('phone', e.target.value)} placeholder="+92 300 1234567" required /><div className="help">Your own phone — alerts and the test order come from it.</div></div>
-        <div className="field" style={{ flex: '1 1 220px' }}>
+        <div className="field grow"><label htmlFor="p-phone">Your WhatsApp number</label><input id="p-phone" type="tel" inputMode="tel" value={f.phone} onChange={(e) => set('phone', e.target.value)} placeholder="+92 300 1234567" required /><div className="help">Your own phone — alerts and the test order come from it.</div></div>
+        <div className="field grow">
           <label htmlFor="p-cat">Category</label>
           <select id="p-cat" value={f.category} onChange={(e) => set('category', e.target.value)} required>
             <option value="">Choose…</option>
@@ -260,11 +260,11 @@ function ProductsPanel({ onChange }: { onChange: () => Promise<void> }) {
 
   return (
     <>
-      <form onSubmit={add} className="form-row" style={{ marginBottom: 18 }}>
-        <div className="field" style={{ flex: '1 1 200px' }}><label htmlFor="np-name">Product</label><input id="np-name" value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} placeholder="Lawn kurta" required /></div>
+      <form onSubmit={add} className="form-row mb-2">
+        <div className="field grow"><label htmlFor="np-name">Product</label><input id="np-name" value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} placeholder="Lawn kurta" required /></div>
         <div className="field"><label htmlFor="np-price">Price (Rs)</label><input id="np-price" type="number" min="1" step="1" inputMode="numeric" className="mini num" value={adding.price} onChange={(e) => setAdding({ ...adding, price: e.target.value })} required /></div>
         <div className="field"><label htmlFor="np-stock">Stock</label><input id="np-stock" type="number" min="0" step="1" inputMode="numeric" className="mini num" value={adding.stock} onChange={(e) => setAdding({ ...adding, stock: e.target.value })} placeholder="any" /></div>
-        <div className="field"><button className="btn"><Plus aria-hidden /> Add</button></div>
+        <div className="field"><button className="btn ghost"><Plus aria-hidden /> Add</button></div>
         <div className="field"><label className="btn ghost m0"><FileUp aria-hidden /> Import CSV<input type="file" accept=".csv,text/csv" className="sr-only" onChange={(e) => e.target.files?.[0] && importCsv(e.target.files[0])} /></label></div>
       </form>
       {products === null ? <div className="skeleton" style={{ height: 80 }} /> : products.length === 0 ? <p className="hint">No products yet.</p> : (
@@ -309,7 +309,7 @@ function PaymentPanel({ s, onChange }: { s: Settings; onChange: () => Promise<vo
 
   return (
     <>
-      <div className="setting-row" style={{ marginBottom: 18 }}>
+      <div className="setting-row mb-2">
         <div><div className="t">Cash on delivery</div><div className="d">Buyers pay the rider. The bot confirms the order at once.</div></div>
         <label className="switch"><input type="checkbox" aria-label="Cash on delivery" checked={cod} disabled={busy === 'cod'} onChange={(e) => toggleCod(e.target.checked)} /><span className="track" /></label>
       </div>
@@ -322,7 +322,7 @@ function PaymentPanel({ s, onChange }: { s: Settings; onChange: () => Promise<vo
             <tbody>
               {s.bankAccounts.map((b) => (
                 <tr key={b.id}>
-                  <td className="strong">{b.bank_name} {b.is_default && <span className="pill brand" style={{ marginLeft: 6 }}>Default</span>}</td>
+                  <td className="strong">{b.bank_name} {b.is_default && <span className="pill brand ml-1">Default</span>}</td>
                   <td>{b.account_title}</td>
                   <td className="mono">{b.account_number}</td>
                   <td className="num"><button type="button" className="btn subtle icon-btn sm" onClick={() => delBank(b.id)} disabled={busy === b.id} aria-label={`Remove ${b.bank_name} account`}><Trash2 aria-hidden /></button></td>
@@ -333,10 +333,10 @@ function PaymentPanel({ s, onChange }: { s: Settings; onChange: () => Promise<vo
         </div>
       )}
       <form onSubmit={addBank} className="form-row" style={{ marginBottom: 22 }}>
-        <div className="field" style={{ flex: '1 1 160px' }}><label htmlFor="b-name">Bank name</label><input id="b-name" placeholder="e.g. Meezan Bank" value={bank.bank_name} onChange={(e) => setBank({ ...bank, bank_name: e.target.value })} /></div>
-        <div className="field" style={{ flex: '1 1 160px' }}><label htmlFor="b-title">Account title</label><input id="b-title" value={bank.account_title} onChange={(e) => setBank({ ...bank, account_title: e.target.value })} /></div>
+        <div className="field grow-sm"><label htmlFor="b-name">Bank name</label><input id="b-name" placeholder="e.g. Meezan Bank" value={bank.bank_name} onChange={(e) => setBank({ ...bank, bank_name: e.target.value })} /></div>
+        <div className="field grow-sm"><label htmlFor="b-title">Account title</label><input id="b-title" value={bank.account_title} onChange={(e) => setBank({ ...bank, account_title: e.target.value })} /></div>
         <div className="field" style={{ flex: '1 1 180px' }}><label htmlFor="b-num">Account number / IBAN</label><input id="b-num" className="mono" value={bank.account_number} onChange={(e) => setBank({ ...bank, account_number: e.target.value })} /></div>
-        <div className="field"><button className="btn" disabled={!bank.bank_name || !bank.account_number || busy === 'bank'}><Plus aria-hidden /> Add account</button></div>
+        <div className="field"><button className="btn ghost" disabled={!bank.bank_name || !bank.account_number || busy === 'bank'}><Plus aria-hidden /> Add account</button></div>
       </form>
 
       <form onSubmit={saveNote}>
@@ -421,7 +421,7 @@ function TestOrderPanel({ ok, phone }: { ok: boolean; phone: string | null }) {
         <li>Ask for a product, haggle if you like, give an address and choose how to pay.</li>
         <li>When the order is placed, this step turns green.</li>
       </ol>
-      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+      <div className="row gap-1">
         {wa?.displayPhone && <a className="btn ghost" href={`https://wa.me/${wa.displayPhone}?text=hi`} target="_blank" rel="noreferrer"><Smartphone aria-hidden /> Open WhatsApp</a>}
         <button type="button" className="btn ghost" onClick={sendTest} disabled={busy || wa?.status !== 'connected'}><Send aria-hidden /> {busy ? 'Sending…' : 'Send test message'}</button>
       </div>
