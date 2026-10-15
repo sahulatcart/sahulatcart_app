@@ -2,6 +2,24 @@
 
 A running, reverse-chronological log of work on this project: what changed, why, and what was left open.
 
+## 2026-10-15 — Catalog: "Add product" asks for the details first
+
+Branch `feat/catalog-add-dialog`, from `main` at `e49ce21` (after #52). Uzair's request: the quick
+form created the product with name, price and stock only, and the description lived on the product
+page, which a merchant found only by clicking the product afterwards. Portal only; the backend is
+untouched (the create route already accepted every field the dialog sends).
+
+**What changed.** The quick form's "Add product" now opens a dialog (`Dialog`, not a new page)
+with the description, an optional SKU, the negotiable switch and, when it is on, max % off and min
+price; its own "Add product" creates the product in the one POST. The toast offers "Add photos",
+which opens the new product's page, because photos and attributes need the product to exist (the
+upload route takes its id). Cancel or Esc keeps the typed name, price and stock in the form.
+
+**Hassles.** None. One file, 42 lines.
+
+**Not done, on purpose.** Attributes are not in the dialog: the create route does not insert them
+(only PATCH does), and the row editor is the product page's. The dialog says where they live.
+
 ## 2026-10-15 — Merchant UI pass, PR 3 of 3: the pages
 
 Branch `feat/merchant-ui-pages`, from `main` at `2373351` (after #51). The last of the three:
