@@ -85,7 +85,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/admin/dashboard', async (req, reply) => {
     const mid = req.merchantCtx!.merchantId;
     const since = startOfTodayKarachi(); // "today" is the merchant's day, not UTC's (P5)
-    const [ordersToday, pending, recent, activeChats, toPrepare, toDispatch] = await Promise.all([
+    const [ordersToday, pending, recent, activeChats, toPrepare, toDispatch, qPayments, qChats, qFulfil] = await Promise.all([
       db.from('orders').select('total', { count: 'exact' }).eq('merchant_id', mid).gte('created_at', since).not('order_number', 'is', null),
       db.from('orders').select('id', { count: 'exact', head: true }).eq('merchant_id', mid).eq('payment_status', 'claimed'),
       db.from('orders').select('id, order_number, status, payment_method, payment_status, total, delivery_name, created_at').eq('merchant_id', mid).not('order_number', 'is', null).order('created_at', { ascending: false }).limit(10),
@@ -93,8 +93,13 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       // P4 "to do" counts: placed and paid-or-COD orders nobody has started on, and prepared ones not yet sent.
       db.from('orders').select('id', { count: 'exact', head: true }).eq('merchant_id', mid).in('status', ['confirmed', 'paid']),
       db.from('orders').select('id', { count: 'exact', head: true }).eq('merchant_id', mid).eq('status', 'preparing'),
+      // The "needs you" queue (UI pass 2): the oldest five of each, so the merchant clears what has waited longest.
+      db.from('orders').select('id, order_number, total, delivery_name, created_at').eq('merchant_id', mid).eq('payment_status', 'claimed').order('created_at', { ascending: true }).limit(5),
+      db.from('conversations').select('id, last_message_at, unread_count, customers(name, wa_id)').eq('merchant_id', mid).eq('status', 'human_takeover').gt('unread_count', 0).order('last_message_at', { ascending: true }).limit(5),
+      db.from('orders').select('id, order_number, status, total, delivery_name, created_at').eq('merchant_id', mid).in('status', ['confirmed', 'paid', 'preparing']).order('created_at', { ascending: true }).limit(5),
     ]);
     return reply.send({
+      queue: { payments: qPayments.data ?? [], chats: qChats.data ?? [], fulfil: qFulfil.data ?? [] },
       ordersToday: ordersToday.count ?? 0,
       revenueToday: (ordersToday.data ?? []).reduce((s, o) => s + (o.total ?? 0), 0),
       pendingPayments: pending.count ?? 0,

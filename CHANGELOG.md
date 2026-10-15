@@ -2,6 +2,39 @@
 
 A running, reverse-chronological log of work on this project: what changed, why, and what was left open.
 
+## 2026-10-15 — Merchant UI pass, PR 2 of 3: the dashboard answers "what needs me?"
+
+Branch `feat/merchant-dashboard-triage`, from `main` at `97c6c5a` (after #50). The dashboard
+opened with six equal tiles, three of them counts of things waiting on the merchant, and no way to
+act on any of them without a trip through Orders or the Inbox. Like the console after its critique,
+it now leads with the queue. Backend route test added; suite 46 files / 522 tests.
+
+**What changed.**
+- `GET /api/v1/admin/dashboard` returns `queue: { payments, chats, fulfil }`: the oldest five
+  orders with a claimed payment, the oldest five chats in human takeover with unread messages, and
+  the oldest five orders in confirmed/paid/preparing. Three more queries on the same request;
+  the counts it already returned are unchanged. `routes/admin.test.ts` covers membership, order
+  and tenant isolation.
+- The page opens with a **Needs you** card: each group has its full count, a link to the page
+  that lists them all, and one action per row: "Review payment" (the screenshot has to be seen, so
+  it links to the order), "Reply" (opens that chat), "Start preparing" (acts in place, since it
+  needs no input) and "Dispatch" (links, since it needs a courier). Empty, it says so in one line.
+- `/inbox?c=<conversation id>` opens that chat; the page reads it once on mount from
+  `window.location` rather than `useSearchParams`, which needs a Suspense boundary at build.
+- The three "to do" tiles are gone from the stats row (the queue replaced them); "Active chats"
+  became "Chats the bot is handling", which is what the count is.
+- CSS: `.feed` (a list reset) and `.queue-head` for the group headings; the rows reuse Fazal's
+  `.feed-item` / `.feed-actions` from the console inbox.
+
+**Hassles.** The new fixtures broke an earlier test in the same file that asserts the *whole*
+order list for shop A, so they moved into a `beforeAll` inside the queue's own `describe`, which
+runs after those tests. The browser pane's screenshots timed out for the whole session (the page
+rendered; the window was likely behind another), so the page was verified from its text and the
+clicks' results, not pictures.
+
+**Not done, on purpose.** Paid buyer notices (`pending_buyer_notice`) are not in the queue; the
+order page shows them, and they are rare until templates are approved.
+
 ## 2026-10-15 — Merchant UI pass, PR 1 of 3: foundations
 
 Branch `feat/merchant-ui-foundations`, from `main` at `742667f` (after #49). Uzair asked for the

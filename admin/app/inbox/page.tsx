@@ -26,6 +26,8 @@ export default function Inbox() {
   const loadConvos = useCallback(() => { apiJson<{ conversations: Convo[] }>('/api/v1/admin/conversations').then((r) => setConvos(r.conversations)).catch(() => {}); }, []);
   const loadDetail = useCallback((id: string) => { apiJson<Detail>(`/api/v1/admin/conversations/${id}`).then(setDetail).catch(() => {}); }, []);
   useEffect(() => { loadConvos(); const t = setInterval(loadConvos, 5000); return () => clearInterval(t); }, [loadConvos]);
+  // A link from the dashboard queue opens its chat. Read once on mount; useSearchParams would need a Suspense boundary.
+  useEffect(() => { const c = new URLSearchParams(window.location.search).get('c'); if (c) { setDetail(null); setSel(c); } }, []);
   useEffect(() => { if (!sel) return; loadDetail(sel); const t = setInterval(() => loadDetail(sel), 4000); return () => clearInterval(t); }, [sel, loadDetail]);
   // Scroll the messages container itself (NOT scrollIntoView, which would scroll the whole page).
   useEffect(() => { if (msgRef.current) msgRef.current.scrollTop = msgRef.current.scrollHeight; }, [detail?.messages.length, sel]);
