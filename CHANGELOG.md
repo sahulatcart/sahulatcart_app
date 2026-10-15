@@ -1,6 +1,39 @@
 # Changelog
 
 A running, reverse-chronological log of work on this project: what changed, why, and what was left open.
+
+## 2026-10-15 — Merchant UI pass, PR 1 of 3: foundations
+
+Branch `feat/merchant-ui-foundations`, from `main` at `742667f` (after #49). Uzair asked for the
+merchant dashboard to reach the standard of the console critique (#49), starting with the sidebar
+foot, whose "Switch to console" link wrapped onto three lines beside "Log out" and the theme toggle.
+Portal only; the backend is untouched, so the test count stays at 46 files / 521 tests.
+
+**What changed.**
+- The sidebar foot stacks: the switch link on its own row, log out and the theme toggle on the
+  row beneath (`.foot-row`), in both shells. The old `flex: 1` on every `.nav-link` was the cause.
+- Every merchant section names the browser tab ("Inbox · Sahulatcart") through a `layout.tsx`
+  beside its page, as the console does. The dashboard keeps the root title.
+- `ConfirmDialog` in `components/Dialog.tsx` (one question, one button over Fazal's `Dialog`)
+  replaces `window.confirm` for cancel order, delete product and block customer, and now also
+  guards reject payment (with an optional reason, where "screenshot not valid" was hardcoded) and
+  bank-account removal, which had no confirmation at all. Block/unblock gets an Undo toast.
+- `phone()`, `ago()` and `day()` moved from `ConsoleParts.tsx` to `lib/format.ts` and are
+  re-exported there, so the console's imports did not move. The inbox shows "+92 300 1234567" and
+  "4 min ago" instead of a raw `wa_id` and nothing; notifications show relative times.
+- Eleven spacing and layout utilities in globals.css (`.m0 .mb-0 .mb-1 .mb-2 .mt-1 .mt-2 .nowrap
+  .no-wrap-row .fill .block .w-full`, on the 8 px grid) replaced 80 of the 316 inline `style={{}}`
+  attributes across the merchant pages. The remaining 239 are one-offs (skeleton heights, progress
+  bars, grid templates); PR 3 takes the ones its page redesigns touch.
+
+**Hassles.** The style sweep was a script matching exact `style={{ marginTop: 8 }}` strings and
+merging the class into an existing `className="…"` on the same tag; it left a stray space before
+`>` on 80 tags, fixed with one sed. `node` on Windows refuses a bare `C:/…` path in an `import`,
+it needs `file:///C:/…`. `git grep` confirmed no original line contained the `" >` sequence
+before the sed touched them. The before/after screenshots came from a throwaway mock backend in
+the session scratchpad (per CLAUDE.md's recipe; still not committed).
+
+**Not done, on purpose.** Removing a bulk tier is an unsaved form edit, so it got no dialog.
 Read this before starting new work. Append a dated entry after any meaningful chunk of work.
 
 Entries for 2026-07 and earlier were reconstructed from git history and commit messages.

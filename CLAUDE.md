@@ -524,6 +524,10 @@ discriminated union of ~20 reply kinds) and only phrases it.
   redirects to `/login` on 401, and holds the formatters `rs()` (paisa → `Rs N`) and `dt()` (timestamps
   in `Asia/Karachi`). `apiJson()` **rejects** on an error status; for `api()` calls, show failures with
   `toast(await apiError(r), 'error')` — never toast "Saved" without checking `r.ok`.
+- **Consequential writes ask through `ConfirmDialog`** (`components/Dialog.tsx`, since 2026-10-15), never
+  `window.confirm`; a reversible one (block/unblock) gets an Undo toast. Each merchant section has a
+  `layout.tsx` that names the browser tab. Display helpers (`phone`, `ago`, `day`) live in
+  `admin/lib/format.ts`; spacing utilities (`.m0 .mb-1 .mt-2 …`) in globals.css replace inline margins.
 - **Portal UI** is plain CSS in [admin/app/globals.css](admin/app/globals.css): semantic tokens
   (`--ink`, `--muted`, `--brand`, `--success`…) mapped onto the brand tokens, so components never use
   raw hex. Shared pieces live in [components/AppShell.tsx](admin/components/AppShell.tsx): `PageHead`,
