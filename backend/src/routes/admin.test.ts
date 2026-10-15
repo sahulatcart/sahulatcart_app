@@ -165,3 +165,38 @@ describe('admin-token lockout is per IP (FR-P6.4)', () => {
     _resetAdminTokenFails();
   });
 });
+
+describe('dashboard queue (UI pass 2)', () => {
+  // Added here, after the list tests above, which assert whole lists for shop A.
+  beforeAll(() => {
+    // Dashboard queue fixtures: one of each kind for MA, oldest first, and one of each for MB that must not leak.
+    fake.add('customers', { id: 'cq-1', merchant_id: 'MA', name: 'Ahmed', wa_id: '923001234567' });
+    fake.add('conversations', { id: 'cq-wait', merchant_id: 'MA', customer_id: 'cq-1', status: 'human_takeover', unread_count: 2, last_message_at: '2026-10-15T05:00:00Z' });
+    fake.add('conversations', { id: 'cq-read', merchant_id: 'MA', customer_id: 'cq-1', status: 'human_takeover', unread_count: 0, last_message_at: '2026-10-15T06:00:00Z' });
+    fake.add('conversations', { id: 'cq-bot', merchant_id: 'MA', customer_id: 'cq-1', status: 'bot_active', unread_count: 3, last_message_at: '2026-10-15T07:00:00Z' });
+    fake.add('conversations', { id: 'cq-other', merchant_id: 'MB', customer_id: 'cq-1', status: 'human_takeover', unread_count: 1, last_message_at: '2026-10-15T04:00:00Z' });
+    fake.add('orders', { id: 'oq-claimed', merchant_id: 'MA', order_number: 'SK-1', status: 'awaiting_payment', payment_status: 'claimed', total: 1000, delivery_name: 'A', created_at: '2026-10-15T03:00:00Z' });
+    fake.add('orders', { id: 'oq-new', merchant_id: 'MA', order_number: 'SK-2', status: 'confirmed', payment_status: 'cod_pending', total: 2000, delivery_name: 'B', created_at: '2026-10-15T02:00:00Z' });
+    fake.add('orders', { id: 'oq-prep', merchant_id: 'MA', order_number: 'SK-3', status: 'preparing', payment_status: 'cod_pending', total: 3000, delivery_name: 'C', created_at: '2026-10-15T01:00:00Z' });
+    fake.add('orders', { id: 'oq-done', merchant_id: 'MA', order_number: 'SK-4', status: 'delivered', payment_status: 'cod_collected', total: 4000, delivery_name: 'D', created_at: '2026-10-15T00:00:00Z' });
+    fake.add('orders', { id: 'oq-other', merchant_id: 'MB', order_number: 'SK-9', status: 'confirmed', payment_status: 'claimed', total: 9000, delivery_name: 'Z', created_at: '2026-10-15T00:00:00Z' });
+  });
+  it('lists what needs the owner, oldest first, and only their own shop', async () => {
+    const r = await app.inject({ method: 'GET', url: '/api/v1/admin/dashboard', headers: A });
+    expect(r.statusCode).toBe(200);
+    const q = r.json().queue as { payments: { id: string }[]; chats: { id: string; customers: { wa_id: string } }[]; fulfil: { id: string }[] };
+    // Earlier tests in this file create and settle their own orders and chats, so assert membership and order, not whole lists.
+    expect(q.payments.map((o) => o.id)).toContain('oq-claimed');
+    expect(q.payments.map((o) => o.id)).not.toContain('oq-other');
+    expect(q.chats.map((c) => c.id)).toContain('cq-wait');
+    expect(q.chats.map((c) => c.id)).not.toContain('cq-read'); // nothing unread: not waiting on anyone
+    expect(q.chats.map((c) => c.id)).not.toContain('cq-bot'); // the bot is handling it
+    expect(q.chats.map((c) => c.id)).not.toContain('cq-other');
+    expect(q.chats.find((c) => c.id === 'cq-wait')!.customers.wa_id).toBe('923001234567');
+    const f = q.fulfil.map((o) => o.id);
+    expect(f.indexOf('oq-prep')).toBeGreaterThanOrEqual(0);
+    expect(f.indexOf('oq-prep')).toBeLessThan(f.indexOf('oq-new')); // oldest first
+    expect(f).not.toContain('oq-done');
+    expect(f).not.toContain('oq-other');
+  });
+});

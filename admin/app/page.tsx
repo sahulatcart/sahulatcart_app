@@ -1,27 +1,35 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, ArrowRight, Bell, Clock, Gauge, MessageSquare, Package, ShoppingBag, Sparkles, Truck, Wallet } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Bell, CheckCircle2, Clock, Gauge, MessageSquare, MessagesSquare, Package, ShoppingBag, Sparkles, Truck, Wallet } from 'lucide-react';
 import AppShell, { EmptyState, PageHead, PaymentPill, StatusPill } from '../components/AppShell';
-import { apiJson, rs } from '../lib/api';
+import { api, apiError, apiJson, rs } from '../lib/api';
+import { ago, phone } from '../lib/format';
 import { enablePush, pushState } from '../lib/push';
 import { useToast } from '../components/Toast';
 
 interface Usage { month: string; outbound: number; freeQuota: number; paidOutbound: number; ratePaisa: number; estimatedCostPaisa: number; afterQuota: 'continue' | 'handoff'; llmCallsToday: number; llmDailyCap: number }
+interface QOrder { id: string; order_number: string; status?: string; total: number; delivery_name: string | null; created_at: string }
+interface QChat { id: string; last_message_at: string; unread_count: number; customers: { name: string | null; wa_id: string } | null }
 interface Dash {
   ordersToday: number; revenueToday: number; pendingPayments: number; activeChats: number; toPrepare: number; toDispatch: number;
   recentOrders: { id: string; order_number: string; status: string; payment_status: string; total: number; delivery_name: string }[];
+  // UI pass 2: the oldest five of each thing that waits on the merchant.
+  queue: { payments: QOrder[]; chats: QChat[]; fulfil: QOrder[] };
 }
 
 export default function Dashboard() {
+  const toast = useToast();
   const [d, setD] = useState<Dash | null>(null);
   // FR-P2.4: the card shows until every readiness check passes AND the bot is on; it links to the first open step.
   const [setup, setSetup] = useState<{ done: number; next: string | null; ready: boolean; botOn: boolean } | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
   // P7: an unpaid invoice or a used-up allowance puts the bot in hand-over mode; say so here, with the way out.
   const [billing, setBilling] = useState<{ mode: string; reason: string | null } | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const load = useCallback(() => { apiJson<Dash>('/api/v1/admin/dashboard').then(setD).catch(() => {}); }, []);
   useEffect(() => {
-    apiJson<Dash>('/api/v1/admin/dashboard').then(setD).catch(() => {});
+    load();
     apiJson<{ mode: string; reason: string | null }>('/api/v1/admin/billing').then(setBilling).catch(() => {});
     apiJson<Usage>('/api/v1/admin/usage').then(setUsage).catch(() => {});
     Promise.all([
@@ -31,15 +39,27 @@ export default function Dashboard() {
       const botOn = me.merchant?.settings?.botEnabled !== false; // missing means on, as the backend reads it (review P2-12)
       setSetup(r.ready && botOn ? null : { done: 7 - r.failing.length, next: r.failing[0] ?? null, ready: r.ready, botOn });
     }).catch(() => {});
-  }, []);
+  }, [load]);
 
-  const stat = (k: string, v: React.ReactNode, Icon: typeof ShoppingBag, warn = false) => (
-    <div className={`stat ${warn ? 'warn' : ''}`}>
+  // Act in place for the one step that needs no further input; dispatch needs a courier, so it links to the order.
+  async function startPreparing(o: QOrder) {
+    setBusy(o.id);
+    const r = await api(`/api/v1/admin/orders/${o.id}/preparing`, { method: 'POST' });
+    setBusy(null);
+    if (r.ok) toast(`${o.order_number} is being prepared`, 'success'); else toast(await apiError(r), 'error');
+    load();
+  }
+
+  const stat = (k: string, v: React.ReactNode, Icon: typeof ShoppingBag) => (
+    <div className="stat">
       <div className="ico"><Icon aria-hidden /></div>
       <div className="k">{k}</div>
-      <div className="v">{d ? v : <span className="skeleton" style={{ display: 'block', height: 32, width: 90 }} />}</div>
+      <div className="v">{d ? v : <span className="skeleton block" style={{ height: 32, width: 90 }} />}</div>
     </div>
   );
+
+  const q = d?.queue;
+  const waiting = q ? q.payments.length + q.chats.length + q.fulfil.length : 0;
 
   return (
     <AppShell>
@@ -71,22 +91,74 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="stats">
+      {/* The morning question first: what is waiting on me? Oldest first, acted on from here. */}
+      <section className="card" aria-labelledby="needs-you">
+        <div className="card-head">
+          <div><h2 id="needs-you">Needs you</h2><div className="desc">What the bot cannot finish on its own, oldest first. Everything else it handles.</div></div>
+        </div>
+        {!d && <div className="pad"><div className="skeleton" style={{ height: 18 }} /></div>}
+        {d && waiting === 0 && <EmptyState icon={CheckCircle2} title="Nothing is waiting on you" hint="New payments, chats and orders will appear here the moment they need a decision." />}
+        {q && q.payments.length > 0 && (
+          <QueueGroup title="Payments to verify" count={d!.pendingPayments} href="/orders" all="All orders">
+            {q.payments.map((o) => (
+              <li key={o.id} className="feed-item">
+                <span className="ico warning"><Clock aria-hidden /></span>
+                <div className="fill">
+                  <div className="t"><span className="mono">{o.order_number}</span> · {rs(o.total)}</div>
+                  <div className="b">{o.delivery_name || 'No name'} · screenshot sent, placed {ago(o.created_at)}</div>
+                </div>
+                <div className="feed-actions"><Link href={`/orders/${o.id}`} className="btn sm">Review payment</Link></div>
+              </li>
+            ))}
+          </QueueGroup>
+        )}
+        {q && q.chats.length > 0 && (
+          <QueueGroup title="Chats waiting for your reply" count={q.chats.length} href="/inbox" all="Open inbox">
+            {q.chats.map((c) => (
+              <li key={c.id} className="feed-item">
+                <span className="ico brand"><MessagesSquare aria-hidden /></span>
+                <div className="fill">
+                  <div className="t">{c.customers?.name || phone(c.customers?.wa_id)}</div>
+                  <div className="b">{c.unread_count} unread · last message {ago(c.last_message_at)}</div>
+                </div>
+                <div className="feed-actions"><Link href={`/inbox?c=${c.id}`} className="btn ghost sm">Reply</Link></div>
+              </li>
+            ))}
+          </QueueGroup>
+        )}
+        {q && q.fulfil.length > 0 && (
+          <QueueGroup title="Orders to prepare and send" count={d!.toPrepare + d!.toDispatch} href="/orders" all="All orders">
+            {q.fulfil.map((o) => (
+              <li key={o.id} className="feed-item">
+                <span className="ico">{o.status === 'preparing' ? <Truck aria-hidden /> : <Package aria-hidden />}</span>
+                <div className="fill">
+                  <div className="t"><span className="mono">{o.order_number}</span> · {rs(o.total)}</div>
+                  <div className="b">{o.delivery_name || 'No name'} · {o.status === 'preparing' ? 'being prepared' : 'placed'} {ago(o.created_at)}</div>
+                </div>
+                <div className="feed-actions">
+                  {o.status === 'preparing'
+                    ? <Link href={`/orders/${o.id}`} className="btn ghost sm">Dispatch</Link>
+                    : <button className="btn ghost sm" disabled={busy === o.id} onClick={() => startPreparing(o)}><Package aria-hidden /> Start preparing</button>}
+                </div>
+              </li>
+            ))}
+          </QueueGroup>
+        )}
+      </section>
+
+      <div className="stats mt-2">
         {stat("Today's orders", d?.ordersToday, ShoppingBag)}
         {stat("Today's revenue", d && rs(d.revenueToday), Wallet)}
-        {stat('Payments to verify', d?.pendingPayments, Clock, !!d?.pendingPayments)}
-        {stat('Active chats', d?.activeChats, MessageSquare)}
-        {stat('To prepare', d?.toPrepare, Package, !!d?.toPrepare)}
-        {stat('To dispatch', d?.toDispatch, Truck, !!d?.toDispatch)}
+        {stat('Chats the bot is handling', d?.activeChats, MessageSquare)}
       </div>
 
       {usage && (() => {
         const pct = Math.min(100, Math.round((usage.outbound / usage.freeQuota) * 100));
         const tone = usage.outbound >= usage.freeQuota ? 'var(--danger)' : pct >= 80 ? 'var(--warning)' : 'var(--brand)';
         return (
-          <div className="card pad" style={{ marginTop: 24 }}>
-            <div className="row between" style={{ flexWrap: 'wrap', gap: 8 }}>
-              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><Gauge aria-hidden /> Messages this month</h2>
+          <div className="card pad mt-2">
+            <div className="row between">
+              <h2 className="m0 row"><Gauge aria-hidden /> Messages this month</h2>
               <Link href="/settings#messages" className="link" style={{ fontSize: 13 }}>What happens after 1,000 <ArrowRight size={14} aria-hidden /></Link>
             </div>
             <div style={{ fontSize: 22, fontWeight: 600, marginTop: 10 }}>{usage.outbound.toLocaleString('en-PK')} <span className="muted" style={{ fontSize: 14, fontWeight: 400 }}>of {usage.freeQuota.toLocaleString('en-PK')} free</span></div>
@@ -104,7 +176,7 @@ export default function Dashboard() {
         );
       })()}
 
-      <div className="card" style={{ marginTop: 24 }}>
+      <div className="card mt-2">
         <div className="card-head">
           <div><h2>Recent orders</h2><div className="desc">The latest orders placed through the bot</div></div>
           <Link href="/orders" className="btn ghost sm">View all <ArrowRight aria-hidden /></Link>
@@ -132,6 +204,19 @@ export default function Dashboard() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+/** One group of the queue: a heading with the full count, a link to the page that lists them all, the oldest five. */
+function QueueGroup({ title, count, href, all, children }: { title: string; count: number; href: string; all: string; children: React.ReactNode }) {
+  return (
+    <section aria-label={title}>
+      <div className="queue-head">
+        <h3>{title} <span className="n">{count}</span></h3>
+        <Link href={href} className="link">{all} <ArrowRight size={14} aria-hidden /></Link>
+      </div>
+      <ul className="feed">{children}</ul>
+    </section>
   );
 }
 

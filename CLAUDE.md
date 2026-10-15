@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **46 files, 521 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **46 files, 522 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -524,6 +524,9 @@ discriminated union of ~20 reply kinds) and only phrases it.
   redirects to `/login` on 401, and holds the formatters `rs()` (paisa → `Rs N`) and `dt()` (timestamps
   in `Asia/Karachi`). `apiJson()` **rejects** on an error status; for `api()` calls, show failures with
   `toast(await apiError(r), 'error')` — never toast "Saved" without checking `r.ok`.
+- **The dashboard leads with the queue** (since 2026-10-15): `GET /admin/dashboard` returns
+  `queue.{payments,chats,fulfil}`, the oldest five of each thing waiting on the merchant, and the
+  page acts on them in place where no input is needed. `/inbox?c=<id>` opens a chat.
 - **Consequential writes ask through `ConfirmDialog`** (`components/Dialog.tsx`, since 2026-10-15), never
   `window.confirm`; a reversible one (block/unblock) gets an Undo toast. Each merchant section has a
   `layout.tsx` that names the browser tab. Display helpers (`phone`, `ago`, `day`) live in
