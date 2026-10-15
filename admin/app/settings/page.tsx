@@ -149,7 +149,7 @@ export default function SettingsPage() {
         <div className="card-head" style={{ borderBottom: '1px solid var(--border)' }}>
           <div className="setting-row w-full">
             <div>
-              <div className="t">WhatsApp bot <span className={`pill ${botOn ? 'success' : 'neutral'}`} style={{ marginLeft: 6 }}><span className="dot" aria-hidden />{botOn ? 'Active' : 'Paused'}</span></div>
+              <div className="t">WhatsApp bot <span className={`pill ${botOn ? 'success' : 'neutral'} ml-1`}><span className="dot" aria-hidden />{botOn ? 'Active' : 'Paused'}</span></div>
               <div className="d">
                 {botOn ? 'Replying to customers on WhatsApp' : notReady
                   ? <>Paused — finish setup first: {s.readiness?.steps[s.readiness.failing[0]!]?.reason}. <Link href={`/onboarding?step=${s.readiness?.failing[0]}`} className="link">Continue setup</Link></>
@@ -161,7 +161,7 @@ export default function SettingsPage() {
         </div>
         <div className="card-head" style={{ borderBottom: '1px solid var(--border)', display: 'block' }}>
           <div className="form-row">
-            <div className="field" style={{ flex: '1 1 160px' }}><label htmlFor="bot-name">Bot name</label><input id="bot-name" maxLength={40} placeholder="e.g. Sana" value={persona.name} onChange={(e) => setPersona({ ...persona, name: e.target.value })} /></div>
+            <div className="field grow-sm"><label htmlFor="bot-name">Bot name</label><input id="bot-name" maxLength={40} placeholder="e.g. Sana" value={persona.name} onChange={(e) => setPersona({ ...persona, name: e.target.value })} /></div>
             <div className="field" style={{ flex: '3 1 260px' }}><label htmlFor="bot-greet">Greeting</label><input id="bot-greet" maxLength={200} placeholder="Assalam-o-Alaikum! Ali Garments mein khush aamdeed." value={persona.greeting} onChange={(e) => setPersona({ ...persona, greeting: e.target.value })} /></div>
             <button className="btn" onClick={savePersona} disabled={persona.name === (s.bot_persona?.name ?? '') && persona.greeting === (s.bot_persona?.greeting ?? '')}><Save aria-hidden /> Save</button>
           </div>
@@ -225,7 +225,7 @@ export default function SettingsPage() {
             <div className="field"><label htmlFor="maxd">Max discount %</label><input id="maxd" type="number" min="0" max="100" value={nd.maxDiscountPct ?? 0} onChange={(e) => setNd({ maxDiscountPct: Number(e.target.value) })} className="mini num" /></div>
             <div className="field"><label htmlFor="rounds">Haggle rounds</label><input id="rounds" type="number" min="1" max="10" value={nd.roundsMax ?? 3} onChange={(e) => setNd({ roundsMax: Number(e.target.value) })} className="mini num" /></div>
             <div className="field"><label htmlFor="stall">When haggling stalls</label>
-              <select id="stall" value={nd.stalemateAction ?? 'handoff'} onChange={(e) => setNd({ stalemateAction: e.target.value as 'handoff' | 'hold_and_close' })} style={{ width: 'auto' }}>
+              <select id="stall" value={nd.stalemateAction ?? 'handoff'} onChange={(e) => setNd({ stalemateAction: e.target.value as 'handoff' | 'hold_and_close' })} className="w-auto">
                 <option value="handoff">Hand the chat to me</option>
                 <option value="hold_and_close">Bot holds at its last price</option>
               </select>
@@ -235,7 +235,7 @@ export default function SettingsPage() {
           <div className="divider" />
           <h3>Bulk discounts</h3>
           <p className="hint" style={{ margin: '2px 0 12px' }}>Extra % off, on top of the max discount, when a buyer takes at least this many pieces. Min price still applies.</p>
-          <div style={{ display: 'grid', gap: 8 }}>
+          <div className="grid-1">
             {tiers.map((t, i) => (
               <div className="row" key={i}>
                 <input aria-label={`Tier ${i + 1} minimum pieces`} type="number" min="2" className="xs num" value={t.minQty} onChange={(e) => setTier(i, { minQty: Number(e.target.value) })} />
@@ -245,7 +245,7 @@ export default function SettingsPage() {
                 <button className="btn subtle icon-btn" onClick={() => setNd({ bulkTiers: tiers.filter((_, j) => j !== i) })} aria-label={`Remove tier ${i + 1}`}><Trash2 /></button>
               </div>
             ))}
-            <button className="btn ghost sm" style={{ justifySelf: 'start' }} onClick={() => setNd({ bulkTiers: [...tiers, { minQty: 10, extraDiscountPct: 5 }] })}><Plus aria-hidden /> Add bulk tier</button>
+            <button className="btn ghost sm js-start" onClick={() => setNd({ bulkTiers: [...tiers, { minQty: 10, extraDiscountPct: 5 }] })}><Plus aria-hidden /> Add bulk tier</button>
           </div>
         </div>
         <div className="card-foot"><button className="btn" onClick={saveNeg}><Save aria-hidden /> Save negotiation rules</button></div>
@@ -253,7 +253,7 @@ export default function SettingsPage() {
 
       <div className="eyebrow">Knowledgebase</div>
       <div className="card">
-        <div className="card-head"><div><h2>Dukaan ki maloomat <span className="pill brand" style={{ marginLeft: 6 }}>Bot knowledgebase</span></h2><div className="desc">Customer &ldquo;delivery kitne din?&rdquo; ya &ldquo;return policy?&rdquo; pooche to bot YAHIN se jawab dega. Jo yahan nahi likha, bot kabhi khud se nahi banayega — keh dega &ldquo;malik se pooch kar batata hoon&rdquo;.</div></div></div>
+        <div className="card-head"><div><h2>Dukaan ki maloomat <span className="pill brand ml-1">Bot knowledgebase</span></h2><div className="desc">Customer &ldquo;delivery kitne din?&rdquo; ya &ldquo;return policy?&rdquo; pooche to bot YAHIN se jawab dega. Jo yahan nahi likha, bot kabhi khud se nahi banayega — keh dega &ldquo;malik se pooch kar batata hoon&rdquo;.</div></div></div>
         <div style={{ padding: '18px 22px' }}>
           <div className="grid-2">
             <div className="field m0"><label htmlFor="kb-delivery">Delivery (waqt, charges, areas)</label><textarea id="kb-delivery" rows={2} value={kb.delivery ?? ''} onChange={(e) => setKb({ delivery: e.target.value })} placeholder="Lahore mein 1-2 din, baqi shehr 3-4 din. Rs 200 delivery." /></div>
@@ -272,7 +272,7 @@ export default function SettingsPage() {
                 <button className="btn subtle icon-btn" onClick={() => setKb({ faqs: faqs.filter((_, j) => j !== i) })} aria-label={`Remove FAQ ${i + 1}`}><Trash2 /></button>
               </div>
             ))}
-            <button className="btn ghost sm" style={{ justifySelf: 'start' }} onClick={() => setKb({ faqs: [...faqs, { q: '', a: '' }] })}><Plus aria-hidden /> Add FAQ</button>
+            <button className="btn ghost sm js-start" onClick={() => setKb({ faqs: [...faqs, { q: '', a: '' }] })}><Plus aria-hidden /> Add FAQ</button>
           </div>
         </div>
         <div className="card-foot"><button className="btn" onClick={saveKb}><Save aria-hidden /> Save knowledgebase</button></div>
@@ -305,7 +305,7 @@ export default function SettingsPage() {
               <tbody>
                 {s.bankAccounts.map((b) => (
                   <tr key={b.id}>
-                    <td className="strong">{b.bank_name} {b.is_default && <span className="pill brand" style={{ marginLeft: 6 }}>Default</span>}</td>
+                    <td className="strong">{b.bank_name} {b.is_default && <span className="pill brand ml-1">Default</span>}</td>
                     <td>{b.account_title}</td>
                     <td className="mono">{b.account_number}</td>
                     <td className="num"><button className="btn subtle icon-btn sm" onClick={() => setDelBankId(b.id)} aria-label={`Remove ${b.bank_name} account`}><Trash2 /></button></td>
@@ -316,10 +316,10 @@ export default function SettingsPage() {
           </div>
         )}
         <div className="card-foot">
-          <div className="field" style={{ margin: 0, flex: '1 1 160px' }}><label htmlFor="b-name">Bank name</label><input id="b-name" placeholder="e.g. Meezan Bank" value={bank.bank_name} onChange={(e) => setBank({ ...bank, bank_name: e.target.value })} /></div>
-          <div className="field" style={{ margin: 0, flex: '1 1 160px' }}><label htmlFor="b-title">Account title</label><input id="b-title" value={bank.account_title} onChange={(e) => setBank({ ...bank, account_title: e.target.value })} /></div>
+          <div className="field m0 grow-sm"><label htmlFor="b-name">Bank name</label><input id="b-name" placeholder="e.g. Meezan Bank" value={bank.bank_name} onChange={(e) => setBank({ ...bank, bank_name: e.target.value })} /></div>
+          <div className="field m0 grow-sm"><label htmlFor="b-title">Account title</label><input id="b-title" value={bank.account_title} onChange={(e) => setBank({ ...bank, account_title: e.target.value })} /></div>
           <div className="field" style={{ margin: 0, flex: '1 1 180px' }}><label htmlFor="b-num">Account number / IBAN</label><input id="b-num" className="mono" value={bank.account_number} onChange={(e) => setBank({ ...bank, account_number: e.target.value })} /></div>
-          <button className="btn" onClick={addBank} disabled={!bank.bank_name || !bank.account_number}><Plus aria-hidden /> Add account</button>
+          <button className="btn ghost" onClick={addBank} disabled={!bank.bank_name || !bank.account_number}><Plus aria-hidden /> Add account</button>
         </div>
       </div>
       <ConfirmDialog open={!!delBankId} onClose={() => setDelBankId(null)} onConfirm={() => delBankId && delBank(delBankId)} title="Remove this bank account?" confirmLabel="Remove account" danger>

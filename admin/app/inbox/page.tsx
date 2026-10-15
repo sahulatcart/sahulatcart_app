@@ -139,7 +139,7 @@ export default function Inbox() {
               </div>
 
               {takenOver && !windowClosed && (
-                <div className="notice" style={{ background: 'var(--brand-tint)', color: 'var(--brand-ink)', borderTopColor: 'var(--brand-tint-2)' }}>
+                <div className="notice brand">
                   <Hand aria-hidden /> The bot stays silent in this chat until you click “Hand back”.
                 </div>
               )}
@@ -150,7 +150,7 @@ export default function Inbox() {
               )}
               <form className="composer" onSubmit={(e) => { e.preventDefault(); send(); }}>
                 <label htmlFor="reply" className="sr-only">Reply</label>
-                <input id="reply" style={{ flex: 1 }} placeholder={canType ? 'Type a reply…' : windowClosed ? 'Replies are blocked for now' : 'Take over to reply yourself'} value={text} onChange={(e) => setText(e.target.value)} disabled={!canType} />
+                <input id="reply" className="fill" placeholder={canType ? 'Type a reply…' : windowClosed ? 'Replies are blocked for now' : 'Take over to reply yourself'} value={text} onChange={(e) => setText(e.target.value)} disabled={!canType} />
                 {quotaUsed && canType && <span className="pill warning" title="The free 1,000 messages for this month are used; Meta charges for this one">paid</span>}
                 <button className="btn icon-btn" disabled={!canType || !text.trim() || busy} aria-label={quotaUsed ? 'Send (paid message)' : 'Send'}><Send /></button>
               </form>

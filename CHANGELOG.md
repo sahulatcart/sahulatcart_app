@@ -2,6 +2,39 @@
 
 A running, reverse-chronological log of work on this project: what changed, why, and what was left open.
 
+## 2026-10-15 — Merchant UI pass, PR 3 of 3: the pages
+
+Branch `feat/merchant-ui-pages`, from `main` at `2373351` (after #51). The last of the three:
+the page-by-page pass against the brand guideline (v1.0, "one accent action per screen", off-white
+surfaces, Poppins everywhere but empty-state headlines). Portal only; the backend is untouched
+(46 files / 522 tests).
+
+**What changed.**
+- **One green button per screen.** The adds were competing with the saves: "Add account"
+  (Settings and the onboarding payment step), "Add" (onboarding delivery zone) and the dashboard
+  queue's "Review payment" are ghost now. Each settings card keeps its own Save; the order page
+  keeps Verify and the stage button, which never show together with a second green one.
+- **Second sweep of inline styles**, with the classes it needed: `.grow` / `.grow-sm` (form fields
+  sharing a row), `.row-top`, `.link-ico`, `.inline-ico`, `.grid-1`, `.gap-1`, `.ml-1`, `.mt-3`,
+  `.w-auto`, `.js-start`, `.small`, `.normal`, `.ink-2`, `.pointer`, `.ta-right`. The inbox's
+  takeover notice is `.notice.brand` instead of three inline colours. Merchant pages went from
+  236 inline styles (before PR 1) to 158; what is left is sizes of skeletons and progress bars,
+  chart widths and the like, which belong inline. The auth pages (login, signup, reset, confirmed)
+  were not touched: they are a separate layout and a later pass.
+- Checked, found already right, left alone: the chat bubbles (14 px radius, tails, bot tint vs
+  agent solid), empty states in Kaisei Decol with Poppins everywhere else, `.link` in forest
+  (not teal) on light, and the AA tokens from the console critique, which the merchant pages
+  share.
+
+**Hassles.** The sweep now also merges into `className={\`…\`}` templates, which is what the
+first pass had skipped (the bot pill, the stage filter). Screenshots still time out in the browser
+pane, so every page was checked by its rendered text, console and computed styles against the
+mock backend.
+
+**Not done, on purpose.** No visual redesign of any page: the structure (cards, tables, the
+inbox split) matches the guideline already, and a redesign without screenshots to judge it would
+be guesswork. The pending `/platform` → `/admin` path rename is next, as agreed.
+
 ## 2026-10-15 — Merchant UI pass, PR 2 of 3: the dashboard answers "what needs me?"
 
 Branch `feat/merchant-dashboard-triage`, from `main` at `97c6c5a` (after #50). The dashboard

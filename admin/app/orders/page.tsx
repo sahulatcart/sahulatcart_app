@@ -24,7 +24,7 @@ export default function Orders() {
       <PageHead title="Orders" sub="Every order placed through the bot" action={
         <>
           <label htmlFor="stage-filter" className="sr-only">Filter by stage</label>
-          <select id="stage-filter" value={stage} onChange={(e) => setStage(e.target.value)} style={{ width: 'auto' }}>
+          <select id="stage-filter" value={stage} onChange={(e) => setStage(e.target.value)} className="w-auto">
             <option value="">All stages</option>
             <option value="confirmed">Confirmed</option>
             <option value="awaiting_payment">Awaiting payment</option>
@@ -35,7 +35,7 @@ export default function Orders() {
             <option value="cancelled">Cancelled</option>
           </select>
           <label htmlFor="payment-filter" className="sr-only">Filter by payment</label>
-          <select id="payment-filter" value={payment} onChange={(e) => setPayment(e.target.value)} style={{ width: 'auto' }}>
+          <select id="payment-filter" value={payment} onChange={(e) => setPayment(e.target.value)} className="w-auto">
             <option value="">All payments</option>
             <option value="claimed">Awaiting verification</option>
             <option value="cod_pending">COD pending</option>

@@ -433,6 +433,7 @@ input[type="checkbox"] { width: 18px; height: 18px; min-height: 0; padding: 0; m
 .convo .meta svg { width: 13px; height: 13px; }
 .chat { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .chat-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border-strong); min-height: 60px; }
+@media (max-width: 1100px) { .chat-head { flex-wrap: wrap; } } /* the name and the three buttons do not fit on one line at tablet width */
 .chat-body { flex: 1; min-height: 0; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px; background: var(--bg); }
 .bubble-wrap { max-width: 74%; }
 .bubble-wrap.in { align-self: flex-start; }
@@ -515,6 +516,24 @@ input[type="checkbox"] { width: 18px; height: 18px; min-height: 0; padding: 0; m
 .fill { flex: 1; min-width: 0; }
 .block { display: block; }
 .w-full { width: 100%; }
+.w-auto { width: auto; }
+.mt-3 { margin-top: 24px; }
+.ml-1 { margin-left: 6px; }
+.gap-1 { gap: 8px; }
+.small { font-size: 13px; }
+.normal { font-weight: 400; }
+.ink-2 { color: var(--ink-2); }
+.pointer { cursor: pointer; }
+.ta-right { text-align: right; }
+.js-start { justify-self: start; }
+.grid-1 { display: grid; gap: 8px; }
+.row-top { display: flex; gap: 10px; align-items: flex-start; }
+.link-ico { display: inline-flex; align-items: center; gap: 4px; }
+.inline-ico { vertical-align: -2px; }
+/* Form fields that share a row: grow to fill, wrap below a minimum. */
+.grow { flex: 1 1 220px; }
+.grow-sm { flex: 1 1 160px; }
+.notice.brand { background: var(--brand-tint); color: var(--brand-ink); border-top-color: var(--brand-tint-2); }
 .divider { height: 1px; background: var(--border); margin: 18px 0; }
 .empty { text-align: center; padding: 48px 20px; color: var(--muted); }
 .empty .empty-ico { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; margin: 0 auto 14px; background: var(--brand-tint); color: var(--brand); }
