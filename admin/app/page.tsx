@@ -44,6 +44,7 @@ export default function Dashboard() {
   // Act in place for the one step that needs no further input; dispatch needs a courier, so it links to the order.
   async function startPreparing(o: QOrder) {
     setBusy(o.id);
+    setD((x) => x && { ...x, queue: { ...x.queue, fulfil: x.queue.fulfil.map((f) => (f.id === o.id ? { ...f, status: 'preparing' } : f)) } }); // optimistic
     const r = await api(`/api/v1/admin/orders/${o.id}/preparing`, { method: 'POST' });
     setBusy(null);
     if (r.ok) toast(`${o.order_number} is being prepared`, 'success'); else toast(await apiError(r), 'error');

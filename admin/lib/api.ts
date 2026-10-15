@@ -73,7 +73,19 @@ export async function apiError(r: Response): Promise<string> {
 }
 
 /** Parsed JSON of a successful response. Rejects on an error status, so an error body is never rendered as data. */
-export async function apiJson<T = unknown>(path: string, opts?: RequestInit): Promise<T> {
+export function apiJson<T = unknown>(path: string, opts?: RequestInit): Promise<T> {
+  const method = (opts?.method ?? 'GET').toUpperCase();
+  if (method !== 'GET') return fetchJson<T>(path, opts);
+  // In-flight only: a GET already on the wire is shared, nothing is kept once it lands.
+  let p = inflight.get(path) as Promise<T> | undefined;
+  if (!p) {
+    p = fetchJson<T>(path, opts).finally(() => inflight.delete(path));
+    inflight.set(path, p);
+  }
+  return p;
+}
+const inflight = new Map<string, Promise<unknown>>();
+async function fetchJson<T>(path: string, opts?: RequestInit): Promise<T> {
   const r = await api(path, opts);
   if (!r.ok) throw new Error(await apiError(r));
   return r.json() as Promise<T>;

@@ -106,6 +106,7 @@ export default function SettingsPage() {
   }
   async function delBank(id: string) {
     setDelBankId(null);
+    setS((x) => x && { ...x, bankAccounts: x.bankAccounts.filter((b) => b.id !== id) }); // optimistic
     const r = await api(`/api/v1/admin/bank-accounts/${id}`, { method: 'DELETE' });
     if (!r.ok) toast(await apiError(r), 'error');
     load();
