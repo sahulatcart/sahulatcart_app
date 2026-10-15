@@ -523,7 +523,11 @@ discriminated union of ~20 reply kinds) and only phrases it.
 - [admin/lib/api.ts](admin/lib/api.ts) is the client fetch wrapper: attaches the Supabase token,
   redirects to `/login` on 401, and holds the formatters `rs()` (paisa → `Rs N`) and `dt()` (timestamps
   in `Asia/Karachi`). `apiJson()` **rejects** on an error status; for `api()` calls, show failures with
-  `toast(await apiError(r), 'error')` — never toast "Saved" without checking `r.ok`.
+  `toast(await apiError(r), 'error')` — never toast "Saved" without checking `r.ok`. **A write whose
+  outcome is known updates the page first** (since 2026-10-15): drop the row, flip the status, then
+  send, and reload only if the server says no. A round trip from Pakistan is about half a second,
+  and two of them looked like "nothing happened". `apiJson()` shares concurrent identical GETs, and
+  the Supabase config is cached per tab in `sessionStorage` `sk_cfg`.
 - **The dashboard leads with the queue** (since 2026-10-15): `GET /admin/dashboard` returns
   `queue.{payments,chats,fulfil}`, the oldest five of each thing waiting on the merchant, and the
   page acts on them in place where no input is needed. `/inbox?c=<id>` opens a chat.

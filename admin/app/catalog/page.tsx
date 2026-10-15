@@ -36,8 +36,9 @@ export default function Catalog() {
   // P5: a deleted product is hidden, never removed (orders reference it).
   async function remove(p: P) {
     setDel(null);
+    setProducts((ps) => (ps ?? []).filter((x) => x.id !== p.id)); // optimistic: the row goes now
     const r = await api(`/api/v1/admin/products/${p.id}`, { method: 'DELETE' });
-    if (r.ok) { toast('Product deleted', 'info'); load(); } else toast(await apiError(r), 'error');
+    if (r.ok) toast('Product deleted', 'info'); else { toast(await apiError(r), 'error'); load(); }
   }
   function add(e: React.FormEvent) {
     e.preventDefault();

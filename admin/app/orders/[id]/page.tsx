@@ -51,8 +51,15 @@ export default function OrderDetail() {
     return () => window.removeEventListener('keydown', onKey);
   }, [shot]);
 
+  // What each action is known to set, applied before the request so the page never shows the old state while it waits.
+  const OPTIMISTIC: Record<string, Partial<Detail['order']>> = {
+    preparing: { status: 'preparing' }, dispatched: { status: 'dispatched' }, delivered: { status: 'delivered' }, cancel: { status: 'cancelled' },
+    'payment/verify': { status: 'paid', payment_status: 'verified' }, 'payment/cod-collected': { payment_status: 'cod_collected' },
+  };
   async function act(path: string, body?: object, msg?: string) {
     setBusy(true);
+    const guess = OPTIMISTIC[path];
+    if (guess) setD((x) => x && { ...x, order: { ...x.order, ...guess } });
     const r = await api(`/api/v1/admin/orders/${id}/${path}`, { method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}) });
     setBusy(false);
     if (r.ok) toast(msg || 'Done', 'success'); else toast(await apiError(r), 'error');

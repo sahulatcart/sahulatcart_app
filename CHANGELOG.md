@@ -2,6 +2,42 @@
 
 A running, reverse-chronological log of work on this project: what changed, why, and what was left open.
 
+## 2026-10-15 — The portal shows a change the moment the merchant makes it
+
+Branch `fix/instant-updates`, from `main` at `2e185cf` (after #53). Uzair's report: after deleting
+or editing something he had to refresh the page to see it, and the portal felt slow. Portal only.
+
+**What was found.** Nothing caches. The proxy route is `force-dynamic` and a tick route fetched
+through it three times returned three different values; the service worker only shows push
+alerts; the backend sets no cache headers. The proxy adds milliseconds. What the merchant was
+seeing is latency: from Pakistan a call through the admin is about 0.55 s warm and the first one
+after a quiet spell was 3.3 s, and every write waited for the server's answer and then a second
+round trip (`load()`) before the page changed. A delete took two trips, 1 to 7 seconds, during
+which the row sat there as if nothing had happened. On a full page load the first data call also
+waited behind a serial fetch of `/api/v1/config`, and three components each asked for
+`/admin/me`.
+
+**What changed.**
+- **Optimistic state** on the writes whose outcome is known: delete product (the row goes at once,
+  the list reloads only if the server says no), remove bank account, block/unblock, "Start
+  preparing" on the dashboard queue, and every order-page action (`OPTIMISTIC` maps each to what it
+  sets: stage, verified, cancelled, cash collected; `load()` still reconciles afterwards).
+- **Config once per tab** (`sessionStorage` `sk_cfg`): the first data call no longer waits for it.
+  A new tab fetches it again, so a changed config is picked up on the next tab or sign-in.
+- **Concurrent identical GETs share one request** in `apiJson()` (in-flight only, nothing kept),
+  so the shell, the dashboard and the push nudge make one `/admin/me` call, not three.
+
+**Hassles.** The first suspect, Next's Data Cache in the proxy, was ruled out by a tick route on the
+throwaway mock backend rather than by reading docs; `force-dynamic` does set fetch to `no-store`.
+The 3.3 s cold call was measured once on the live admin with a plain `curl` of the public
+`/api/v1/config`; the three calls after it took 0.53 to 0.57 s.
+
+**Still open.** The 0.5 s floor is the distance to Railway's region, not the code; the cold 3 s
+looks like the container or its connection to the backend idling. `BACKEND_URL` is the backend's
+public URL, so the admin's calls leave Railway and come back; Railway's private network
+(`http://<service>.railway.internal:8080`, the backend already listens on `0.0.0.0`; check IPv6)
+would cut that hop. That is a dashboard change, not code, and was not made.
+
 ## 2026-10-15 — Catalog: "Add product" asks for the details first
 
 Branch `feat/catalog-add-dialog`, from `main` at `e49ce21` (after #52). Uzair's request: the quick

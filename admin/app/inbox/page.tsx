@@ -47,6 +47,7 @@ export default function Inbox() {
     if (!c || !sel) return;
     setConfirmBlock(false);
     setBusy(true);
+    setDetail((x) => x && x.conversation.customers ? { ...x, conversation: { ...x.conversation, customers: { ...x.conversation.customers, is_blocked: blocked } } } : x); // optimistic
     const r = await api(`/api/v1/admin/customers/${c.id}/${blocked ? 'block' : 'unblock'}`, { method: 'POST' });
     setBusy(false); loadDetail(sel); loadConvos();
     if (!r.ok) toast(await apiError(r), 'error');
