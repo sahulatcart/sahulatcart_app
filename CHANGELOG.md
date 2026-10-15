@@ -2,6 +2,26 @@
 
 A running, reverse-chronological log of work on this project: what changed, why, and what was left open.
 
+## 2026-10-15 — The merchant sidebar goes forest in light mode
+
+Branch `feat/merchant-forest-sidebar`, from `main` at `57a545d` (after #54). Uzair asked for the
+merchant dashboard's side panel to carry the console's green in light mode, "but more attractive".
+CSS only, one file.
+
+**What changed.** The nineteen console rules for the sidebar and top bar
+(`.shell[data-area="platform"] .sidebar …`) now also match
+`:root:not([data-theme="dark"]) .shell[data-area="merchant"] …`, so in light mode the merchant
+shell gets the forest panel, white links, mint active state and the dark-surface wordmark. On top
+of that, merchant-only: a soft mint radial glow at the top, a vertical gradient to a deeper foot
+(forest mixed 22% toward navy with `color-mix`, no raw hex), icons in mint, the active page as a
+solid mint pill with forest text (12:1) and a faint mint shadow. Dark mode is untouched (navy
+sidebar, as before); the console keeps forest in both themes and its own accent tokens, so the two
+areas still differ, and the "Switch to…" link and the tag under the wordmark say which is which.
+
+**Hassles.** None. The `:not([data-theme="dark"])` form rather than `[data-theme="light"]` so a
+blocked `localStorage` (the boot script's catch leaves the attribute unset) still gets the light
+treatment.
+
 ## 2026-10-15 — The portal shows a change the moment the merchant makes it
 
 Branch `fix/instant-updates`, from `main` at `2e185cf` (after #53). Uzair's report: after deleting

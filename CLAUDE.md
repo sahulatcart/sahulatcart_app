@@ -326,7 +326,10 @@ send in `client.ts`, every inbound in `webhook.ts`, and every AI call through `c
   account number) and every detail or chat read writes a `platform_view` audit row. `FakeDb`
   returns whole rows whatever the select names, so a route that must hide columns picks them in code.
 - **The console is `<AppShell variant="platform">`** (since 2026-10-14): its own nav, the forest
-  accent via `.shell[data-area="platform"]`, no merchant calls, non-admins sent home. A page under
+  accent via `.shell[data-area="platform"]`, no merchant calls, non-admins sent home. Since
+  2026-10-15 the merchant shell's sidebar is forest too, **in light mode only**
+  (`:root:not([data-theme="dark"]) .shell[data-area="merchant"]`, with a mint glow and a solid
+  mint active pill the console does not have); the console's accent tokens stay its own. A page under
   `admin/app/platform/` must use that variant; the merchant shell shows no console item, and the
   only crossing is the "Switch to…" link in the sidebar foot for people who have both.
 - **The console's truth and guardrails** (since 2026-10-14, after its design critique):

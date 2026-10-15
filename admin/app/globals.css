@@ -588,28 +588,44 @@ input[type="checkbox"] { width: 18px; height: 18px; min-height: 0; padding: 0; m
 }
 
 /* ── Founders' console (AppShell variant="platform") ────────────
+   Since 2026-10-15 the merchant shell shares the forest sidebar and top bar in light mode (Uzair's ask); in dark mode it keeps the navy. The console keeps forest in both, and its accent tokens, so the two still differ.
    A forest sidebar and top bar in both themes, so the console is never mistaken for a shop's
    dashboard. Text on forest: white at 70% is 7.6:1, mint 12:1, mint on the active row 7.9:1. */
-.shell[data-area="platform"] .sidebar { background: var(--color-forest); border-right-color: var(--color-forest); }
-.shell[data-area="platform"] .sidebar .tag { color: rgba(255, 255, 255, .7); }
-.shell[data-area="platform"] .sidebar .nav-section { color: rgba(255, 255, 255, .62); }
-.shell[data-area="platform"] .sidebar .nav-link { color: rgba(255, 255, 255, .86); }
-.shell[data-area="platform"] .sidebar .nav-link svg { color: rgba(255, 255, 255, .62); }
-.shell[data-area="platform"] .sidebar .nav-link:hover { background: rgba(255, 255, 255, .08); color: #fff; }
-.shell[data-area="platform"] .sidebar .nav-link:hover svg { color: #fff; }
-.shell[data-area="platform"] .sidebar .nav-link.active { background: rgba(194, 255, 180, .14); color: var(--color-mint); }
-.shell[data-area="platform"] .sidebar .nav-link.active svg { color: var(--color-mint); }
-.shell[data-area="platform"] .sidebar .nav-link.active::before { background: var(--color-mint); }
-.shell[data-area="platform"] .sidebar-foot { border-top-color: rgba(255, 255, 255, .14); }
-.shell[data-area="platform"] .sidebar .btn.subtle { color: rgba(255, 255, 255, .86); }
-.shell[data-area="platform"] .sidebar .btn.subtle:hover { background: rgba(255, 255, 255, .08); }
-.shell[data-area="platform"] .sidebar :focus-visible, .shell[data-area="platform"] .topbar :focus-visible { box-shadow: 0 0 0 3px rgba(194, 255, 180, .55); }
+.shell[data-area="platform"] .sidebar, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar { background: var(--color-forest); border-right-color: var(--color-forest); }
+.shell[data-area="platform"] .sidebar .tag, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .tag { color: rgba(255, 255, 255, .7); }
+.shell[data-area="platform"] .sidebar .nav-section, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .nav-section { color: rgba(255, 255, 255, .62); }
+.shell[data-area="platform"] .sidebar .nav-link, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .nav-link { color: rgba(255, 255, 255, .86); }
+.shell[data-area="platform"] .sidebar .nav-link svg, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .nav-link svg { color: rgba(255, 255, 255, .62); }
+.shell[data-area="platform"] .sidebar .nav-link:hover, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .nav-link:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+.shell[data-area="platform"] .sidebar .nav-link:hover svg, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .nav-link:hover svg { color: #fff; }
+.shell[data-area="platform"] .sidebar .nav-link.active, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .nav-link.active { background: rgba(194, 255, 180, .14); color: var(--color-mint); }
+.shell[data-area="platform"] .sidebar .nav-link.active svg, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .nav-link.active svg { color: var(--color-mint); }
+.shell[data-area="platform"] .sidebar .nav-link.active::before, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .nav-link.active::before { background: var(--color-mint); }
+.shell[data-area="platform"] .sidebar-foot, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar-foot { border-top-color: rgba(255, 255, 255, .14); }
+.shell[data-area="platform"] .sidebar .btn.subtle, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .btn.subtle { color: rgba(255, 255, 255, .86); }
+.shell[data-area="platform"] .sidebar .btn.subtle:hover, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .btn.subtle:hover { background: rgba(255, 255, 255, .08); }
+.shell[data-area="platform"] .sidebar :focus-visible, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar :focus-visible, .shell[data-area="platform"] .topbar :focus-visible, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .topbar :focus-visible { box-shadow: 0 0 0 3px rgba(194, 255, 180, .55); }
 /* The wordmark on forest uses the brand's dark-surface treatment, as dark mode does. */
-.shell[data-area="platform"] .sidebar .wm-sahulat, .shell[data-area="platform"] .topbar .wm-sahulat { background-image: none; color: #fff; }
-.shell[data-area="platform"] .sidebar .wm-cart, .shell[data-area="platform"] .topbar .wm-cart { background-image: var(--grad-glow); }
-.shell[data-area="platform"] .topbar { background: var(--color-forest); border-bottom-color: var(--color-forest); color: #fff; }
-.shell[data-area="platform"] .topbar .btn.subtle { color: #fff; }
-.shell[data-area="platform"] .topbar .btn.subtle:hover { background: rgba(255, 255, 255, .1); }
+.shell[data-area="platform"] .sidebar .wm-sahulat, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .wm-sahulat, .shell[data-area="platform"] .topbar .wm-sahulat, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .topbar .wm-sahulat { background-image: none; color: #fff; }
+.shell[data-area="platform"] .sidebar .wm-cart, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .wm-cart, .shell[data-area="platform"] .topbar .wm-cart, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .topbar .wm-cart { background-image: var(--grad-glow); }
+.shell[data-area="platform"] .topbar, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .topbar { background: var(--color-forest); border-bottom-color: var(--color-forest); color: #fff; }
+.shell[data-area="platform"] .topbar .btn.subtle, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .topbar .btn.subtle { color: #fff; }
+.shell[data-area="platform"] .topbar .btn.subtle:hover, :root:not([data-theme="dark"]) .shell[data-area="merchant"] .topbar .btn.subtle:hover { background: rgba(255, 255, 255, .1); }
+/* Merchant shell, light mode, on top of the console rules above: forest with depth. A soft mint glow
+   at the top, a deeper foot (forest mixed toward navy, no raw hex), the active page as a solid mint
+   pill with forest text (12:1), icons in mint. Brand tokens only; three sanctioned gradients untouched. */
+:root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar {
+  background-image: radial-gradient(140% 55% at -10% -5%, rgba(194, 255, 180, .22), transparent 60%), linear-gradient(180deg, var(--color-forest) 0%, color-mix(in srgb, var(--color-forest) 78%, var(--color-navy)) 100%);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, .06);
+}
+:root:not([data-theme="dark"]) .shell[data-area="merchant"] .topbar { background-image: linear-gradient(90deg, var(--color-forest), color-mix(in srgb, var(--color-forest) 78%, var(--color-navy))); }
+:root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .nav-link svg { color: color-mix(in srgb, var(--color-mint) 72%, transparent); }
+:root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .nav-link:hover { background: rgba(194, 255, 180, .1); }
+:root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .nav-link:hover svg { color: var(--color-mint); }
+:root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .nav-link.active { background: var(--color-mint); color: var(--color-forest); box-shadow: 0 6px 18px rgba(194, 255, 180, .18); }
+:root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .nav-link.active svg { color: var(--color-forest); }
+:root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .nav-link.active::before { background: var(--color-forest); }
+:root:not([data-theme="dark"]) .shell[data-area="merchant"] .sidebar .nav-section { color: color-mix(in srgb, var(--color-mint) 55%, transparent); }
 .console-chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: var(--r-full); background: rgba(194, 255, 180, .16); color: var(--color-mint); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 
 /* Attention strip: the morning question ("who is broken, who owes us") as filters. */
