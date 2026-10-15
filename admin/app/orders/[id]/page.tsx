@@ -5,6 +5,7 @@ import { Banknote, Check, Image as ImageIcon, MapPin, MessageCircle, Package, Pa
 import AppShell, { BackLink, PageHead, PaymentPill, StatusPill, humanize } from '../../../components/AppShell';
 import { api, apiError, apiJson, dt, rs } from '../../../lib/api';
 import { useToast } from '../../../components/Toast';
+import { ConfirmDialog } from '../../../components/Dialog';
 
 interface Detail {
   order: { id: string; order_number: string; status: string; payment_method: string; payment_status: string; subtotal: number; discount_total: number; delivery_charge: number; total: number; delivery_name: string; delivery_address: string; delivery_area: string; delivery_city: string; delivery_phone: string; placed_at: string | null; created_at: string; courier: string | null; tracking_ref: string | null; eta_text: string | null };
@@ -25,7 +26,7 @@ function WindowNote({ until, pricePaisa }: { until: string | null; pricePaisa: n
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t); }, []);
   if (!until) return null;
   const left = new Date(until).getTime() - now;
-  if (left <= 0) return <div className="hint" style={{ marginTop: 8 }}>Buyer&rsquo;s window closed: confirming now sends nothing for free; a paid notice (about {rs(pricePaisa)}) appears below once you decide.</div>;
+  if (left <= 0) return <div className="hint mt-1">Buyer&rsquo;s window closed: confirming now sends nothing for free; a paid notice (about {rs(pricePaisa)}) appears below once you decide.</div>;
   const h = Math.floor(left / 3_600_000); const m = Math.floor((left % 3_600_000) / 60_000);
   return <div className="hint" style={{ marginTop: 8, color: 'var(--success)' }}>Free to confirm until {dt(until)} ({h}h {m}m left): the buyer wrote recently, so the confirmation goes out as a normal message.</div>;
 }
@@ -37,6 +38,8 @@ export default function OrderDetail() {
   const [shot, setShot] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [ship, setShip] = useState({ courier: '', trackingRef: '', etaText: '' });
+  const [ask, setAsk] = useState<'cancel' | 'reject' | null>(null);
+  const [reason, setReason] = useState('');
 
   const load = useCallback(() => { apiJson<Detail>(`/api/v1/admin/orders/${id}`).then(setD).catch(() => {}); }, [id]);
   useEffect(load, [load]);
@@ -66,7 +69,7 @@ export default function OrderDetail() {
   const cancellable = !['delivered', 'cancelled', 'returned'].includes(o.status);
   const idx = stageIndex(o.status);
   const canPrepare = ['confirmed', 'paid'].includes(o.status);
-  const cancel = () => confirm('Cancel this order? Its items go back into stock and the buyer is told on WhatsApp.') && act('cancel', undefined, 'Order cancelled');
+  const cancel = () => setAsk('cancel');
   const address = [o.delivery_address, o.delivery_area, o.delivery_city].filter(Boolean).join(', ');
 
   return (
@@ -77,7 +80,7 @@ export default function OrderDetail() {
 
       {idx >= 0 && (
         <div className="card pad" style={{ marginBottom: 20 }}>
-          <ol className="steps" style={{ marginBottom: 14 }}>
+          <ol className="steps mb-2">
             {STAGES.map((st, i) => <li key={st} className={i < idx ? 'done' : i === idx ? 'now' : ''}><span className="n">{i < idx ? <Check size={14} aria-hidden /> : i + 1}</span>{humanize(st)}</li>)}
           </ol>
           {canPrepare && <button className="btn" disabled={busy} onClick={() => act('preparing', undefined, 'Marked as preparing')}><Package aria-hidden /> Start preparing</button>}
@@ -90,10 +93,10 @@ export default function OrderDetail() {
             </div>
           )}
           {o.status === 'dispatched' && <button className="btn" disabled={busy} onClick={() => act('delivered', undefined, 'Marked as delivered')}><PackageCheck aria-hidden /> Mark delivered</button>}
-          {o.status === 'preparing' && <div className="hint" style={{ marginTop: 8 }}>The buyer gets a WhatsApp message with the courier and estimate if they wrote in the last 24 hours; otherwise a paid notice appears below.</div>}
-          {(o.courier || o.tracking_ref || o.eta_text) && <div className="hint" style={{ marginTop: 8 }}>{[o.courier, o.tracking_ref, o.eta_text].filter(Boolean).join(' · ')}</div>}
+          {o.status === 'preparing' && <div className="hint mt-1">The buyer gets a WhatsApp message with the courier and estimate if they wrote in the last 24 hours; otherwise a paid notice appears below.</div>}
+          {(o.courier || o.tracking_ref || o.eta_text) && <div className="hint mt-1">{[o.courier, o.tracking_ref, o.eta_text].filter(Boolean).join(' · ')}</div>}
           {d.history.length > 0 && (
-            <details style={{ marginTop: 12 }}>
+            <details className="mt-2">
               <summary className="hint" style={{ cursor: 'pointer' }}>History</summary>
               <ul className="hint" style={{ margin: '8px 0 0', paddingLeft: 18 }}>
                 {d.history.map((h, i) => <li key={i}>{dt(h.created_at, true)}: {humanize(h.to_status)} ({h.changed_by}){h.note ? ` — ${h.note}` : ''}</li>)}
@@ -122,7 +125,7 @@ export default function OrderDetail() {
               </tbody>
             </table>
           </div>
-          <div className="card-foot" style={{ display: 'block' }}>
+          <div className="card-foot block">
             <div className="kv num">
               <div className="row"><span className="muted">Subtotal</span><span>{rs(o.subtotal)}</span></div>
               <div className="row"><span className="muted">Discount</span><span style={{ color: o.discount_total ? 'var(--success)' : undefined }}>{o.discount_total ? `−${rs(o.discount_total)}` : '—'}</span></div>
@@ -134,15 +137,15 @@ export default function OrderDetail() {
 
         <div>
           <div className="card pad">
-            <h2 style={{ marginBottom: 14 }}>Delivery</h2>
+            <h2 className="mb-2">Delivery</h2>
             <div className="detail-line"><User aria-hidden /><span className="strong">{o.delivery_name || '—'}</span></div>
             <div className="detail-line"><MapPin aria-hidden /><span>{address || '—'}</span></div>
             <div className="detail-line"><Phone aria-hidden /><span className="mono">{o.delivery_phone || '—'}</span></div>
           </div>
 
           <div className="card pad">
-            <div className="row between" style={{ marginBottom: 14 }}>
-              <h2 style={{ margin: 0 }}>Payment</h2>
+            <div className="row between mb-2">
+              <h2 className="m0">Payment</h2>
               <span className="pill neutral"><Banknote size={13} aria-hidden />{humanize(o.payment_method)}</span>
             </div>
             {o.payment_method === 'bank_transfer' && (
@@ -150,7 +153,7 @@ export default function OrderDetail() {
                 <button className="btn ghost block" onClick={viewShot}><ImageIcon aria-hidden /> View screenshot</button>
                 <div className="grid-2" style={{ gap: 8 }}>
                   <button className="btn" disabled={!claimed || busy} onClick={() => act('payment/verify', undefined, 'Payment verified')}><Check aria-hidden /> Verify</button>
-                  <button className="btn danger-ghost" disabled={!claimed || busy} onClick={() => act('payment/reject', { reason: 'screenshot not valid' }, 'Payment rejected')}><X aria-hidden /> Reject</button>
+                  <button className="btn danger-ghost" disabled={!claimed || busy} onClick={() => { setReason(''); setAsk('reject'); }}><X aria-hidden /> Reject</button>
                 </div>
                 {!claimed && <div className="hint">No payment screenshot to review yet.</div>}
               </div>
@@ -163,7 +166,7 @@ export default function OrderDetail() {
             {d.pendingBuyerNotice && (
               <>
                 <div className="divider" />
-                <div className="hint" style={{ marginBottom: 8 }}>The buyer&rsquo;s 24-hour window had closed, so their {d.pendingBuyerNotice === 'order_sent' ? 'dispatch notice' : 'payment update'} was not sent. Sending it now uses a pre-approved message and costs about {rs(d.noticePricePaisa)} (Meta&rsquo;s rate).</div>
+                <div className="hint mb-1">The buyer&rsquo;s 24-hour window had closed, so their {d.pendingBuyerNotice === 'order_sent' ? 'dispatch notice' : 'payment update'} was not sent. Sending it now uses a pre-approved message and costs about {rs(d.noticePricePaisa)} (Meta&rsquo;s rate).</div>
                 <button className="btn block" disabled={busy} onClick={() => act('notify-buyer', { kind: d.pendingBuyerNotice }, 'Notice sent to the buyer')}><MessageCircle aria-hidden /> Send for about {rs(d.noticePricePaisa)}</button>
               </>
             )}
@@ -171,7 +174,7 @@ export default function OrderDetail() {
               <>
                 <div className="divider" />
                 <button className="btn danger-ghost block" disabled={busy} onClick={cancel}><X aria-hidden /> Cancel order</button>
-                <div className="hint" style={{ marginTop: 6 }}>Items go back into stock and the buyer is told on WhatsApp.</div>
+                <div className="hint mt-1">Items go back into stock and the buyer is told on WhatsApp.</div>
               </>
             )}
           </div>
@@ -187,6 +190,16 @@ export default function OrderDetail() {
           </div>
         </div>
       )}
+      <ConfirmDialog open={ask === 'cancel'} onClose={() => setAsk(null)} onConfirm={() => { setAsk(null); act('cancel', undefined, 'Order cancelled'); }} title="Cancel this order?" confirmLabel="Cancel order" danger busy={busy}>
+        <p className="m0">Its items go back into stock and the buyer is told on WhatsApp.</p>
+      </ConfirmDialog>
+      <ConfirmDialog open={ask === 'reject'} onClose={() => setAsk(null)} onConfirm={() => { setAsk(null); act('payment/reject', { reason: reason.trim() || 'screenshot not valid' }, 'Payment rejected'); }} title="Reject this payment?" confirmLabel="Reject payment" danger busy={busy}>
+        <p>The buyer is asked for a valid screenshot. The order stays open.</p>
+        <div className="field mb-0">
+          <label htmlFor="reject-reason">Reason (optional)</label>
+          <input id="reject-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="screenshot not valid" />
+        </div>
+      </ConfirmDialog>
     </AppShell>
   );
 }

@@ -4,6 +4,8 @@ import { AlertTriangle, ArrowLeft, Ban, Bot, Hand, MessagesSquare, Send, Undo2, 
 import AppShell, { EmptyState, PageHead, humanize } from '../../components/AppShell';
 import { api, apiError, apiJson, dt } from '../../lib/api';
 import { useToast } from '../../components/Toast';
+import { ConfirmDialog } from '../../components/Dialog';
+import { ago, phone } from '../../lib/format';
 
 interface Customer { id: string; name: string | null; wa_id: string; wa_opt_in_status: 'unknown' | 'in' | 'out'; wa_opt_in_at: string | null; is_blocked: boolean }
 interface Convo { id: string; status: string; current_state: string; last_message_at: string; unread_count: number; customers: Pick<Customer, 'name' | 'wa_id' | 'wa_opt_in_status' | 'is_blocked'> | null }
@@ -37,14 +39,16 @@ export default function Inbox() {
     return r.ok;
   }
   // P5: block / unblock the customer behind the open chat.
+  const [confirmBlock, setConfirmBlock] = useState(false);
   async function setBlocked(blocked: boolean) {
     const c = shown?.conversation.customers;
     if (!c || !sel) return;
-    if (blocked && !confirm('Block this customer? Their messages are kept but the bot never answers them.')) return;
+    setConfirmBlock(false);
     setBusy(true);
     const r = await api(`/api/v1/admin/customers/${c.id}/${blocked ? 'block' : 'unblock'}`, { method: 'POST' });
     setBusy(false); loadDetail(sel); loadConvos();
     if (!r.ok) toast(await apiError(r), 'error');
+    else toast(blocked ? 'Customer blocked' : 'Customer unblocked', 'info', { label: 'Undo', onClick: () => setBlocked(!blocked) });
   }
   async function send() { if (!text.trim()) return; const t = text; setText(''); if (!(await act('send', { text: t }))) setText(t); }
   const open = (id: string) => { setDetail(null); setSel(id); };
@@ -56,7 +60,7 @@ export default function Inbox() {
   const canType = takenOver && !windowClosed;
   const [quotaUsed, setQuotaUsed] = useState(false);
   useEffect(() => { apiJson<{ outbound: number; freeQuota: number }>('/api/v1/admin/usage').then((u) => setQuotaUsed(u.outbound >= u.freeQuota)).catch(() => {}); }, []);
-  const name = shown?.conversation.customers?.name || shown?.conversation.customers?.wa_id || '';
+  const name = shown?.conversation.customers?.name || phone(shown?.conversation.customers?.wa_id);
   const cust = shown?.conversation.customers ?? null;
   const optState = !cust ? '' : cust.is_blocked ? 'Blocked' : cust.wa_opt_in_status === 'out' ? `Opted out ${cust.wa_opt_in_at ? dt(cust.wa_opt_in_at) : ''}` : cust.wa_opt_in_status === 'in' ? `Opted in ${cust.wa_opt_in_at ? dt(cust.wa_opt_in_at) : ''}` : 'Opt-in unknown';
 
@@ -67,12 +71,12 @@ export default function Inbox() {
         {/* Conversation list */}
         <div className="convo-list" role="list" aria-label="Conversations">
           {(convos ?? []).map((c) => {
-            const nm = c.customers?.name || c.customers?.wa_id || '?';
+            const nm = c.customers?.name || phone(c.customers?.wa_id);
             const human = c.status === 'human_takeover';
             return (
               <button key={c.id} role="listitem" className="convo" aria-current={sel === c.id} onClick={() => open(c.id)}>
                 <div className="avatar" aria-hidden>{initials(nm)}</div>
-                <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="fill">
                   <div className="row between" style={{ flexWrap: 'nowrap', gap: 8 }}>
                     <span className="who">{nm}</span>
                     {c.customers?.is_blocked ? <span className="pill neutral">blocked</span> : c.customers?.wa_opt_in_status === 'out' ? <span className="pill warning">opted out</span> : null}
@@ -81,6 +85,7 @@ export default function Inbox() {
                   <div className="meta">
                     {human ? <><Hand aria-hidden /> You</> : <><Bot aria-hidden /> Bot</>}
                     <span aria-hidden>·</span><span>{humanize(c.current_state)}</span>
+                    <span aria-hidden>·</span><span>{ago(c.last_message_at)}</span>
                   </div>
                 </div>
               </button>
@@ -102,14 +107,14 @@ export default function Inbox() {
                   <div className="avatar" aria-hidden><UserRound size={18} /></div>
                   <div style={{ minWidth: 0 }}>
                     <div className="strong" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name || '…'}</div>
-                    <div className="hint" style={{ whiteSpace: 'nowrap' }}>{cust?.is_blocked ? 'Blocked, nobody replies' : cust?.wa_opt_in_status === 'out' ? 'Opted out, the bot stays silent' : takenOver ? 'You are replying' : 'Bot is replying'}{optState ? ` · ${optState}` : ''}</div>
+                    <div className="hint nowrap">{cust?.is_blocked ? 'Blocked, nobody replies' : cust?.wa_opt_in_status === 'out' ? 'Opted out, the bot stays silent' : takenOver ? 'You are replying' : 'Bot is replying'}{optState ? ` · ${optState}` : ''}</div>
                   </div>
                 </div>
                 {shown && (
                   <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
                     {cust && (cust.is_blocked
                       ? <button className="btn ghost sm" onClick={() => setBlocked(false)} disabled={busy}><Ban aria-hidden /> Unblock</button>
-                      : <button className="btn ghost sm" onClick={() => setBlocked(true)} disabled={busy} aria-label="Block customer"><Ban aria-hidden /><span className="hide-sm"> Block</span></button>)}
+                      : <button className="btn ghost sm" onClick={() => setConfirmBlock(true)} disabled={busy} aria-label="Block customer"><Ban aria-hidden /><span className="hide-sm"> Block</span></button>)}
                     {takenOver
                       ? <button className="btn ghost sm" onClick={() => act('release')} disabled={busy}><Undo2 aria-hidden /><span>Hand back<span className="hide-sm"> to bot</span></span></button>
                       : <button className="btn sm" onClick={() => act('takeover')} disabled={busy}><Hand aria-hidden /> Take over</button>}
@@ -151,6 +156,9 @@ export default function Inbox() {
           )}
         </div>
       </div>
+      <ConfirmDialog open={confirmBlock} onClose={() => setConfirmBlock(false)} onConfirm={() => setBlocked(true)} title={`Block ${name}?`} confirmLabel="Block customer" danger busy={busy}>
+        <p className="m0">Their messages are kept but the bot never answers them. You can unblock any time.</p>
+      </ConfirmDialog>
     </AppShell>
   );
 }

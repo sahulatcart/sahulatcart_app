@@ -48,7 +48,7 @@ export default function Dashboard() {
       <PushNudge />
       {billing?.mode === 'handoff' && (
         <div className="callout" role="status">
-          <div className="row" style={{ flexWrap: 'nowrap' }}>
+          <div className="row no-wrap-row">
             <div className="ico"><AlertTriangle aria-hidden /></div>
             <div>
               <div className="strong">{billing.reason === 'limit' ? 'The bot is handing chats to you: this month\'s conversation allowance is used up' : 'The bot is handing chats to you: an invoice is unpaid'}</div>
@@ -60,7 +60,7 @@ export default function Dashboard() {
       )}
       {setup && (
         <div className="callout">
-          <div className="row" style={{ flexWrap: 'nowrap' }}>
+          <div className="row no-wrap-row">
             <div className="ico"><Sparkles aria-hidden /></div>
             <div>
               <div className="strong">{setup.ready ? 'Everything is set — switch the bot on' : setup.botOn ? 'Your bot is live; finish setting up' : 'Finish setting up your shop'}</div>
@@ -93,7 +93,7 @@ export default function Dashboard() {
             <div role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Free messages used" style={{ height: 8, borderRadius: 4, background: 'var(--surface)', marginTop: 8, overflow: 'hidden' }}>
               <div style={{ width: `${pct}%`, height: '100%', background: tone }} />
             </div>
-            <div className="hint" style={{ marginTop: 8 }}>
+            <div className="hint mt-1">
               {usage.paidOutbound > 0
                 ? `${usage.paidOutbound.toLocaleString('en-PK')} paid messages so far, about ${rs(usage.estimatedCostPaisa)} at Meta's rate of ${rs(usage.ratePaisa)} each. `
                 : `After ${usage.freeQuota.toLocaleString('en-PK')}, each message costs about ${rs(usage.ratePaisa)} (Meta's rate; check the current card). `}
@@ -170,7 +170,7 @@ function PushNudge() {
   }
   return (
     <div className="callout">
-      <div className="row" style={{ flexWrap: 'nowrap' }}>
+      <div className="row no-wrap-row">
         <div className="ico"><Bell aria-hidden /></div>
         <div><div className="strong">Get a notification for every new order</div><div className="hint">On this device, even when the portal is closed. Change it any time in Settings → Notifications.</div></div>
       </div>

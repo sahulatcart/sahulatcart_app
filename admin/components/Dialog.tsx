@@ -6,6 +6,18 @@ import { useEffect, useId, useRef, type ReactNode } from 'react';
  * table's overflow), Esc closes it, focus is held inside and returns to the opener on close. Replaces
  * window.prompt/confirm for the console's consequential writes (2026-10-14 critique).
  */
+/** The common case: one question, one consequential button. */
+export function ConfirmDialog({ open, onClose, onConfirm, title, children, confirmLabel, danger = false, busy = false }: {
+  open: boolean; onClose: () => void; onConfirm: () => void; title: string; children: ReactNode; confirmLabel: string; danger?: boolean; busy?: boolean;
+}) {
+  return (
+    <Dialog open={open} onClose={onClose} title={title} busy={busy}
+      actions={<button type="button" className={danger ? 'btn danger' : 'btn'} onClick={onConfirm} disabled={busy}>{confirmLabel}</button>}>
+      {children}
+    </Dialog>
+  );
+}
+
 export default function Dialog({ open, onClose, title, children, actions, busy = false }: {
   open: boolean;
   onClose: () => void;

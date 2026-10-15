@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ArrowRight, Bell, CheckCheck, Hand, Receipt, ShoppingBag, type LucideIcon } from 'lucide-react';
 import AppShell, { EmptyState, PageHead } from '../../components/AppShell';
-import { api, apiError, apiJson, dt } from '../../lib/api';
+import { api, apiError, apiJson } from '../../lib/api';
+import { ago } from '../../lib/format';
 import { useToast } from '../../components/Toast';
 
 interface N { id: string; type: string; title: string | null; body: string | null; data: { orderId?: string; conversationId?: string } | null; read_at: string | null; created_at: string }
@@ -43,12 +44,12 @@ export default function Notifications() {
           return (
             <div key={n.id} className={`feed-item ${n.read_at ? '' : 'unread'}`}>
               <div className={`ico ${tone}`}><Icon aria-hidden /></div>
-              <div style={{ minWidth: 0, flex: 1 }}>
+              <div className="fill">
                 <div className="t">{n.title}{!n.read_at && <span className="sr-only"> (unread)</span>}</div>
                 {n.body && <div className="b">{n.body}</div>}
                 {href && <Link href={href} className="link" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 8, fontSize: 13 }}>Open <ArrowRight size={14} aria-hidden /></Link>}
               </div>
-              <div className="when">{dt(n.created_at)}</div>
+              <div className="when">{ago(n.created_at)}</div>
             </div>
           );
         })}

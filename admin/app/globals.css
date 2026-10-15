@@ -213,8 +213,11 @@ p { margin: 0; }
 .nav-link.active svg { color: var(--brand); }
 .nav-link.active::before { content: ""; position: absolute; left: -14px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--brand); }
 .nav-link .count { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: var(--r-full); background: var(--danger-solid); color: #fff; font-size: 11px; font-weight: 600; display: grid; place-items: center; font-variant-numeric: tabular-nums; }
-.sidebar-foot { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 4px; }
-.sidebar-foot .nav-link { flex: 1; }
+/* The switch link gets its own row; log out and the theme toggle share the one beneath, so nothing wraps. */
+.sidebar-foot { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
+.sidebar-foot .nav-link { white-space: nowrap; }
+.foot-row { display: flex; align-items: center; gap: 4px; }
+.foot-row .nav-link { flex: 1; }
 .push-right { margin-left: auto; }
 @media (min-width: 961px) { .drawer-close { display: none; } }
 
@@ -493,6 +496,18 @@ input[type="checkbox"] { width: 18px; height: 18px; min-height: 0; padding: 0; m
 .row.between { justify-content: space-between; }
 .muted { color: var(--muted); }
 .hint { color: var(--muted); font-size: 13px; }
+/* Spacing utilities on the 8px grid; they replace the inline margins the pages used to carry. */
+.m0 { margin: 0; }
+.mb-0 { margin-bottom: 0; }
+.mb-1 { margin-bottom: 8px; }
+.mb-2 { margin-bottom: 16px; }
+.mt-1 { margin-top: 8px; }
+.mt-2 { margin-top: 16px; }
+.nowrap { white-space: nowrap; }
+.no-wrap-row { flex-wrap: nowrap; }
+.fill { flex: 1; min-width: 0; }
+.block { display: block; }
+.w-full { width: 100%; }
 .divider { height: 1px; background: var(--border); margin: 18px 0; }
 .empty { text-align: center; padding: 48px 20px; color: var(--muted); }
 .empty .empty-ico { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; margin: 0 auto 14px; background: var(--brand-tint); color: var(--brand); }

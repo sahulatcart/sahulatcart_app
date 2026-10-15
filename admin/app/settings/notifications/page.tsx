@@ -58,7 +58,7 @@ export default function NotificationSettings() {
 
       <div className="card">
         <div className="card-head" style={{ borderBottom: '1px solid var(--border)' }}>
-          <div className="setting-row" style={{ width: '100%' }}>
+          <div className="setting-row w-full">
             <div>
               <div className="t">Phone notifications {!p.channels.push && <Pill kind="neutral">Not set up on the server</Pill>}</div>
               <div className="d">A notification on this phone or computer, even when the portal is closed.</div>
@@ -67,7 +67,7 @@ export default function NotificationSettings() {
           </div>
         </div>
         <div className="card-head" style={{ borderBottom: 0 }}>
-          <div className="setting-row" style={{ width: '100%' }}>
+          <div className="setting-row w-full">
             <div>
               <div className="t">Email {!p.channels.email && <Pill kind="neutral">Not set up on the server</Pill>}</div>
               <div className="d">To <span className="mono">{p.email ?? '—'}</span>, the address you signed in with. More than five in five minutes arrive as one digest.</div>
@@ -80,12 +80,12 @@ export default function NotificationSettings() {
       <div className="card pad">
         <h2>This device</h2>
         {device === 'ios_install' && (
-          <p className="hint" style={{ marginBottom: 12 }}><Smartphone aria-hidden size={16} style={{ verticalAlign: -3 }} /> On iPhone, add the portal to your Home Screen first (Share → Add to Home Screen, iOS 16.4 or later), then open it from there and come back here. Older iPhones get email only.</p>
+          <p className="hint mb-2"><Smartphone aria-hidden size={16} style={{ verticalAlign: -3 }} /> On iPhone, add the portal to your Home Screen first (Share → Add to Home Screen, iOS 16.4 or later), then open it from there and come back here. Older iPhones get email only.</p>
         )}
-        {device === 'unsupported' && <p className="hint" style={{ marginBottom: 12 }}>This browser cannot show push notifications. Email alerts still work.</p>}
-        {device === 'denied' && <p className="hint" style={{ marginBottom: 12 }}>Notifications are blocked for this site in the browser. Allow them in the site settings, then try again.</p>}
-        {device === 'subscribed' && <p className="hint" style={{ marginBottom: 12 }}><Pill kind="success">On</Pill> This device gets alerts. {p.pushSubscriptions > 1 ? `${p.pushSubscriptions} devices in total.` : ''}</p>}
-        {device === 'available' && <p className="hint" style={{ marginBottom: 12 }}>Turn on alerts for this device; the browser will ask for permission once.</p>}
+        {device === 'unsupported' && <p className="hint mb-2">This browser cannot show push notifications. Email alerts still work.</p>}
+        {device === 'denied' && <p className="hint mb-2">Notifications are blocked for this site in the browser. Allow them in the site settings, then try again.</p>}
+        {device === 'subscribed' && <p className="hint mb-2"><Pill kind="success">On</Pill> This device gets alerts. {p.pushSubscriptions > 1 ? `${p.pushSubscriptions} devices in total.` : ''}</p>}
+        {device === 'available' && <p className="hint mb-2">Turn on alerts for this device; the browser will ask for permission once.</p>}
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           {(device === 'available' || device === 'subscribed') && (
             <button className={device === 'subscribed' ? 'btn ghost' : 'btn'} onClick={togglePush} disabled={busy === 'push' || !p.channels.push}>

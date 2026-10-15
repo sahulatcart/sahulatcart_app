@@ -5,6 +5,7 @@ import { Download, FileUp, Loader2, Package, Plus, RefreshCw, Trash2 } from 'luc
 import AppShell, { EmptyState, PageHead } from '../../components/AppShell';
 import { api, apiError, apiJson } from '../../lib/api';
 import { useToast } from '../../components/Toast';
+import { ConfirmDialog } from '../../components/Dialog';
 
 interface P { id: string; name: string; price: number; stock: number | null; is_active: boolean; negotiable: boolean; max_discount_pct: number | null; min_price: number | null; thumbnailUrl?: string | null }
 
@@ -15,6 +16,7 @@ export default function Catalog() {
   const [products, setProducts] = useState<P[] | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [adding, setAdding] = useState({ name: '', price: '', stock: '' });
+  const [del, setDel] = useState<P | null>(null);
 
   const load = () => apiJson<{ products: P[] }>('/api/v1/admin/products').then((r) => setProducts(r.products)).catch(() => setProducts([]));
   useEffect(() => { load(); }, []);
@@ -28,7 +30,7 @@ export default function Catalog() {
   }
   // P5: a deleted product is hidden, never removed (orders reference it).
   async function remove(p: P) {
-    if (!confirm(`Delete "${p.name}"? Past orders keep it; the bot and the catalog stop showing it.`)) return;
+    setDel(null);
     const r = await api(`/api/v1/admin/products/${p.id}`, { method: 'DELETE' });
     if (r.ok) { toast('Product deleted', 'info'); load(); } else toast(await apiError(r), 'error');
   }
@@ -61,14 +63,14 @@ export default function Catalog() {
       <PageHead title="Catalog" sub="Products the bot can sell and negotiate" action={
         <>
           {/* The input stays in the tab order (sr-only, not display:none) so the button works from the keyboard. */}
-          <label className="btn ghost sm" style={{ margin: 0 }}><FileUp aria-hidden /> Import CSV<input type="file" accept=".csv,text/csv" className="sr-only" onChange={(e) => e.target.files?.[0] && importCsv(e.target.files[0])} /></label>
+          <label className="btn ghost sm m0"><FileUp aria-hidden /> Import CSV<input type="file" accept=".csv,text/csv" className="sr-only" onChange={(e) => e.target.files?.[0] && importCsv(e.target.files[0])} /></label>
           <a className="btn ghost sm" href={template} download="catalog-template.csv"><Download aria-hidden /> CSV template</a>
           <button className="btn ghost sm" onClick={metaSync}><RefreshCw aria-hidden /> Sync from Meta</button>
         </>
       } />
 
-      <form className="card pad" onSubmit={add} style={{ marginBottom: 16 }}>
-        <h2 style={{ marginBottom: 12 }}>Add a product</h2>
+      <form className="card pad mb-2" onSubmit={add} >
+        <h2 className="mb-2">Add a product</h2>
         <div className="form-row">
           <div className="field" style={{ flex: '1 1 220px' }}><label htmlFor="new-name">Name</label><input id="new-name" placeholder="e.g. Lawn suit" value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} /></div>
           <div className="field"><label htmlFor="new-price">Price (Rs)</label><input id="new-price" type="number" min="0" step="any" value={adding.price} onChange={(e) => setAdding({ ...adding, price: e.target.value })} className="mini" /></div>
@@ -102,7 +104,7 @@ export default function Catalog() {
                     <td><input aria-label={`${p.name} maximum percent off`} type="number" min="0" max="100" value={p.max_discount_pct ?? ''} onChange={(e) => edit(p.id, { max_discount_pct: e.target.value === '' ? null : Number(e.target.value) })} className="xs num" disabled={!p.negotiable} /></td>
                     <td><input aria-label={`${p.name} minimum price in rupees`} type="number" min="0" step="any" value={p.min_price != null ? p.min_price / 100 : ''} onChange={(e) => edit(p.id, { min_price: e.target.value === '' ? null : paisa(e.target.value) })} className="mini num" disabled={!p.negotiable} /></td>
                     <td><label className="switch"><input type="checkbox" aria-label={`${p.name} active`} checked={p.is_active} onChange={(e) => edit(p.id, { is_active: e.target.checked })} /><span className="track" /></label></td>
-                    <td style={{ whiteSpace: 'nowrap' }}><button className="btn ghost sm" onClick={() => save(p)} disabled={saving === p.id}>{saving === p.id ? <Loader2 className="spin" aria-label="Saving" /> : 'Save'}</button> <button className="btn subtle icon-btn sm" onClick={() => remove(p)} aria-label={`Delete ${p.name}`}><Trash2 /></button></td>
+                    <td className="nowrap"><button className="btn ghost sm" onClick={() => save(p)} disabled={saving === p.id}>{saving === p.id ? <Loader2 className="spin" aria-label="Saving" /> : 'Save'}</button> <button className="btn subtle icon-btn sm" onClick={() => setDel(p)} aria-label={`Delete ${p.name}`}><Trash2 /></button></td>
                   </tr>
                 ))}
                 {!products && [0, 1, 2].map((i) => <tr key={i}><td colSpan={8}><div className="skeleton" style={{ height: 22 }} /></td></tr>)}
@@ -110,10 +112,13 @@ export default function Catalog() {
             </table>
           </div>
         )}
-        <div className="card-foot hint" style={{ display: 'block' }}>
+        <div className="card-foot hint block">
           <strong style={{ color: 'var(--ink-2)' }}>Max % off</strong> is the deepest discount the bot may give; <strong style={{ color: 'var(--ink-2)' }}>Min price</strong> is an absolute floor and wins over %. Open a product to add photos, description and attributes. CSV import also understands Shopify product exports.
         </div>
       </div>
+      <ConfirmDialog open={!!del} onClose={() => setDel(null)} onConfirm={() => del && remove(del)} title={`Delete "${del?.name}"?`} confirmLabel="Delete product" danger>
+        <p className="m0">Past orders keep it; the bot and the catalog stop showing it.</p>
+      </ConfirmDialog>
     </AppShell>
   );
 }

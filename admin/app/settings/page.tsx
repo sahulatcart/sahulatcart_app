@@ -6,6 +6,7 @@ import AppShell, { EmptyState, PageHead } from '../../components/AppShell';
 import DeliveryZones, { type Zone } from '../../components/DeliveryZones';
 import { api, apiError, apiJson } from '../../lib/api';
 import { useToast } from '../../components/Toast';
+import { ConfirmDialog } from '../../components/Dialog';
 
 interface Kb {
   delivery?: string; returns?: string; payment?: string; address?: string; hours?: string;
@@ -35,6 +36,7 @@ export default function SettingsPage() {
   const toast = useToast();
   const [s, setS] = useState<Settings | null>(null);
   const [bank, setBank] = useState({ bank_name: '', account_title: '', account_number: '' });
+  const [delBankId, setDelBankId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [expiryHours, setExpiryHours] = useState('24');
   const [persona, setPersona] = useState({ name: '', greeting: '' });
@@ -103,6 +105,7 @@ export default function SettingsPage() {
     setBank({ bank_name: '', account_title: '', account_number: '' }); toast('Bank account added', 'success'); load();
   }
   async function delBank(id: string) {
+    setDelBankId(null);
     const r = await api(`/api/v1/admin/bank-accounts/${id}`, { method: 'DELETE' });
     if (!r.ok) toast(await apiError(r), 'error');
     load();
@@ -125,8 +128,8 @@ export default function SettingsPage() {
 
       <Link href="/settings/whatsapp" className="card pad" style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', color: 'inherit', marginBottom: 16 }}>
         <MessageCircle aria-hidden style={{ color: 'var(--brand)', flexShrink: 0 }} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h2 style={{ margin: 0 }}>WhatsApp</h2>
+        <div className="fill">
+          <h2 className="m0">WhatsApp</h2>
           <div className="desc">Connect the number the bot answers from, or check its status.</div>
         </div>
         <ArrowRight aria-hidden className="hint" />
@@ -134,8 +137,8 @@ export default function SettingsPage() {
 
       <Link href="/settings/notifications" className="card pad" style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', color: 'inherit', marginBottom: 16 }}>
         <Bell aria-hidden style={{ color: 'var(--brand)', flexShrink: 0 }} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h2 style={{ margin: 0 }}>Notifications</h2>
+        <div className="fill">
+          <h2 className="m0">Notifications</h2>
           <div className="desc">Phone and email alerts for new orders, payment screenshots and handed-over chats.</div>
         </div>
         <ArrowRight aria-hidden className="hint" />
@@ -144,7 +147,7 @@ export default function SettingsPage() {
       <div className="eyebrow">Bot</div>
       <div className="card">
         <div className="card-head" style={{ borderBottom: '1px solid var(--border)' }}>
-          <div className="setting-row" style={{ width: '100%' }}>
+          <div className="setting-row w-full">
             <div>
               <div className="t">WhatsApp bot <span className={`pill ${botOn ? 'success' : 'neutral'}`} style={{ marginLeft: 6 }}><span className="dot" aria-hidden />{botOn ? 'Active' : 'Paused'}</span></div>
               <div className="d">
@@ -165,7 +168,7 @@ export default function SettingsPage() {
           <div className="help">The first line a new customer gets; your business hours are added after it.</div>
         </div>
         <div className="card-head" style={{ borderBottom: 0 }}>
-          <div className="setting-row" style={{ width: '100%' }}>
+          <div className="setting-row w-full">
             <div><div className="t">Upsell suggestions</div><div className="d">After an order confirms, the bot suggests one cheap add-on that ships together.</div></div>
             <label className="switch"><input type="checkbox" aria-label="Upsell suggestions" checked={s.settings.upsellEnabled !== false} onChange={(e) => toggleUpsell(e.target.checked)} /><span className="track" /></label>
           </div>
@@ -174,8 +177,8 @@ export default function SettingsPage() {
 
       <div className="card pad" id="messages">
         <h2>Messages and AI</h2>
-        <p className="hint" style={{ marginTop: 6 }}>WhatsApp gives each number 1,000 free messages a month; after that Meta charges about Rs 4 each (its rate; check the current card). Choose what the bot does once the free ones are used.</p>
-        <div className="field" style={{ marginTop: 12 }}>
+        <p className="hint mt-1">WhatsApp gives each number 1,000 free messages a month; after that Meta charges about Rs 4 each (its rate; check the current card). Choose what the bot does once the free ones are used.</p>
+        <div className="field mt-2">
           <label htmlFor="after-quota">After the free 1,000 messages</label>
           <select id="after-quota" value={s.settings.afterFreeQuota ?? 'continue'} onChange={(e) => saveMessages(e.target.value as 'continue' | 'handoff', s.settings.llmDailyCap ?? 2000)}>
             <option value="continue">Keep selling (paid messages)</option>
@@ -191,7 +194,7 @@ export default function SettingsPage() {
 
       <div className="card pad">
         <h2>Shop name</h2>
-        <p className="section-desc" style={{ marginBottom: 14 }}>Ye naam customers ko WhatsApp par dikhta hai — bot isi naam se baat karta hai. Platform ka naam nahi, aap ki apni dukaan ka naam.</p>
+        <p className="section-desc mb-2">Ye naam customers ko WhatsApp par dikhta hai — bot isi naam se baat karta hai. Platform ka naam nahi, aap ki apni dukaan ka naam.</p>
         <div className="form-row">
           <div className="field" style={{ flex: '1 1 260px' }}>
             <label htmlFor="bizname">Business name</label>
@@ -204,12 +207,12 @@ export default function SettingsPage() {
       <div className="eyebrow">Negotiation</div>
       <div className="card pad">
         <h2 id="style-h">Bargaining style</h2>
-        <p className="section-desc" style={{ marginBottom: 14 }}>How quickly the bot gives ground when a customer haggles. It never goes below your floor.</p>
+        <p className="section-desc mb-2">How quickly the bot gives ground when a customer haggles. It never goes below your floor.</p>
         <div className="choices" role="radiogroup" aria-labelledby="style-h">
           {Object.entries(STYLES).map(([key, st]) => (
             <button key={key} className="choice" role="radio" aria-checked={currentStyle === key} onClick={() => setStyle(key)}>
               <span className="ico"><st.Icon aria-hidden /></span>
-              <span><span className="t" style={{ display: 'block' }}>{st.label}</span><span className="d" style={{ display: 'block' }}>{st.hint}</span></span>
+              <span><span className="t block">{st.label}</span><span className="d block">{st.hint}</span></span>
             </button>
           ))}
         </div>
@@ -253,17 +256,17 @@ export default function SettingsPage() {
         <div className="card-head"><div><h2>Dukaan ki maloomat <span className="pill brand" style={{ marginLeft: 6 }}>Bot knowledgebase</span></h2><div className="desc">Customer &ldquo;delivery kitne din?&rdquo; ya &ldquo;return policy?&rdquo; pooche to bot YAHIN se jawab dega. Jo yahan nahi likha, bot kabhi khud se nahi banayega — keh dega &ldquo;malik se pooch kar batata hoon&rdquo;.</div></div></div>
         <div style={{ padding: '18px 22px' }}>
           <div className="grid-2">
-            <div className="field" style={{ margin: 0 }}><label htmlFor="kb-delivery">Delivery (waqt, charges, areas)</label><textarea id="kb-delivery" rows={2} value={kb.delivery ?? ''} onChange={(e) => setKb({ delivery: e.target.value })} placeholder="Lahore mein 1-2 din, baqi shehr 3-4 din. Rs 200 delivery." /></div>
-            <div className="field" style={{ margin: 0 }}><label htmlFor="kb-returns">Return / exchange policy</label><textarea id="kb-returns" rows={2} value={kb.returns ?? ''} onChange={(e) => setKb({ returns: e.target.value })} placeholder="7 din mein exchange, receipt ke sath. Sale items pe return nahi." /></div>
-            <div className="field" style={{ margin: 0 }}><label htmlFor="kb-payment">Payment info</label><textarea id="kb-payment" rows={2} value={kb.payment ?? ''} onChange={(e) => setKb({ payment: e.target.value })} placeholder="COD ya bank transfer. Advance zaroori nahi." /></div>
-            <div className="field" style={{ margin: 0 }}><label htmlFor="kb-address">Shop address</label><textarea id="kb-address" rows={2} value={kb.address ?? ''} onChange={(e) => setKb({ address: e.target.value })} placeholder="Shop 12, Liberty Market, Lahore" /></div>
-            <div className="field" style={{ margin: 0 }}><label htmlFor="kb-hours">Timings</label><textarea id="kb-hours" rows={2} value={kb.hours ?? ''} onChange={(e) => setKb({ hours: e.target.value })} placeholder="Roz 11am - 10pm, Jumma 3pm se" /></div>
+            <div className="field m0"><label htmlFor="kb-delivery">Delivery (waqt, charges, areas)</label><textarea id="kb-delivery" rows={2} value={kb.delivery ?? ''} onChange={(e) => setKb({ delivery: e.target.value })} placeholder="Lahore mein 1-2 din, baqi shehr 3-4 din. Rs 200 delivery." /></div>
+            <div className="field m0"><label htmlFor="kb-returns">Return / exchange policy</label><textarea id="kb-returns" rows={2} value={kb.returns ?? ''} onChange={(e) => setKb({ returns: e.target.value })} placeholder="7 din mein exchange, receipt ke sath. Sale items pe return nahi." /></div>
+            <div className="field m0"><label htmlFor="kb-payment">Payment info</label><textarea id="kb-payment" rows={2} value={kb.payment ?? ''} onChange={(e) => setKb({ payment: e.target.value })} placeholder="COD ya bank transfer. Advance zaroori nahi." /></div>
+            <div className="field m0"><label htmlFor="kb-address">Shop address</label><textarea id="kb-address" rows={2} value={kb.address ?? ''} onChange={(e) => setKb({ address: e.target.value })} placeholder="Shop 12, Liberty Market, Lahore" /></div>
+            <div className="field m0"><label htmlFor="kb-hours">Timings</label><textarea id="kb-hours" rows={2} value={kb.hours ?? ''} onChange={(e) => setKb({ hours: e.target.value })} placeholder="Roz 11am - 10pm, Jumma 3pm se" /></div>
           </div>
           <div className="divider" />
           <h3>Custom FAQs</h3>
           <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
             {faqs.map((f, i) => (
-              <div className="row" key={i} style={{ flexWrap: 'nowrap' }}>
+              <div className="row no-wrap-row" key={i} >
                 <input aria-label={`FAQ ${i + 1} question`} placeholder="Sawal — e.g. bulk discount milta hai?" value={f.q} onChange={(e) => setKb({ faqs: faqs.map((x, j) => (j === i ? { ...x, q: e.target.value } : x)) })} />
                 <input aria-label={`FAQ ${i + 1} answer`} placeholder="Jawab" value={f.a} onChange={(e) => setKb({ faqs: faqs.map((x, j) => (j === i ? { ...x, a: e.target.value } : x)) })} />
                 <button className="btn subtle icon-btn" onClick={() => setKb({ faqs: faqs.filter((_, j) => j !== i) })} aria-label={`Remove FAQ ${i + 1}`}><Trash2 /></button>
@@ -278,14 +281,14 @@ export default function SettingsPage() {
       <div className="eyebrow">Delivery</div>
       <div className="card pad">
         <h2>Delivery areas and charges</h2>
-        <p className="section-desc" style={{ marginBottom: 14 }}>The bot quotes these when a buyer gives an address. An area marked not serviceable is refused politely.</p>
+        <p className="section-desc mb-2">The bot quotes these when a buyer gives an address. An area marked not serviceable is refused politely.</p>
         <DeliveryZones s={s} onChange={load} />
       </div>
 
       <div className="eyebrow">Payments</div>
       <div className="card pad">
         <h2>Unpaid bank orders</h2>
-        <p className="section-desc" style={{ marginBottom: 14 }}>A bank-transfer order with no payment screenshot is cancelled automatically after this many hours, and its items go back into stock. A screenshot that is waiting for your review is never cancelled.</p>
+        <p className="section-desc mb-2">A bank-transfer order with no payment screenshot is cancelled automatically after this many hours, and its items go back into stock. A screenshot that is waiting for your review is never cancelled.</p>
         <div className="form-row">
           <div className="field"><label htmlFor="expiry-h">Hours (6–72)</label><input id="expiry-h" type="number" min="6" max="72" step="1" className="num" style={{ width: 110 }} value={expiryHours} onChange={(e) => setExpiryHours(e.target.value)} /></div>
           <button className="btn" onClick={saveExpiry} disabled={!(Number(expiryHours) >= 6 && Number(expiryHours) <= 72) || Number(expiryHours) === (s.settings.unpaidExpiryHours ?? 24)}><Save aria-hidden /> Save</button>
@@ -305,7 +308,7 @@ export default function SettingsPage() {
                     <td className="strong">{b.bank_name} {b.is_default && <span className="pill brand" style={{ marginLeft: 6 }}>Default</span>}</td>
                     <td>{b.account_title}</td>
                     <td className="mono">{b.account_number}</td>
-                    <td className="num"><button className="btn subtle icon-btn sm" onClick={() => delBank(b.id)} aria-label={`Remove ${b.bank_name} account`}><Trash2 /></button></td>
+                    <td className="num"><button className="btn subtle icon-btn sm" onClick={() => setDelBankId(b.id)} aria-label={`Remove ${b.bank_name} account`}><Trash2 /></button></td>
                   </tr>
                 ))}
               </tbody>
@@ -319,6 +322,9 @@ export default function SettingsPage() {
           <button className="btn" onClick={addBank} disabled={!bank.bank_name || !bank.account_number}><Plus aria-hidden /> Add account</button>
         </div>
       </div>
+      <ConfirmDialog open={!!delBankId} onClose={() => setDelBankId(null)} onConfirm={() => delBankId && delBank(delBankId)} title="Remove this bank account?" confirmLabel="Remove account" danger>
+        <p className="m0">The bot stops offering it for new orders. A shop with no other payment method keeps it.</p>
+      </ConfirmDialog>
     </AppShell>
   );
 }

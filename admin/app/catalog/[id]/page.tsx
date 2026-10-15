@@ -103,7 +103,7 @@ export default function ProductDetail() {
         <div>
           <div className="card pad">
             <h2>Photos</h2>
-            <p className="hint" style={{ marginBottom: 14 }}>The first photo is sent with the price quote, and whenever a customer asks to see the product.</p>
+            <p className="hint mb-2">The first photo is sent with the price quote, and whenever a customer asks to see the product.</p>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               {d.imageUrls.map(({ ref, url }, i) => (
                 <div key={ref} style={{ position: 'relative', width: 112, height: 112, borderRadius: 'var(--r)', overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
@@ -125,22 +125,22 @@ export default function ProductDetail() {
           </div>
 
           <div className="card pad">
-            <div className="row between" style={{ marginBottom: 12 }}>
-              <label htmlFor="desc" style={{ margin: 0 }}><h2 style={{ margin: 0 }}>Description</h2></label>
+            <div className="row between mb-2">
+              <label htmlFor="desc" className="m0"><h2 className="m0">Description</h2></label>
               <button className="btn ghost sm" onClick={aiDescribe} disabled={busy === 'ai' || d.imageUrls.length === 0} title={d.imageUrls.length ? 'Write a description from the main photo' : 'Upload a photo first'}>
                 {busy === 'ai' ? <Loader2 className="spin" aria-hidden /> : <Sparkles aria-hidden />} Write with AI
               </button>
             </div>
             <textarea id="desc" rows={5} value={p.description ?? ''} onChange={(e) => edit({ description: e.target.value })} placeholder="Material, style, who it's for… The bot uses this to answer questions." />
-            {d.imageUrls.length === 0 && <p className="hint" style={{ marginTop: 8 }}>Add a photo to let AI draft this for you.</p>}
+            {d.imageUrls.length === 0 && <p className="hint mt-1">Add a photo to let AI draft this for you.</p>}
           </div>
 
           <div className="card pad">
             <h2>Attributes</h2>
-            <p className="hint" style={{ marginBottom: 14 }}>Answers questions like &ldquo;size kya hai?&rdquo;. Separate several values with commas.</p>
+            <p className="hint mb-2">Answers questions like &ldquo;size kya hai?&rdquo;. Separate several values with commas.</p>
             <div style={{ display: 'grid', gap: 8 }}>
               {attrs.map((row, i) => (
-                <div className="row" key={i} style={{ flexWrap: 'nowrap' }}>
+                <div className="row no-wrap-row" key={i} >
                   <input aria-label={`Attribute ${i + 1} name`} placeholder="Size / Color / Material" value={row.k} onChange={(e) => setAttr(i, { k: e.target.value })} style={{ maxWidth: 180 }} />
                   <input aria-label={`Attribute ${i + 1} values`} placeholder="S, M, L, XL" value={row.v} onChange={(e) => setAttr(i, { v: e.target.value })} />
                   <button className="btn subtle icon-btn" onClick={() => setAttrs(attrs.filter((_, j) => j !== i))} aria-label={`Remove attribute ${row.k || i + 1}`}><Trash2 /></button>
@@ -152,21 +152,21 @@ export default function ProductDetail() {
         </div>
 
         <div className="card pad">
-          <h2 style={{ marginBottom: 14 }}>Basics</h2>
+          <h2 className="mb-2">Basics</h2>
           <div className="field"><label htmlFor="name">Name</label><input id="name" value={p.name} onChange={(e) => edit({ name: e.target.value })} /></div>
           <div className="field"><label htmlFor="sku">SKU</label><input id="sku" className="mono" value={p.sku ?? ''} onChange={(e) => edit({ sku: e.target.value || null })} /></div>
-          <div className="grid-2" style={{ marginBottom: 14 }}>
-            <div className="field" style={{ margin: 0 }}><label htmlFor="price">Price (Rs)</label><input id="price" className="num" type="number" min="0" step="any" value={p.price / 100} onChange={(e) => edit({ price: Math.round(Number(e.target.value) * 100) })} /></div>
-            <div className="field" style={{ margin: 0 }}><label htmlFor="stock">Stock</label><input id="stock" className="num" type="number" min="0" placeholder="Not tracked" value={p.stock ?? ''} onChange={(e) => edit({ stock: e.target.value === '' ? null : Number(e.target.value) })} /></div>
+          <div className="grid-2 mb-2">
+            <div className="field m0"><label htmlFor="price">Price (Rs)</label><input id="price" className="num" type="number" min="0" step="any" value={p.price / 100} onChange={(e) => edit({ price: Math.round(Number(e.target.value) * 100) })} /></div>
+            <div className="field m0"><label htmlFor="stock">Stock</label><input id="stock" className="num" type="number" min="0" placeholder="Not tracked" value={p.stock ?? ''} onChange={(e) => edit({ stock: e.target.value === '' ? null : Number(e.target.value) })} /></div>
           </div>
           <div className="divider" />
-          <div className="setting-row" style={{ marginBottom: 14 }}>
+          <div className="setting-row mb-2">
             <div><div className="t" style={{ fontSize: 14 }}>Negotiable</div><div className="d">Let the bot haggle within the limits below</div></div>
             <label className="switch"><input type="checkbox" aria-label="Negotiable" checked={p.negotiable} onChange={(e) => edit({ negotiable: e.target.checked })} /><span className="track" /></label>
           </div>
           <div className="grid-2">
-            <div className="field" style={{ margin: 0 }}><label htmlFor="maxoff">Max % off</label><input id="maxoff" className="num" type="number" min="0" max="100" value={p.max_discount_pct ?? ''} onChange={(e) => edit({ max_discount_pct: e.target.value === '' ? null : Number(e.target.value) })} disabled={!p.negotiable} /></div>
-            <div className="field" style={{ margin: 0 }}><label htmlFor="minprice">Min price (Rs)</label><input id="minprice" className="num" type="number" min="0" step="any" value={p.min_price != null ? p.min_price / 100 : ''} onChange={(e) => edit({ min_price: e.target.value === '' ? null : Math.round(Number(e.target.value) * 100) })} disabled={!p.negotiable} /></div>
+            <div className="field m0"><label htmlFor="maxoff">Max % off</label><input id="maxoff" className="num" type="number" min="0" max="100" value={p.max_discount_pct ?? ''} onChange={(e) => edit({ max_discount_pct: e.target.value === '' ? null : Number(e.target.value) })} disabled={!p.negotiable} /></div>
+            <div className="field m0"><label htmlFor="minprice">Min price (Rs)</label><input id="minprice" className="num" type="number" min="0" step="any" value={p.min_price != null ? p.min_price / 100 : ''} onChange={(e) => edit({ min_price: e.target.value === '' ? null : Math.round(Number(e.target.value) * 100) })} disabled={!p.negotiable} /></div>
           </div>
           <div className="divider" />
           <div className="setting-row">

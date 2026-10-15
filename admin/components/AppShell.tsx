@@ -176,8 +176,10 @@ export default function AppShell({ children, variant = 'merchant' }: { children:
         <div className="sidebar-foot">
           {!platform && platformAdmin && <Link href="/platform" className="nav-link"><ArrowLeftRight aria-hidden /> Switch to console</Link>}
           {platform && hasShop && <Link href="/" className="nav-link"><ArrowLeftRight aria-hidden /> Switch to my shop</Link>}
-          <button className="nav-link" onClick={logout}><LogOut aria-hidden /> Log out</button>
-          <ThemeToggle />
+          <div className="foot-row">
+            <button className="nav-link" onClick={logout}><LogOut aria-hidden /> Log out</button>
+            <ThemeToggle />
+          </div>
         </div>
       </aside>
 

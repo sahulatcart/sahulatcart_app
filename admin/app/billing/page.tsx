@@ -24,7 +24,7 @@ const tone = (s: string) => (s === 'active' || s === 'trial' || s === 'paid' ? '
 function Meter({ label, used, limit }: { label: string; used: number; limit: number }) {
   const pct = Math.min(100, Math.round((used / Math.max(1, limit)) * 100));
   return (
-    <div style={{ marginTop: 12 }}>
+    <div className="mt-2">
       <div className="row between"><span className="strong">{label}</span><span className="muted">{used.toLocaleString('en-PK')} of {limit.toLocaleString('en-PK')}</span></div>
       <div role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={label} style={{ height: 8, borderRadius: 4, background: 'var(--surface)', marginTop: 6, overflow: 'hidden' }}>
         <div style={{ width: `${pct}%`, height: '100%', background: pct >= 100 ? 'var(--danger)' : pct >= 80 ? 'var(--warning)' : 'var(--brand)' }} />
@@ -66,7 +66,7 @@ export default function BillingPage() {
 
       {b.mode === 'handoff' && (
         <div className="callout" role="status">
-          <div className="row" style={{ flexWrap: 'nowrap' }}>
+          <div className="row no-wrap-row">
             <div className="ico"><AlertTriangle aria-hidden /></div>
             <div>
               <div className="strong">{b.reason === 'limit' ? 'This month\'s conversation allowance is used up' : 'The bot is handing chats to you until the invoice is paid'}</div>
@@ -78,7 +78,7 @@ export default function BillingPage() {
 
       <div className="split">
         <div className="card pad">
-          <div className="row between" style={{ marginBottom: 6 }}>
+          <div className="row between mb-1">
             <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><CreditCard aria-hidden /> {plan.label} plan</h2>
             {s && <Pill kind={tone(s.status)}>{humanize(s.status)}</Pill>}
           </div>
@@ -103,7 +103,7 @@ export default function BillingPage() {
 
         <div className="card pad">
           <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><Landmark aria-hidden /> How to pay</h2>
-          <p className="hint" style={{ marginTop: 6 }}>Transfer the invoice amount to the account below, then enter the transfer reference next to the invoice. We mark it paid by hand, usually within one working day.</p>
+          <p className="hint mt-1">Transfer the invoice amount to the account below, then enter the transfer reference next to the invoice. We mark it paid by hand, usually within one working day.</p>
           <pre className="mono" style={{ whiteSpace: 'pre-wrap', background: 'var(--surface)', padding: 12, borderRadius: 8, fontSize: 13 }}>{b.bankDetails || 'Bank details will appear here once set. Contact support.'}</pre>
         </div>
       </div>
@@ -117,7 +117,7 @@ export default function BillingPage() {
               <tbody>
                 {b.invoices.map((i) => (
                   <tr key={i.id}>
-                    <td style={{ whiteSpace: 'nowrap' }}>{dt(i.period_start)} to {dt(i.period_end)}</td>
+                    <td className="nowrap">{dt(i.period_start)} to {dt(i.period_end)}</td>
                     <td>{humanize(i.plan)}</td>
                     <td className="num strong">{rs(i.amount_paisa)}</td>
                     <td><Pill kind={tone(i.status)}>{i.status}</Pill>{i.paid_at && <div className="hint">{dt(i.paid_at)}</div>}</td>

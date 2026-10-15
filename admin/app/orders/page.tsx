@@ -54,7 +54,7 @@ export default function Orders() {
                 {(orders ?? []).map((o) => (
                   <tr key={o.id}>
                     <td><Link href={`/orders/${o.id}`} className="link mono">{o.order_number || '(draft)'}</Link></td>
-                    <td className="muted" style={{ whiteSpace: 'nowrap' }}>{dt(o.created_at)}</td>
+                    <td className="muted nowrap">{dt(o.created_at)}</td>
                     <td><div className="strong">{o.delivery_name || '—'}</div>{o.delivery_area && <div className="hint">{o.delivery_area}</div>}</td>
                     <td><StatusPill status={o.status} /></td>
                     <td><PaymentPill status={o.payment_status} /><div className="hint">{humanize(o.payment_method)}</div></td>

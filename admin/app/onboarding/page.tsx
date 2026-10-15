@@ -109,16 +109,16 @@ export default function Onboarding() {
             <button className="btn block" onClick={goLive} disabled={busy || !ready}>
               {busy ? <Loader2 className="spin" aria-hidden /> : <Rocket aria-hidden />} Go live
             </button>
-            {ready && !ready.ready && <div className="hint" style={{ marginTop: 8 }}>{ready.failing.length} step{ready.failing.length === 1 ? '' : 's'} left before the bot can be switched on.</div>}
+            {ready && !ready.ready && <div className="hint mt-1">{ready.failing.length} step{ready.failing.length === 1 ? '' : 's'} left before the bot can be switched on.</div>}
           </div>
         </div>
 
         <div className="card pad">
           <h2>{step.title}</h2>
-          <p className="hint" style={{ marginBottom: 14 }}>{step.hint}</p>
+          <p className="hint mb-2">{step.hint}</p>
           {result && (
             result.ok
-              ? <div className="pill success" style={{ marginBottom: 16 }}><span className="dot" aria-hidden />Done</div>
+              ? <div className="pill success mb-2"><span className="dot" aria-hidden />Done</div>
               : <div className={result.problem ? 'form-error' : 'callout'} role={result.problem ? 'alert' : undefined} style={{ marginBottom: 16 }}>
                   {result.problem ? <AlertCircle aria-hidden /> : null}
                   <span>{result.reason}</span>
@@ -194,7 +194,7 @@ function ProfilePanel({ s, onChange }: { s: Settings; onChange: () => Promise<vo
       <div className="field"><label htmlFor="p-addr">Shop address</label><input id="p-addr" value={f.address} onChange={(e) => set('address', e.target.value)} placeholder="Shop 4, Liberty Market, Lahore" maxLength={200} /><div className="help">Shown on your WhatsApp business profile.</div></div>
 
       <h3>Business hours</h3>
-      <div className="table-wrap" style={{ marginBottom: 14 }}>
+      <div className="table-wrap mb-2">
         <table>
           <thead><tr><th>Day</th><th>Open</th><th>Opens</th><th>Closes</th></tr></thead>
           <tbody>
@@ -218,11 +218,11 @@ function ProfilePanel({ s, onChange }: { s: Settings; onChange: () => Promise<vo
       <div className="row" style={{ gap: 14, marginBottom: 14 }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         {logo ? <img src={logo} alt="Shop logo" width={56} height={56} style={{ borderRadius: 12, objectFit: 'cover' }} /> : <div className="hint">No logo yet.</div>}
-        <label className="btn ghost sm" style={{ margin: 0 }}><ImagePlus aria-hidden /> {busy === 'logo' ? 'Uploading…' : 'Upload logo'}<input type="file" accept="image/*" className="sr-only" disabled={busy === 'logo'} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} /></label>
+        <label className="btn ghost sm m0"><ImagePlus aria-hidden /> {busy === 'logo' ? 'Uploading…' : 'Upload logo'}<input type="file" accept="image/*" className="sr-only" disabled={busy === 'logo'} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} /></label>
       </div>
 
       <h3>Attestations</h3>
-      <p className="hint" style={{ marginBottom: 14 }}>
+      <p className="hint mb-2">
         {att
           ? <><Pill kind="success">Accepted {dt(att, true)}</Pill> No prohibited goods; messages only to customers who contacted you first.</>
           : <><Pill kind="warning">Not recorded</Pill> Your account predates signup attestations. Support will record them for you.</>}
@@ -265,7 +265,7 @@ function ProductsPanel({ onChange }: { onChange: () => Promise<void> }) {
         <div className="field"><label htmlFor="np-price">Price (Rs)</label><input id="np-price" type="number" min="1" step="1" inputMode="numeric" className="mini num" value={adding.price} onChange={(e) => setAdding({ ...adding, price: e.target.value })} required /></div>
         <div className="field"><label htmlFor="np-stock">Stock</label><input id="np-stock" type="number" min="0" step="1" inputMode="numeric" className="mini num" value={adding.stock} onChange={(e) => setAdding({ ...adding, stock: e.target.value })} placeholder="any" /></div>
         <div className="field"><button className="btn"><Plus aria-hidden /> Add</button></div>
-        <div className="field"><label className="btn ghost" style={{ margin: 0 }}><FileUp aria-hidden /> Import CSV<input type="file" accept=".csv,text/csv" className="sr-only" onChange={(e) => e.target.files?.[0] && importCsv(e.target.files[0])} /></label></div>
+        <div className="field"><label className="btn ghost m0"><FileUp aria-hidden /> Import CSV<input type="file" accept=".csv,text/csv" className="sr-only" onChange={(e) => e.target.files?.[0] && importCsv(e.target.files[0])} /></label></div>
       </form>
       {products === null ? <div className="skeleton" style={{ height: 80 }} /> : products.length === 0 ? <p className="hint">No products yet.</p> : (
         <div className="table-wrap">
@@ -273,7 +273,7 @@ function ProductsPanel({ onChange }: { onChange: () => Promise<void> }) {
             <thead><tr><th>Product</th><th className="num">Price</th><th>Status</th></tr></thead>
             <tbody>{products.slice(0, 20).map((p) => <tr key={p.id}><td>{p.name}</td><td className="num">{rs(p.price)}</td><td>{p.is_active ? <Pill kind="success">Active</Pill> : <Pill kind="neutral">Hidden</Pill>}</td></tr>)}</tbody>
           </table>
-          {products.length > 20 && <p className="hint" style={{ marginTop: 8 }}>{products.length - 20} more in the <Link href="/catalog" className="link">catalog</Link>.</p>}
+          {products.length > 20 && <p className="hint mt-1">{products.length - 20} more in the <Link href="/catalog" className="link">catalog</Link>.</p>}
         </div>
       )}
       <p className="hint" style={{ marginTop: 14 }}>Photos, descriptions and per-product floors live in the <Link href="/catalog" className="link">catalog</Link>.</p>
@@ -316,7 +316,7 @@ function PaymentPanel({ s, onChange }: { s: Settings; onChange: () => Promise<vo
 
       <h3>Bank accounts</h3>
       {s.bankAccounts.length > 0 && (
-        <div className="table-wrap" style={{ marginBottom: 12 }}>
+        <div className="table-wrap mb-2">
           <table>
             <thead><tr><th>Bank</th><th>Account title</th><th>Account number</th><th aria-label="Actions" /></tr></thead>
             <tbody>
@@ -425,7 +425,7 @@ function TestOrderPanel({ ok, phone }: { ok: boolean; phone: string | null }) {
         {wa?.displayPhone && <a className="btn ghost" href={`https://wa.me/${wa.displayPhone}?text=hi`} target="_blank" rel="noreferrer"><Smartphone aria-hidden /> Open WhatsApp</a>}
         <button type="button" className="btn ghost" onClick={sendTest} disabled={busy || wa?.status !== 'connected'}><Send aria-hidden /> {busy ? 'Sending…' : 'Send test message'}</button>
       </div>
-      {wa && wa.status !== 'connected' && <p className="hint" style={{ marginTop: 10 }}>Connect your number in step 2 first.</p>}
+      {wa && wa.status !== 'connected' && <p className="hint mt-1">Connect your number in step 2 first.</p>}
     </>
   );
 }
