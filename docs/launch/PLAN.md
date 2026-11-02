@@ -65,8 +65,9 @@ the rest while Meta reviews.
 1. Meta dashboard → App → switch **Development** to **Live**.
 2. Permissions and Features → confirm `whatsapp_business_messaging` and
    `whatsapp_business_management` show **Advanced access**.
-3. Railway → backend → set `SIGNUP_OPEN=true` (until then, signup accepts only emails on an
-   allow-list, which is how testers get in).
+3. Platform console → `/platform/access` → open sign-up (until then, signup accepts only emails on
+   the allow-list, which is how testers get in). Not Railway: the `SIGNUP_*` variables were deleted
+   there on 2026-10-14 and are only a fallback.
 4. One real merchant, not a tester, signs up and connects a number. Send one message, get one reply.
 
 That is all. Everything else in this plan happens before that day.
@@ -183,8 +184,8 @@ The core of self-service, and the first thing Meta wants to see. Built first.
 password reset. Not Facebook login for the portal: that would add a second Meta review surface and
 Embedded Signup already handles the Facebook part. On first login the backend creates the merchant
 row and the owner membership in one transaction, keyed on the auth user id so a repeated login finds
-the same shop. Until `SIGNUP_OPEN=true`, signup accepts only emails on `SIGNUP_ALLOWLIST`; that is how
-testers and pilot shops get in before approval.
+the same shop. Until sign-up is opened in `/platform/access`, signup accepts only emails on its
+allow-list; that is how testers and pilot shops get in before approval.
 
 **Connect WhatsApp.** A page in the portal with one button. It launches Meta's Embedded Signup
 (Facebook JS SDK, our config ID, `response_type: 'code'`). The browser passes the returned code to

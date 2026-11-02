@@ -1,5 +1,5 @@
 # Sahulatcart — https://www.sahulatcart.com
-# Operated by Nubrix Technologies (Pvt) Ltd
+# Operated by Nubrix Technologies (Private) Limited
 
 User-agent: *
 Allow: /

@@ -2,6 +2,70 @@
 
 A running, reverse-chronological log of work on this project: what changed, why, and what was left open.
 
+## 2026-11-02 — Site carries the FBR certificate's legal name, NTN and address; Connect is configured on Railway
+
+Branch `fix/site-legal-details`, stacked on `fix/dashboard-chat-count` (#56) because both add an entry
+at the top of this file. Prerequisite for Meta business verification (PLAN.md A2).
+
+**What the certificate says.** The FBR Taxpayer Registration Certificate (Registration No. K521056,
+Inc. No. 0362390, printed 27 Oct 2026) names the company **NUBRIX TECHNOLOGIES (PRIVATE) LIMITED**
+at "House Number 7 wasa Colony Mohalla Nowan Kot Gulshan Ravi Lahore, -, -, Pakistan". The site said
+"Nubrix Technologies (Pvt) Ltd" on all 10 pages: exactly the abbreviation mismatch PLAN.md warned is
+a rejection.
+
+**What changed.**
+- Legal name "Nubrix Technologies (Private) Limited" everywhere (pages, meta descriptions, robots.txt,
+  homepage JSON-LD, the `.env.example` bank-details example).
+- The full address in the five page footers, the four legal-page contact blocks and the About table,
+  worded as printed, lowercase "wasa" included; only the certificate's "-, -," filler is dropped.
+- About table: NTN K521056 and SECP company no. 0362390; the `.tbc` placeholders are gone. JSON-LD
+  gains `streetAddress` and `taxID`. Sitemap `lastmod` bumped for the five pages whose text changed.
+- **Railway:** `META_EMBEDDED_SIGNUP_CONFIG_ID=1112353221403345` set on the backend (deploy
+  `57b4a78f` SUCCESS; `/api/v1/config` serves it, so the Connect WhatsApp page no longer says "Meta
+  app is not configured"). Declared with `preserve()` in `.railway/railway.ts`, which lists every
+  other backend variable, so a config apply keeps it.
+- PLAN.md's approval-day step 3 said to set `SIGNUP_OPEN=true` on Railway; those variables were
+  deleted on 2026-10-14. It now points at `/platform/access`.
+
+**Hassles.** At phone width the About table's new labels "NTN (FBR registration no.)" and
+"Incorporation no. (SECP)" broke mid-word ("registratio / n no."); they are "NTN" and "Company no.
+(SECP)". A tag-balance check flagged a stray `</div>` on the homepage: it is already on `main` (line
+328, the quotes marquee) and was left alone.
+
+## 2026-10-27 — Meta app configured for Embedded Signup (M7 steps 2–3), and what the dashboard showed
+
+Done in the Meta dashboard with the owner signed in (Uzair Khawaja's Facebook account), no code.
+
+**What the audit found first.** Portfolio "Sahulatcart" (id 3865786606894335) owns app
+1004648189091220, the same id as Railway's `META_APP_ID`, and system user `sahulatcart_backend`. Its
+only WhatsApp account is Meta's "Test WhatsApp Business Account". Business info (legal name, address,
+phone, website) was empty, verification not started ("Eligible for verification"), 2FA required for no
+one, no domains, and the owner (Fazal) not a member. The app was unpublished with empty basic settings.
+Tech Provider onboarding not started: its "Start onboarding" button accepts the Tech Provider Terms,
+so it was left for the owner. **The webhook page says an unpublished app receives no production
+webhooks, "including from app admins, developers or testers"**, so the app must be published before
+the App Review videos can show a real reply.
+
+**What changed.**
+- App basic settings: app domains `sahulatcart.com` and `appadmin-production-0a30.up.railway.app`,
+  privacy, terms and data-deletion URLs, category "Business and pages". The icon still needs uploading
+  by hand (the agent's browser cannot attach files).
+- Facebook Login for Business: "Login with the JavaScript SDK" on; allowed domain
+  `https://appadmin-production-0a30.up.railway.app/` (Meta adds the slash).
+- Webhooks (WhatsApp Business Account): `account_update`, `message_template_status_update` and
+  `phone_number_quality_update` subscribed beside `messages`, all at v26.0.
+- Embedded Signup configuration **1112353221403345**.
+
+**Dead ends.**
+- The railway.app host seemed to be refused as an app domain: Enter after typing it left the field
+  empty. Typing it again turned it into a chip; it saved and survived a reload. It was not rejected.
+- **The only WhatsApp configuration template issues a 60-day system-user token** ("WhatsApp Embedded
+  Signup Configuration With 60 Expiration Token"). "Create configuration" by hand offers only the
+  "General" login variation, not "WhatsApp Embedded Signup", so a never-expiring variant cannot be
+  built. The backend records `token_expires_at` from `debug_token` but never renews a token: if the
+  first real connect shows a real expiry, a renewal or "please reconnect" reminder is needed before
+  shops connect.
+
 ## 2026-10-27 — Fix: the "Chats waiting for your reply" count stopped at five
 
 Branch `fix/dashboard-chat-count`, from `main` at `262d501` (after #55). Found by reading the
