@@ -743,7 +743,8 @@ local-only branch preserving the pre-rollback tree. On 2026-09-30 the admin was 
 same tokens and gained dark mode (PRs #10 and #11; see "Portal UI" and "Dark mode" above).
 
 - The name is **"Sahulatcart"** — one word, capital S, lowercase c. Explicitly *not* "SahulatCart".
-- The legal entity is **Nubrix Technologies (Pvt) Ltd**, Lahore. "Sahulatcart" is the trading name.
+- The legal entity is **Nubrix Technologies (Private) Limited**, Lahore (NTN K521056, SECP 0362390), spelled
+  as on the FBR certificate; never "(Pvt) Ltd", which Meta's verification would treat as a mismatch. "Sahulatcart" is the trading name.
   The terms name the company as the contracting party and the privacy policy as data controller.
 - Brand tokens: teal `#249E87`, green `#268D3C`, mint `#C2FFB4`, forest `#113320`, navy `#0A0D13`,
   slate `#6D7486`, border `#E7E9ED`, surface `#F6F7F9`. Kaisei Decol / Poppins / JetBrains Mono.
@@ -777,8 +778,10 @@ them, these points are load-bearing and were put there for a reason:
   policy states each of these as a binding commitment. Do not soften them.
 - **Meta business verification matches the website against Business Manager and the uploaded
   documents, character for character.** The legal name, address and phone appear in the footer of
-  every page and in the `about.html` table. Registered address (full street) and NTN are still
-  placeholders marked with a loud `.tbc` class — do not remove the class until the real values land.
+  every page and in the `about.html` table. Since 2026-11-02 they are the FBR Taxpayer Registration
+  Certificate's values, copied with its spelling ("House Number 7 wasa Colony Mohalla Nowan Kot Gulshan
+  Ravi Lahore, Pakistan", lowercase "wasa" included). Change them only together with the certificate
+  and the Business Manager entry.
 - `data-deletion.html` exists because Meta wants a **separate** Data Deletion Instructions URL, not a
   privacy-policy section.
 - Pakistan has **no enacted** data protection statute; the PDP Bill is still before the legislature.
