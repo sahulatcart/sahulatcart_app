@@ -199,4 +199,12 @@ describe('dashboard queue (UI pass 2)', () => {
     expect(f).not.toContain('oq-done');
     expect(f).not.toContain('oq-other');
   });
+  it('counts every waiting chat, not just the five it lists', async () => {
+    for (let i = 0; i < 6; i++) fake.add('conversations', { id: `cq-more-${i}`, merchant_id: 'MA', customer_id: 'cq-1', status: 'human_takeover', unread_count: 1, last_message_at: `2026-10-15T08:0${i}:00Z` });
+    const waiting = fake.rows('conversations').filter((c) => c.merchant_id === 'MA' && c.status === 'human_takeover' && (c.unread_count as number) > 0).length;
+    const r = await app.inject({ method: 'GET', url: '/api/v1/admin/dashboard', headers: A });
+    expect(waiting).toBeGreaterThan(5);
+    expect(r.json().queue.chats).toHaveLength(5);
+    expect(r.json().chatsWaiting).toBe(waiting);
+  });
 });

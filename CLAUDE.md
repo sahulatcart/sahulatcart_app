@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **46 files, 522 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **46 files, 523 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -533,7 +533,9 @@ discriminated union of ~20 reply kinds) and only phrases it.
   the Supabase config is cached per tab in `sessionStorage` `sk_cfg`.
 - **The dashboard leads with the queue** (since 2026-10-15): `GET /admin/dashboard` returns
   `queue.{payments,chats,fulfil}`, the oldest five of each thing waiting on the merchant, and the
-  page acts on them in place where no input is needed. `/inbox?c=<id>` opens a chat.
+  page acts on them in place where no input is needed. `/inbox?c=<id>` opens a chat. A group's
+  heading shows the **full** count from its own head query (`pendingPayments`, `chatsWaiting`,
+  `toPrepare + toDispatch`), never the length of the five-row list.
 - **Consequential writes ask through `ConfirmDialog`** (`components/Dialog.tsx`, since 2026-10-15), never
   `window.confirm`; a reversible one (block/unblock) gets an Undo toast. Each merchant section has a
   `layout.tsx` that names the browser tab. Display helpers (`phone`, `ago`, `day`) live in

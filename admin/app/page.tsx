@@ -12,7 +12,7 @@ interface Usage { month: string; outbound: number; freeQuota: number; paidOutbou
 interface QOrder { id: string; order_number: string; status?: string; total: number; delivery_name: string | null; created_at: string }
 interface QChat { id: string; last_message_at: string; unread_count: number; customers: { name: string | null; wa_id: string } | null }
 interface Dash {
-  ordersToday: number; revenueToday: number; pendingPayments: number; activeChats: number; toPrepare: number; toDispatch: number;
+  ordersToday: number; revenueToday: number; pendingPayments: number; activeChats: number; toPrepare: number; toDispatch: number; chatsWaiting: number;
   recentOrders: { id: string; order_number: string; status: string; payment_status: string; total: number; delivery_name: string }[];
   // UI pass 2: the oldest five of each thing that waits on the merchant.
   queue: { payments: QOrder[]; chats: QChat[]; fulfil: QOrder[] };
@@ -114,7 +114,7 @@ export default function Dashboard() {
           </QueueGroup>
         )}
         {q && q.chats.length > 0 && (
-          <QueueGroup title="Chats waiting for your reply" count={q.chats.length} href="/inbox" all="Open inbox">
+          <QueueGroup title="Chats waiting for your reply" count={d!.chatsWaiting} href="/inbox" all="Open inbox">
             {q.chats.map((c) => (
               <li key={c.id} className="feed-item">
                 <span className="ico brand"><MessagesSquare aria-hidden /></span>

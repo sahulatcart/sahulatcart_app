@@ -2,6 +2,27 @@
 
 A running, reverse-chronological log of work on this project: what changed, why, and what was left open.
 
+## 2026-10-27 — Fix: the "Chats waiting for your reply" count stopped at five
+
+Branch `fix/dashboard-chat-count`, from `main` at `262d501` (after #55). Found by reading the
+dashboard code while explaining the "Needs you" card; not reported by a merchant.
+
+**The bug.** In the queue added by UI pass 2 (#51), every group heading is meant to show the full
+count. Payments and orders did, through their own head-count queries (`pendingPayments`,
+`toPrepare + toDispatch`). Chats had no count query, so the page used `q.chats.length`: the length
+of a list the route caps at five. Eight waiting chats read as "5". It looked right in every test
+and demo because nobody had more than five chats waiting.
+
+**What changed.** `GET /api/v1/admin/dashboard` runs one more head query (taken-over chats with
+unread messages, the same filter as the list) and returns `chatsWaiting`; the heading uses it. A
+route test adds six more waiting chats and checks the list holds five while the count is the full
+total. Suite 46 files / 523 tests.
+
+**Why a separate query, not `count` on the list query.** PostgREST would return the full total on
+the limited query, but `FakeDb` computes `count` *after* `.limit()`, so the fake would have said 5
+where production says the full total. A separate head query matches the other counts in the route
+and behaves the same in both. The fake's count-after-limit is left as is; nothing else relies on it.
+
 ## 2026-10-15 — The merchant sidebar goes forest in light mode
 
 Branch `feat/merchant-forest-sidebar`, from `main` at `57a545d` (after #54). Uzair asked for the
