@@ -1,7 +1,7 @@
-import { loadConfig } from '../config';
 import { logger } from '../lib/logger';
 import { getServiceClient } from '../lib/supabase';
 import { lookupToken, markTokenInvalid } from './credentials';
+import { graphUrl } from './meta-graph';
 import { bumpUsage } from '../lib/usage';
 
 /**
@@ -17,7 +17,6 @@ export interface SendResult {
 const META_TOKEN_INVALID = 190;
 
 async function send(phoneNumberId: string, to: string, payload: Record<string, unknown>, what: string): Promise<SendResult> {
-  const cfg = loadConfig();
   const db = getServiceClient();
   const creds = await lookupToken(db, phoneNumberId);
   if (!creds.token) {
@@ -25,8 +24,7 @@ async function send(phoneNumberId: string, to: string, payload: Record<string, u
     return { waMessageId: null, errorCode: creds.reason };
   }
 
-  const url = `https://graph.facebook.com/${cfg.META_GRAPH_API_VERSION}/${phoneNumberId}/messages`;
-  const res = await fetch(url, {
+  const res = await fetch(graphUrl(`${phoneNumberId}/messages`, creds.token), {
     method: 'POST',
     headers: { Authorization: `Bearer ${creds.token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ messaging_product: 'whatsapp', to, ...payload }),

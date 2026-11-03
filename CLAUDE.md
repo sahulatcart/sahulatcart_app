@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **46 files, 523 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **46 files, 524 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -195,6 +195,10 @@ Every send and media download uses the credentials of the **number it acts for**
 ([lib/crypto.ts](backend/src/lib/crypto.ts), key `TOKEN_ENCRYPTION_KEY`, 32 bytes as hex or
 base64, **required in production**). Callers (`sendText`, `sendImage`, `sendDocument`,
 `downloadWhatsAppMedia`, catalog sync) never see a token. Rules that are easy to break:
+- **Every Graph call carries `appsecret_proof`.** Build the URL with `graphUrl()` (or call `graph()`)
+  from [whatsapp/meta-graph.ts](backend/src/whatsapp/meta-graph.ts); never a raw
+  `graph.facebook.com` fetch. Once the app went live (2026-11-03) Meta answered every unsigned call
+  with code 100 "appsecret_proof is required", and the bot's replies sat at `queued`.
 - **The env token `META_SYSTEM_USER_TOKEN` is used only for `META_DEFAULT_PHONE_NUMBER_ID`** (the
   pilot number) until that merchant reconnects through Embedded Signup (M2). Any other number
   without a secret is refused (`errorCode: 'no_credentials'`), never sent with the platform token.

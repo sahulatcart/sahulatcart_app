@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FakeDb } from '../test-support/fake-db';
 import { loadConfig } from '../config';
@@ -43,6 +44,22 @@ describe('sending with per-merchant credentials', () => {
     expect(calls[1]!.headers.Authorization).toBe('Bearer token-B');
     expect(calls[1]!.url).toContain('/PN-B/messages');
     expect(calls[0]!.body).toMatchObject({ messaging_product: 'whatsapp', to: '923001', type: 'text', text: { body: 'salam' } });
+  });
+
+  it('signs every send with appsecret_proof for its own token (Meta refuses unsigned calls once live)', async () => {
+    cfg.META_APP_SECRET = 'test-app-secret';
+    try {
+      await sendText('PN-A', '923001', 'salam');
+      await sendText('PN-B', '923002', 'salam');
+    } finally {
+      cfg.META_APP_SECRET = undefined;
+    }
+    const proof = (t: string) => crypto.createHmac('sha256', 'test-app-secret').update(t).digest('hex');
+    expect(new URL(calls[0]!.url).searchParams.get('appsecret_proof')).toBe(proof('token-A'));
+    expect(new URL(calls[1]!.url).searchParams.get('appsecret_proof')).toBe(proof('token-B'));
+    expect(calls[0]!.url).not.toContain('token-A'); // the token stays in the header
+    await sendText('PN-A', '923001', 'salam'); // no app secret configured: nothing to sign with
+    expect(new URL(calls[2]!.url).searchParams.has('appsecret_proof')).toBe(false);
   });
 
   it('image and document sends carry the same credentials and payload shape', async () => {

@@ -4,6 +4,7 @@ import { loadConfig } from '../config';
 import { logger } from '../lib/logger';
 import { getServiceClient } from '../lib/supabase';
 import { tokenForNumber } from './credentials';
+import { graphUrl } from './meta-graph';
 
 /**
  * Download an inbound WhatsApp media object (docs/spec/04 §3.2): media id → URL → bytes.
@@ -11,13 +12,11 @@ import { tokenForNumber } from './credentials';
  * received the message.
  */
 export async function downloadWhatsAppMedia(mediaId: string, phoneNumberId: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
-  const cfg = loadConfig();
   const token = await tokenForNumber(getServiceClient(), phoneNumberId);
   if (!token) return null;
-  const v = cfg.META_GRAPH_API_VERSION;
   const auth = { Authorization: `Bearer ${token}` };
   try {
-    const meta = (await fetch(`https://graph.facebook.com/${v}/${mediaId}`, { headers: auth }).then((r) => r.json())) as {
+    const meta = (await fetch(graphUrl(mediaId, token), { headers: auth }).then((r) => r.json())) as {
       url?: string;
       mime_type?: string;
     };
