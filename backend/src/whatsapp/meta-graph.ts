@@ -43,6 +43,18 @@ function appSecretProof(token: string): string {
   return crypto.createHmac('sha256', secret).update(token).digest('hex');
 }
 
+/**
+ * A Graph URL carrying `appsecret_proof` for this token, for callers that fetch it themselves (sends,
+ * media, catalog sync). Since the app went live (2026-11-03) Meta refuses any call without the proof
+ * (code 100, "appsecret_proof is required"). Without an app secret (local dev, tests) there is none to add.
+ */
+export function graphUrl(path: string, token: string): string {
+  const cfg = loadConfig();
+  const url = new URL(`https://graph.facebook.com/${cfg.META_GRAPH_API_VERSION}/${path}`);
+  if (cfg.META_APP_SECRET) url.searchParams.set('appsecret_proof', appSecretProof(token));
+  return url.toString();
+}
+
 /** One Graph call. Token in the header (never the URL, which ends up in logs), proof in the query. */
 export async function graph<T>(
   path: string,

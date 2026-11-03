@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { loadConfig } from '../config';
 import { tokenForNumber } from '../whatsapp/credentials';
+import { graphUrl } from '../whatsapp/meta-graph';
 import { getServiceClient } from '../lib/supabase';
 import { forbid, isAdminToken, isManager, requireMerchant } from '../lib/auth';
 import { NEW_MERCHANT_SETTINGS, signupGate } from '../lib/signup';
@@ -439,7 +440,6 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/v1/admin/products/catalog-sync', async (req, reply) => {
     if (!isManager(req.merchantCtx!)) return forbid(reply);
-    const cfg = loadConfig();
     const mid = req.merchantCtx!.merchantId;
     const wabaRow = await db.from('whatsapp_numbers').select('waba_id, phone_number_id').eq('merchant_id', mid).limit(1).maybeSingle();
     const waba = wabaRow.data?.waba_id;
@@ -448,7 +448,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     if (!token || !waba) return reply.code(400).send({ error: { code: 'NO_WABA', message: 'WhatsApp/WABA not connected' } });
     // Token in a header, never the URL (URLs end up in proxy and error logs).
     const graph = async <T>(path: string): Promise<T> =>
-      (await fetch(`https://graph.facebook.com/${cfg.META_GRAPH_API_VERSION}/${path}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) })).json() as Promise<T>;
+      (await fetch(graphUrl(path, token), { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) })).json() as Promise<T>;
     try {
       const cats = await graph<{ data?: { id: string }[]; error?: { message: string } }>(`${waba}/product_catalogs`);
       const catalogId = cats.data?.[0]?.id;

@@ -2,6 +2,47 @@
 
 A running, reverse-chronological log of work on this project: what changed, why, and what was left open.
 
+## 2026-11-03 — Fix: replies failed once the Meta app went live (missing `appsecret_proof`)
+
+Branch `fix/appsecret-proof-sends`.
+
+**Symptom.** The first message after publishing ("hi" from the owner's phone to the test number at
+10:56 UTC) arrived, was answered by the bot ("Walaikum Assalam! Uzair shop par khushamdeed…"), and
+the reply never reached the phone. The `messages` row sat at `queued`: no `wa_message_id`.
+
+**Cause.** The send was refused: `400, code 100, "appsecret_proof is required but not provided."`
+The connect flow (`meta-graph.ts` `graph()`) has always signed its calls, but `client.ts` (every
+send), `media.ts` (media lookup for voice notes, images, screenshots) and the catalog sync in
+`routes/admin.ts` built raw `graph.facebook.com` URLs without the proof. Unsigned calls worked
+while the app was in development; publishing it made the proof mandatory.
+
+**Misleading.** The failure line was easy to miss: the first log grab ended one second before
+the send, and the next lines were all "message usage bump failed", which looked like the culprit.
+They are a separate bug (below) that never blocks a reply.
+
+**What changed.** `graphUrl(path, token)` in `meta-graph.ts` builds a Graph URL with
+`appsecret_proof` (when `META_APP_SECRET` is set); the three callers use it, and no raw Graph URL is
+left outside that file. `client.test.ts` checks each number's send carries the HMAC of its own
+token and that the token stays in the header. Suite 46 files / 524 tests.
+
+**Still open.** `bump_message_usage()` fails on every call with `column reference "merchant_id" is
+ambiguous` (migration 0011, a plpgsql output column shadowing the table column; the JS twin in
+`FakeDb` cannot catch it). The meter has counted nothing since it went live; `bumpUsage()` never
+throws, so sends and replies are unaffected. Needs a migration.
+
+## 2026-11-02 / 11-03 — Meta: business verified, Tech Provider terms accepted, app published
+
+Done in the Meta dashboard with the owner signed in; no code. Business info filled from the FBR
+certificate (postal code 54000 from the owner, Tax ID K521056). Business verification: type
+"Private Company" (the owner first said "partnership"; the certificate's "Company" / "(PRIVATE)
+LIMITED" decided it), not found in public records, so the certificate went up as a "Business Tax
+Document" with an email code to fazal@sahulatcart.com. **Approved the same day** (2 Nov). The
+separate "Access verification" step the go-live page listed beforehand disappeared once business
+verification passed. Tech Provider Terms accepted as an Independent Tech Provider (owner's explicit
+yes); two-factor required for everyone; app icon is a square, transparent version of the logo;
+full-access invites sent to fazal@sahulatcart.com (Cloudflare routing delivered it, slowly) and
+khanfazal6888@gmail.com. App **published** on 3 Nov. App Review (the two videos) is next.
+
 ## 2026-11-02 — Site carries the FBR certificate's legal name, NTN and address; Connect is configured on Railway
 
 Branch `fix/site-legal-details`, stacked on `fix/dashboard-chat-count` (#56) because both add an entry
