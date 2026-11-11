@@ -13,6 +13,10 @@ import type { AccountEvent } from './types';
  *
  * Language is `en`: Roman Urdu is Latin script and Meta has no code for it. If Meta rejects for
  * "language mismatch", resubmit with a shorter, more English body (FR-M4.1).
+ *
+ * Meta refuses a body that starts or ends with a variable, or has "too many variables for its
+ * length" (seen in WhatsApp Manager, 2026-11-05). `templates.test.ts` checks both for every body.
+ * `order_sent` is word for word the template created by hand on the test WABA that day.
  */
 
 export interface TemplateDef {
@@ -28,15 +32,15 @@ export const TEMPLATE_DEFS: Record<'payment_update' | 'order_sent', TemplateDef>
     base: 'payment_update',
     category: 'UTILITY',
     language: 'en',
-    body: 'Assalam o alaikum {{1}}! Aapke order {{2}} ki payment {{3}}. {{4}}',
-    example: ['Ali', 'SK-1001', 'verify ho gayi hai', 'Jald deliver karenge, shukriya!'],
+    body: 'Assalam o alaikum {{1}}! Aapke order {{2}} ki payment {{3}}. Koi sawal ho to isi number par message karein. Shukriya!',
+    example: ['Ali', 'SK-1001', 'verify ho gayi hai, jald deliver karenge'],
   },
   order_sent: {
     base: 'order_sent',
     category: 'UTILITY',
     language: 'en',
-    body: '{{1}}, aapka order {{2}} bhej diya gaya hai. {{3}}',
-    example: ['Ali', 'SK-1001', 'Jald pohanch jaye ga, shukriya!'],
+    body: 'Assalam o alaikum {{1}}, aapka order {{2}} bhej diya gaya hai. Jald aap tak pohanch jaye ga. Shukriya!',
+    example: ['Ali', 'SK-1001'],
   },
 };
 export type TemplateKind = keyof typeof TEMPLATE_DEFS;

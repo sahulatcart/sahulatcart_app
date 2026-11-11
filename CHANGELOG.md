@@ -2,6 +2,60 @@
 
 A running, reverse-chronological log of work on this project: what changed, why, and what was left open.
 
+## 2026-11-11 — Fix: both message templates broke Meta's body rules
+
+Branch `fix/template-bodies`. Found while recording the App Review screencast on 2026-11-05: pasting
+our `order_sent` body into WhatsApp Manager was refused with "This template has too many variables
+for its length… Variables can't be at the start or end of the template."
+
+**The bug.** `order_sent` was `{{1}}, aapka order {{2}} bhej diya gaya hai. {{3}}` (starts and ends
+with a variable, 3 variables in six words) and `payment_update` ended with `{{4}}`. `ensureTemplates()`
+would have had both refused for every shop that connected, and `submit()` only logs a refusal, so
+the paid notice button would have answered "template not approved" forever.
+
+**What changed.**
+- `order_sent`: `Assalam o alaikum {{1}}, aapka order {{2}} bhej diya gaya hai. Jald aap tak pohanch
+  jaye ga. Shukriya!` (word for word the template created by hand on the test WABA, now in review).
+  Two parameters; courier and ETA stay in the free-form message inside the 24-hour window only.
+- `payment_update`: `Assalam o alaikum {{1}}! Aapke order {{2}} ki payment {{3}}. Koi sawal ho to isi
+  number par message karein. Shukriya!`. The old {{3}} and {{4}} became one status phrase, e.g.
+  "verify nahi ho saki (wajah: amount short), baraye meharbani sahi screenshot dobara bhej dein".
+- `noticeParams()` builds 2 / 3 parameters and collapses whitespace (Meta refuses a parameter with a
+  newline, a tab or four spaces), which matters because the rejection reason is merchant text.
+- `templates.test.ts` checks every body: no variable at either end, numbered 1..n, one example per
+  variable, at least three fixed words per variable. Both old bodies fail it. The flow test checks
+  the parameters for both kinds. Suite 46 files / 526 tests.
+
+**Not changed.** No shop has template rows yet (the pilot number never went through Embedded
+Signup), so nothing needs migrating. If the pilot's test WABA ever runs `ensureTemplates()`, Meta
+will refuse `order_sent` as a duplicate of the hand-made one and no row is written; sync it by hand.
+
+## 2026-11-05 / 11-11 — App Review submitted; sign-up opened; Supabase confirmation links fixed
+
+Done in the Meta and Supabase dashboards with the owner; no code.
+
+- **App Review submitted 2026-11-11** (submission 1043450261877679; "Review in progress", Meta says
+  most take up to 20 days): `whatsapp_business_messaging` (screencast: a buyer's "hi", the bot's reply
+  and a merchant reply from the portal Inbox, all arriving in WhatsApp Desktop) and
+  `whatsapp_business_management` (screencast: creating `order_sent` in WhatsApp Manager, which Meta
+  accepts in place of an in-app recording), plus the automatic `public_profile`. Both videos had the
+  owner's chat list and bookmarks bar blurred with ffmpeg. Data handling names Google (Gemini),
+  Supabase (India, the database is AWS ap-south-1, and US), Railway and Resend, as in the privacy
+  policy. **Switching the AI provider means updating that answer and the privacy policy first.**
+  The app gained a Website platform (the portal URL), which the form requires before reviewer
+  instructions.
+- **Dead ends in the form.** Meta's multi-select menus stay open after a click, so the next click on
+  the country box ticked "Legal and law enforcement" twice; close each menu and check it before the
+  next field. The agent's ticks on the "I agree" boxes were blocked as consent on the company's
+  behalf; the owner ticked them.
+- **Sign-up opened** for reviewers (`PUT /api/v1/platform/signup`, open=true, the 5-address
+  allow-list kept; an audit row was written). Close it again after approval if wanted.
+- **Supabase confirmation links went to `http://localhost:3000/#error…`.** Auth's Site URL was
+  `http://localhost:3000` and the Redirect URLs list was empty, so the portal's `emailRedirectTo`
+  (`/auth/confirmed`) was refused and Supabase fell back to the Site URL. Now Site URL is the portal
+  and the redirect list holds `https://appadmin-production-0a30.up.railway.app/**` and
+  `http://localhost:3000/**`. Confirmed end to end by the owner. This also fixes password-reset links.
+
 ## 2026-11-03 — Fix: replies failed once the Meta app went live (missing `appsecret_proof`)
 
 Branch `fix/appsecret-proof-sends`.

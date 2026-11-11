@@ -324,9 +324,13 @@ describe('M4: fewer messages, buttons, the window rule', () => {
     expect(r).toMatchObject({ ok: true, template: 'payment_update' });
     const s = h.sent.at(-1)!;
     expect(s.type).toBe('template');
-    expect(s.params).toEqual(['Ali', 'SK-1001', 'verify ho gayi hai', 'Jald deliver karenge, shukriya!']);
+    expect(s.params).toEqual(['Ali', 'SK-1001', 'verify ho gayi hai, jald deliver karenge']);
     expect(order().pending_buyer_notice).toBeNull();
     expect(db.rows('messages').at(-1)).toMatchObject({ type: 'template', template_name: 'payment_update', sender: 'system' });
+    // order_sent fills exactly two variables: the body is the one created in WhatsApp Manager.
+    db.add('message_templates', { merchant_id: M, waba_id: 'W', name: 'order_sent', language: 'en', status: 'approved', rejection_reason: null, wa_template_id: 't2' });
+    expect(await notifyBuyerNow(db.client, { merchantId: M }, order().id, 'order_sent')).toMatchObject({ ok: true, template: 'order_sent' });
+    expect(h.sent.at(-1)!.params).toEqual(['Ali', 'SK-1001']);
   });
 
   it('a rejection after the window closed uses the same template with the reason', async () => {
@@ -339,8 +343,8 @@ describe('M4: fewer messages, buttons, the window rule', () => {
     db.add('message_templates', { merchant_id: M, waba_id: 'W', name: 'payment_update_v2', language: 'en', status: 'approved', rejection_reason: null });
     const r = await notifyBuyerNow(db.client, { merchantId: M }, order().id, 'payment_update');
     expect(r).toMatchObject({ ok: true, template: 'payment_update_v2' });
-    expect(h.sent.at(-1)!.params![2]).toBe('verify nahi ho saki');
-    expect(h.sent.at(-1)!.params![3]).toContain('amount short');
+    expect(h.sent.at(-1)!.params).toHaveLength(3);
+    expect(h.sent.at(-1)!.params![2]).toMatch(/^verify nahi ho saki \(wajah: amount short\), /);
   });
 
   it('the paid button refuses an order from another merchant and an unplaced order', async () => {
