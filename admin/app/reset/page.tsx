@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Loader2, MailCheck } from 'lucide-react';
+import { AlertCircle, ArrowRight, Loader2, MailCheck } from 'lucide-react';
 import { sendPasswordReset } from '../../lib/api';
 import AuthLayout from '../../components/AuthLayout';
 
@@ -9,15 +9,19 @@ export default function ResetPage() {
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
+  const [err, setErr] = useState('');
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!email.trim()) return;
+    setErr('');
+    if (!email.trim()) return setErr('Enter your email.');
     setBusy(true);
-    // Always "sent": whether the email has an account is not something to reveal here.
-    await sendPasswordReset(email.trim()).catch(() => {});
+    // Supabase answers a known and an unknown email alike, so a "sent" here reveals nothing. Its errors
+    // (rate limit, mailer down) are shown: swallowing them made a failed send look sent (2026-11-12).
+    const problem = await sendPasswordReset(email.trim()).catch(() => 'We could not send the reset email right now. Try again in a few minutes.');
     setBusy(false);
-    setSent(true);
+    if (problem) setErr(problem);
+    else setSent(true);
   }
 
   if (sent) {
@@ -35,6 +39,7 @@ export default function ResetPage() {
   return (
     <AuthLayout title="Reset your password" hint="Enter your email and we will send you a link.">
       <form onSubmit={submit} noValidate>
+        {err && <div className="form-error" role="alert"><AlertCircle aria-hidden />{err}</div>}
         <div className="field">
           <label htmlFor="email">Email</label>
           <input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus placeholder="you@shop.com" required />
