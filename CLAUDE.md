@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **46 files, 524 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **46 files, 526 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -279,7 +279,10 @@ template is **always** charged. So:
   It needs an **approved** template (`approvedTemplate()`, newest `_vN` wins) or answers 409.
 - **Two UTILITY templates per shop**, `payment_update` and `order_sent`, defined in
   [whatsapp/templates.ts](backend/src/whatsapp/templates.ts) and created by `ensureTemplates()` after
-  the handshake. Language `en` (Roman Urdu is Latin script). Rows in `message_templates` (migration
+  the handshake. Language `en` (Roman Urdu is Latin script). **A body may not start or end with a
+  variable, and needs enough fixed words per variable** (Meta refuses it otherwise);
+  `templates.test.ts` checks every body. `order_sent` takes 2 parameters and `payment_update` 3,
+  filled by `noticeParams()` in `payment-service.ts`. Rows in `message_templates` (migration
   **0010**, spec-02 column names, lowercase statuses); the `message_template_status_update` webhook
   updates them and notifies on rejected/paused (`template_status`). Resubmit creates `_v2`, `_v3`…
   because Meta refuses a rejected name for 30 days. Create/resubmit write `audit_log` rows.

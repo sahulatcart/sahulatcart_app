@@ -124,20 +124,26 @@ export async function notifyBuyer(db: SupabaseClient, order: OrderRow, text: str
   });
 }
 
-/** The template parameters for a paid notice, from the order as it is now. */
+/** Meta refuses a template parameter with a newline, a tab or four spaces in a row. */
+const templateParam = (s: string): string => s.replace(/\s+/g, ' ').trim();
+
+/**
+ * The template parameters for a paid notice, from the order as it is now. They fill the bodies in
+ * `whatsapp/templates.ts`: `order_sent` takes name and order number (courier and ETA go only in the
+ * free-form message inside the 24-hour window); `payment_update` takes a status phrase as {{3}}.
+ */
 async function noticeParams(db: SupabaseClient, order: OrderRow, kind: TemplateKind): Promise<string[]> {
   const name = (order.delivery_name ?? '').trim() || 'Customer';
   const number = order.order_number ?? '';
-  if (kind === 'order_sent') {
-    const { data: o } = await db.from('orders').select('courier, eta_text').eq('id', order.id).maybeSingle();
-    const line = [o?.courier ? `Courier: ${o.courier}` : '', o?.eta_text ? String(o.eta_text) : ''].filter(Boolean).join('. ') || 'Jald pohanch jaye ga, shukriya!';
-    return [name, number, line];
-  }
+  if (kind === 'order_sent') return [name, number].map(templateParam);
   const { data: p } = await db.from('payments').select('status, rejection_reason').eq('order_id', order.id).maybeSingle();
   const verified = p?.status === 'verified' || p?.status === 'cod_collected';
-  return verified
-    ? [name, number, 'verify ho gayi hai', 'Jald deliver karenge, shukriya!']
-    : [name, number, 'verify nahi ho saki', p?.rejection_reason ? `Wajah: ${p.rejection_reason}. Sahi screenshot dobara bhej dein.` : 'Sahi screenshot dobara bhej dein.'];
+  const status = verified
+    ? 'verify ho gayi hai, jald deliver karenge'
+    : p?.rejection_reason
+      ? `verify nahi ho saki (wajah: ${p.rejection_reason}), baraye meharbani sahi screenshot dobara bhej dein`
+      : 'verify nahi ho saki, baraye meharbani sahi screenshot dobara bhej dein';
+  return [name, number, status].map(templateParam);
 }
 
 export type NoticeResult = { ok: true; waMessageId: string; template: string } | { ok: false; status: 400 | 404 | 409 | 502; code: string; message: string };

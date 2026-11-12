@@ -7,7 +7,7 @@ vi.mock('../lib/supabase', () => ({ getServiceClient: () => fake.db.client }));
 
 import { forgetAllNumbers, storeToken } from './credentials';
 import { handleAccountEvent } from './account-events';
-import { approvedTemplate, applyTemplateStatus, ensureTemplates, listTemplates, resubmitTemplate, templateStatusFromEvent } from './templates';
+import { TEMPLATE_DEFS, approvedTemplate, applyTemplateStatus, ensureTemplates, listTemplates, resubmitTemplate, templateStatusFromEvent } from './templates';
 
 const cfg = loadConfig();
 type Call = { path: string; body: Record<string, unknown> | null };
@@ -33,6 +33,24 @@ beforeEach(async () => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+describe('template bodies follow Meta\'s rules', () => {
+  // Both were broken until 2026-11-11: order_sent began with {{1}} and ended with {{3}}, and
+  // payment_update ended with {{4}}. WhatsApp Manager refused the first outright ("Variables can't
+  // be at the start or end of the template"; "too many variables for its length").
+  for (const [kind, def] of Object.entries(TEMPLATE_DEFS)) {
+    it(`${kind}: no variable at either end, numbered 1..n, one example each, enough fixed words`, () => {
+      const vars = def.body.match(/\{\{\d+\}\}/g) ?? [];
+      expect(def.body.trim()).not.toMatch(/^\{\{\d+\}\}/);
+      expect(def.body.trim()).not.toMatch(/\{\{\d+\}\}[\s.!?,]*$/);
+      expect(vars).toEqual(vars.map((_, i) => `{{${i + 1}}}`));
+      expect(def.example).toHaveLength(vars.length);
+      // Meta's length rule isn't published; three fixed words per variable failed both old bodies.
+      const words = def.body.replace(/\{\{\d+\}\}/g, ' ').split(/\s+/).filter((w) => /[a-z]/i.test(w));
+      expect(words.length).toBeGreaterThanOrEqual(3 * vars.length);
+    });
+  }
+});
+
 describe('ensureTemplates', () => {
   it('creates the two utility templates once, stores them pending, and writes audit rows', async () => {
     const made = await ensureTemplates(fake.db.client, 'M1');
@@ -40,10 +58,10 @@ describe('ensureTemplates', () => {
     expect(calls.map((c) => c.path.endsWith('/WABA1/message_templates'))).toEqual([true, true]);
     expect(calls[0]!.body).toMatchObject({ name: 'payment_update', language: 'en', category: 'UTILITY' });
     const comp = (calls[0]!.body!.components as { type: string; text: string; example: { body_text: string[][] } }[])[0]!;
-    expect(comp.text).toContain('{{4}}');
-    expect(comp.example.body_text[0]).toHaveLength(4);
+    expect(comp.text).toContain('{{3}}');
+    expect(comp.example.body_text[0]).toHaveLength(3);
     const rows = fake.db.rows('message_templates');
-    expect(rows.map((r) => [r.status, r.category, r.param_count])).toEqual([['pending', 'utility', 4], ['pending', 'utility', 3]]);
+    expect(rows.map((r) => [r.status, r.category, r.param_count])).toEqual([['pending', 'utility', 3], ['pending', 'utility', 2]]);
     expect(fake.db.rows('audit_log').map((a) => a.action)).toEqual(['template_submit', 'template_submit']);
     await ensureTemplates(fake.db.client, 'M1');
     expect(calls).toHaveLength(2); // idempotent
