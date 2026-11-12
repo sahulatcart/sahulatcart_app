@@ -2,6 +2,34 @@
 
 A running, reverse-chronological log of work on this project: what changed, why, and what was left open.
 
+## 2026-11-12 — Fix: "Forgot password?" said "Check your email" even when nothing was sent
+
+Reported by the owner: forgot password "is not working".
+
+**What was checked.** `/reset` → `resetPasswordForEmail(redirectTo /auth/reset)` → `/auth/reset`.
+Both pages and `/api/v1/config` answer on the live portal; the redirect allow-list was fixed on
+11-11; with supabase-js 2.110 (implicit flow by default) the `/auth/reset` logic is correct: it reads
+`type=recovery` from the hash before the client clears it, and the `PASSWORD_RECOVERY` event fires
+after the subscription is in place.
+
+**The code bug.** `/reset` swallowed every error (`.catch(() => {})`, and `sendPasswordReset()`
+ignored the returned `{ error }`) and always showed "Check your email", so a rate limit or a mailer
+failure looked identical to success. That is why the fault was invisible. It now shows the error:
+a 429 / `over_email_send_rate_limit` gets "wait a few minutes", anything else "could not send".
+This reveals nothing about which emails have accounts: Supabase answers unknown emails with 200.
+
+**Root cause (ops), confirmed in the dashboard on 11-12.** Authentication → Emails → SMTP Settings:
+"Enable custom SMTP" is **off**. The 10-13 P1 entry left "custom SMTP through Resend" open and it
+was never done. Supabase's built-in mailer only delivers to the project team's own addresses, about
+two an hour, which matches the symptom: the owner's own sign-up confirmation arrived, a merchant's
+reset email doesn't. URL Configuration is fine (`https://appadmin-production-0a30.up.railway.app/**`
+covers `/auth/reset`). Fix, done by the owner because it means entering a Resend API key:
+`smtp.resend.com`, port 465, user `resend`, password = a Resend API key, sender on a domain verified
+in Resend. Sign-up confirmations for anyone outside the team were affected the same way.
+
+**Dead end.** Minting a recovery link with the service-role `admin/generate_link` (no email sent)
+to see where Supabase redirects was blocked by the agent's auto-mode safety check; don't plan on it.
+
 ## 2026-11-11 — Fix: both message templates broke Meta's body rules
 
 Branch `fix/template-bodies`. Found while recording the App Review screencast on 2026-11-05: pasting

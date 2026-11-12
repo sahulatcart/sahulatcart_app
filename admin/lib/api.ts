@@ -55,9 +55,21 @@ export function bootstrap(details: { shopName: string; ownerName: string; phone:
   return api('/api/v1/signup/bootstrap', { method: 'POST', body: JSON.stringify(details ?? {}) });
 }
 
-export async function sendPasswordReset(email: string): Promise<void> {
+/**
+ * Ask Supabase to email a reset link. Returns null when it accepted the request, else a message for
+ * the user. Supabase answers an unknown email the same as a known one, so showing its errors reveals
+ * nothing about who has an account; hiding them made a rate limit or a mailer failure look sent.
+ */
+export async function sendPasswordReset(email: string): Promise<string | null> {
   const sb = await getSupabase();
-  await sb.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/auth/reset` });
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/auth/reset` });
+  if (!error) return null;
+  const code = (error as { code?: string }).code;
+  if (error.status === 429 || code === 'over_email_send_rate_limit' || code === 'over_request_rate_limit') {
+    return 'Too many reset emails were requested. Wait a few minutes and try again.';
+  }
+  if (code === 'email_address_invalid' || code === 'validation_failed') return 'Enter a valid email address.';
+  return 'We could not send the reset email right now. Try again in a few minutes.';
 }
 
 export async function updatePassword(password: string): Promise<string | null> {
