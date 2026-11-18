@@ -2,6 +2,54 @@
 
 A running, reverse-chronological log of work on this project: what changed, why, and what was left open.
 
+## 2026-11-18 — Fix: the bot took 50 s+ to reply (slow Gemini model, no time limit on AI calls)
+
+Branch `fix/slow-bot-replies`. Reported by the owner: "the bot is taking too long to reply, more than
+30 seconds".
+
+**Measured, not guessed.** The owner's "Hi" at 05:06:11 UTC was answered at 05:07:05: **53 s**. The
+same "Hi" took 8 s on 11-05 and 5 s on 10-12, so nothing in our code had changed. The only timing in
+the logs was the broken `message usage bump failed` line (see 11-03), but it is written at fixed
+points (inbound, before classify, before compose, after the send), which split the 53 s into
+~4 s of database work before classify, **~31 s classify, ~17 s compose**, then the send.
+
+Calling Gemini directly from a scratch script with the production request (key in a header, nothing
+printed but status and timings): `gemini-3.5-flash` took **19-41 s** six times and **98 s** once for
+a 9-token answer, with zero thinking tokens, and its response says `modelVersion: gemini-3.6-flash`
+(Google now routes the 3.5 name to 3.6). `gemini-3.8-flash` and `gemini-flash-latest` answered
+**503 "high demand" after 80-95 s**. `gemini-3.5-flash-lite` answered in **1.2 s**.
+
+**What changed.**
+- **Model: `gemini-3.5-flash-lite`.** On 16 real buyer messages from the `messages` table (offers,
+  "Ni bht mehngi ha", "photo dikhao", "malik se baat karwao", "mera parcel abhi tak nahi aya"…) the
+  production classifier got **16/16 intents right, median 2.0 s**, with quantities, offers and
+  per-unit/total scope right. `gemini-3.1-flash-lite` got 12/16 and hit the per-minute limit.
+  Composed replies passed the price guard. The config.ts default moved off `gemini-2.5-flash`, which
+  answers 404 "no longer available to new users".
+- **Thinking setting per model** (`thinkingFor()` in `gemini.ts`): 3.5-flash-lite refuses
+  `thinkingBudget: 0` with **400 INVALID_ARGUMENT**, which the client would turn into "AI down" and
+  hand every chat over. Gemini 3+ now gets `thinkingLevel: 'minimal'` (checked to work on 3.5-flash
+  and 3.1-flash-lite too), 2.x keeps `thinkingBudget: 0`. So this code is safe on the old model,
+  and **must be deployed before `GEMINI_MODEL` changes on Railway**, never after.
+- **Time limits** in `callGemini()`: each attempt is aborted after 10 s and the whole call gives up at
+  15 s (compose 8 s, since its template is a fine answer; voice notes and photos 25/30 s). Before
+  there was no limit at all: a 503 after 95 s, retried four times, would have held one reply for
+  minutes before the "AI down" handoff. A `RetryInfo` delay that would run past the deadline now
+  gives up at once instead of sleeping. Calls slower than 5 s log `slow gemini call` with the model.
+- `gemini.test.ts` (6 tests): the thinking setting per model, a hung request abandoned and retried
+  inside the deadline, a 503 retried, a long `RetryInfo` not slept through. Suite 47 files / 532 tests.
+
+**Found on the way, not fixed here.**
+- **The Gemini key is on Google's Free Tier**, in production too (same key; compared by hash).
+  The 429 says "requests per minute limit exceeded on Free Tier"; it tripped after ~22 calls in a
+  minute of testing. That is the known Meta-terms problem (free-tier content may train Google's
+  models) and now also a capacity limit: two calls per reply. Enabling billing in AI Studio fixes both.
+- **About 5-9 s of every reply is database time.** The backend runs in Railway's `sfo` region and the
+  database in AWS ap-south-1 (Mumbai): the ACK alone took 1.9 s, and the steps before classify 4.4 s.
+  Moving the backend to Railway's Singapore region should cut each round trip roughly fourfold
+  (typical San Francisco-Mumbai vs Singapore-Mumbai distance; estimated, not measured).
+- Testing burned ~8 calls of the old model's and ~25 of the new model's free-tier quota on 11-18.
+
 ## 2026-11-12 — Fix: "Forgot password?" said "Check your email" even when nothing was sent
 
 Reported by the owner: forgot password "is not working".
