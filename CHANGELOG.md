@@ -7,6 +7,13 @@ A running, reverse-chronological log of work on this project: what changed, why,
 Branch `fix/slow-bot-replies`. Reported by the owner: "the bot is taking too long to reply, more than
 30 seconds".
 
+**Deployed 11-18, in the safe order.** PR #61 merged (`70cc3c1`), backend deploy `f61668d0`
+SUCCESS on that commit; only then `GEMINI_MODEL=gemini-3.5-flash-lite` set on Railway (redeploy
+`49828a64` SUCCESS). One `/readyz?llm=1` afterwards: model `gemini-3.5-flash-lite`, classify ok,
+4.3 s server-side including the first database probe after boot, and no `slow gemini call` line.
+Not yet seen: a real buyer message end to end. GitHub auto-merge is disabled on the repo, so merging
+after CI is manual.
+
 **Measured, not guessed.** The owner's "Hi" at 05:06:11 UTC was answered at 05:07:05: **53 s**. The
 same "Hi" took 8 s on 11-05 and 5 s on 10-12, so nothing in our code had changed. The only timing in
 the logs was the broken `message usage bump failed` line (see 11-03), but it is written at fixed
