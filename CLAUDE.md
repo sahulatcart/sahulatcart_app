@@ -92,7 +92,7 @@ cd backend && npx vitest run src/negotiation/engine.test.ts    # a single file
 cd backend && npx vitest run -t "accepts at floor"             # a single test by name
 ```
 
-Current suite: **46 files, 526 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
+Current suite: **47 files, 532 tests**. `src/negotiation/engine.test.ts` mirrors the scenario table in
 [docs/spec/06-negotiation-engine.md](docs/spec/06-negotiation-engine.md) §10 and is expected to stay at
 100% — treat a failure there as a product-behavior regression, not a flaky test.
 
@@ -842,8 +842,14 @@ DNS TXT is the only verification method those support, so there is no backup met
   Solution Data being used to train or improve any ML/AI system. **Billing must be enabled** — it
   fixes the quota and the compliance problem together. Until it is, the privacy policy's "the provider
   does not use this content to train" describes the intended state, not the current one.
-- **`GEMINI_MODEL` defaults to `gemini-2.5-flash` in [config.ts](backend/src/config.ts), which is
-  retired for new Google accounts.** `.env` sets `gemini-3.5-flash`. Do not rely on the default.
+- **The model is `gemini-3.5-flash-lite`** (since 2026-11-18; config.ts default and Railway's
+  `GEMINI_MODEL`). `gemini-3.5-flash`, which Google now serves as 3.6-flash, took 19-98 s per call,
+  so a reply waited 50 s+; the newer flash models answered 503 "high demand" after 80-95 s. Time a
+  model before switching to it (one classify-shaped call, check `ms` and `modelVersion`). Gemini 3+
+  takes `thinkingLevel`, 2.x takes `thinkingBudget: 0`; 3.5-flash-lite refuses the latter with a 400,
+  so **deploy code that picks the right one (`thinkingFor()`) before changing the variable**.
+  `callGemini()` gives up at a deadline (15 s, compose 8 s, voice notes 30 s) and logs
+  `slow gemini call` above 5 s, so the next slowdown shows up in the logs by itself.
 - **`META_GRAPH_API_VERSION` is required in production** (M7 step 4, since 2026-10-14): the backend
   refuses to boot without it or with a value not shaped like `v25.0`, so a lost variable fails the
   deploy (Railway keeps the old container) instead of silently calling an old version. Outside

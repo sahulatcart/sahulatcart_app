@@ -42,7 +42,8 @@ const schema = z.object({
   // LLM provider (Phase 3) — provider-agnostic; Gemini by default.
   LLM_PROVIDER: z.enum(['gemini', 'anthropic']).default('gemini'),
   GEMINI_API_KEY: z.string().optional(),
-  GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
+  // 2.5-flash is closed to new accounts; 3.5-flash took 19-98 s per call on 2026-11-18 (CHANGELOG).
+  GEMINI_MODEL: z.string().default('gemini-3.5-flash-lite'),
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default('claude-opus-4-8'),
 
